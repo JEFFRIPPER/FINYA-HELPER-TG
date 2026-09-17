@@ -72,6 +72,17 @@ systemctl status finya-helper
 pip install -r requirements.txt
 ```
 
+## Настройка токена Telegram
+
+Токен нельзя записывать в исходный код или отправлять в Git. Перед запуском задай его одним из способов:
+
+```bash
+export TELEGRAM_BOT_TOKEN="токен_из_BotFather"
+python watchdog.py
+```
+
+Или скопируй `.env.example` в локальный `.env` и замени значение-заглушку. Настоящий `.env` уже исключён через `.gitignore`.
+
 ## Что не хранится в Git
 
 Логи, runtime-файлы, lock/pid, `.env`, emoji/TGS и их рабочие папки исключены через `.gitignore`.

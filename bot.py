@@ -18,7 +18,6 @@ from telegram.ext import (
     filters,
 )
 
-TOKEN = "8906365781:AAGbeB9g-hBIy2KM_8o9_GAT1TTxbNoY9nU"
 ROOT = Path(__file__).resolve().parent
 PHOTO_PATH = str(ROOT / "info.jpg")
 RUNTIME_DIR = ROOT / "runtime"
@@ -27,6 +26,32 @@ STATE_PATH = RUNTIME_DIR / "state.json"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
 BOT_VERSION = "1.3"
+
+
+def load_local_env(path):
+    """Load simple KEY=VALUE pairs without overriding real environment variables."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+load_local_env(ROOT / ".env")
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+if not TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
 
 # Verified Telegram account: @THKC_SQUAD_CREATOR. Usernames can change.
 OWNER_USER_ID = 7221285861
