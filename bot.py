@@ -1,4 +1,8 @@
+import asyncio
+import logging
 import os
+import time
+from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -9,7 +13,10 @@ from telegram.ext import (
 )
 
 TOKEN = "8906365781:AAGbeB9g-hBIy2KM_8o9_GAT1TTxbNoY9nU"
-PHOTO_PATH = os.path.join(os.path.dirname(__file__), "info.jpg")
+ROOT = Path(__file__).resolve().parent
+PHOTO_PATH = str(ROOT / "info.jpg")
+RUNTIME_DIR = ROOT / "runtime"
+HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 
 
 # Custom emoji from https://t.me/addemoji/sfsymbols.
@@ -140,8 +147,22 @@ def squad_keyboard():
     ])
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def heartbeat_loop():
+    RUNTIME_DIR.mkdir(exist_ok=True)
+    while True:
+        HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
+        await asyncio.sleep(30)
 
+
+async def post_init(application: Application):
+    application.create_task(heartbeat_loop(), name="heartbeat")
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.getLogger(__name__).exception("Unhandled bot error", exc_info=context.error)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_photo(
         photo=PHOTO_PATH,
         caption=HOME_TEXT,
@@ -184,16 +205,25 @@ def main():
         Application.builder()
         .token(TOKEN)
         .connect_timeout(20)
+        .read_timeout(30)
+        .write_timeout(30)
         .get_updates_connect_timeout(20)
+        .get_updates_read_timeout(40)
+        .post_init(post_init)
         .build()
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_error_handler(error_handler)
 
     print("OPEX BOT запущен.")
-    # A home PC may start before its internet connection is ready.
-    app.run_polling(bootstrap_retries=-1)
+    app.run_polling(
+        bootstrap_retries=-1,
+        poll_interval=0.5,
+        timeout=30,
+        drop_pending_updates=False,
+    )
 
 
 if __name__ == "__main__":
