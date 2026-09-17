@@ -1,0 +1,77 @@
+# FINYA HELPER
+
+Telegram-бот с бесплатной схемой самовосстановления.
+
+## Рекомендуемый запуск
+
+Запускай не `bot.py`, а:
+
+```bash
+python watchdog.py
+```
+
+Цепочка защиты:
+
+`watchdog.py -> run_background.py -> bot.py`
+
+- `bot.py` пишет heartbeat каждые 30 секунд.
+- `watchdog.py` проверяет heartbeat раз в 15 секунд.
+- Если heartbeat старше 120 секунд или процесс умер — launcher перезапускается.
+- `run_background.py` перезапускает бота после исключений с backoff 3–60 секунд.
+- Логи ротируются в `logs/bot.log` и `logs/error.log`.
+
+## Windows: автозапуск бесплатно
+
+1. Открой **Планировщик заданий**.
+2. Создай задачу `FINYA HELPER`.
+3. Триггер: **При входе в систему** или **При запуске компьютера**.
+4. Действие: запуск программы `pythonw.exe`.
+5. Аргументы: полный путь к `watchdog.py`.
+6. В поле «Рабочая папка» укажи папку проекта.
+7. Включи «Перезапустить при сбое» и запуск независимо от входа пользователя, если доступно.
+
+Для проверки можно сначала запустить обычным `python watchdog.py`.
+
+## Linux: systemd
+
+Создай `/etc/systemd/system/finya-helper.service`:
+
+```ini
+[Unit]
+Description=FINYA HELPER Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/FINYA-HELPER
+ExecStart=/usr/bin/python3 /path/to/FINYA-HELPER/watchdog.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Затем:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now finya-helper
+```
+
+Проверка:
+
+```bash
+systemctl status finya-helper
+```
+
+## Установка зависимостей
+
+```bash
+pip install -r requirements.txt
+```
+
+## Что не хранится в Git
+
+Логи, runtime-файлы, lock/pid, `.env`, emoji/TGS и их рабочие папки исключены через `.gitignore`.
