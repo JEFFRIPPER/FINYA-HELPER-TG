@@ -75,5 +75,3 @@ pip install -r requirements.txt
 ## Что не хранится в Git
 
 Логи, runtime-файлы, lock/pid, `.env`, emoji/TGS и их рабочие папки исключены через `.gitignore`.
-
-А ещё Миня тут!*
