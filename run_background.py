@@ -43,13 +43,13 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 def acquire_lock():
     """Keep only one launcher instance running on Windows or Linux."""
     lock = (RUNTIME / "runner.lock").open("a+b")
-    lock.seek(0)
-    if not lock.read(1):
-        lock.write(b"0")
-        lock.flush()
-    lock.seek(0)
-
     try:
+        lock.seek(0)
+        if not lock.read(1):
+            lock.write(b"0")
+            lock.flush()
+        lock.seek(0)
+
         if os.name == "nt":
             import msvcrt
             msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
@@ -57,6 +57,7 @@ def acquire_lock():
             import fcntl
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (OSError, BlockingIOError):
+        lock.close()
         logging.info("Another launcher instance is already running; exiting.")
         sys.exit(0)
 

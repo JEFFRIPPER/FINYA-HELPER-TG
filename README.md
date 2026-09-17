@@ -86,3 +86,28 @@ python watchdog.py
 ## Что не хранится в Git
 
 Логи, runtime-файлы, lock/pid, `.env`, emoji/TGS и их рабочие папки исключены через `.gitignore`.
+
+
+## FINYA AI
+
+Кнопка **ФИНЯ AI** включает режим диалога с памятью последних сообщений пользователя.
+
+Текстовый AI:
+- основной провайдер: OpenRouter;
+- модели по умолчанию: NVIDIA Nemotron 3 Ultra Free -> OpenRouter Free Router;
+- fallback: Groq openai/gpt-oss-120b, если задан GROQ_API_KEY.
+
+Голосовые:
+- Telegram voice/audio скачивается только во временный файл;
+- распознавание: Groq Whisper whisper-large-v3-turbo;
+- временный файл удаляется сразу после обработки.
+
+Локальный .env:
+OPENROUTER_API_KEY=...
+GROQ_API_KEY=...
+
+Команды:
+- /ai — включить FINYA AI;
+- /resetai — очистить память диалога.
+
+API-ключи никогда не коммитить в GitVerse.
