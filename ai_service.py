@@ -15,7 +15,7 @@ GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 DEFAULT_OPENROUTER_MODELS = [
-    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "nvidia/nemotron-3-ultra-550b-a55b-20260604:free",
     "openrouter/free",
 ]
 

@@ -1,0 +1,64 @@
+name: Deploy FINYA to TNKC-WORLD
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, windows, x64]
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - name: Sync project and secrets
+        shell: powershell
+        run: |
+          $repo = "C:\Users\TNKC\FINYA-HELPER"
+          Set-Location $repo
+          git fetch origin main
+          git reset --hard origin/main
+
+          foreach ($name in @("TELEGRAM_BOT_TOKEN","OPENROUTER_API_KEY","GROQ_API_KEY")) {
+              if (-not (Get-Item "env:$name").Value) { throw "Missing secret: $name" }
+          }
+
+          $lines = @(
+              "TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN",
+              "OPENROUTER_API_KEY=$env:OPENROUTER_API_KEY",
+              "GROQ_API_KEY=$env:GROQ_API_KEY",
+              "OPENROUTER_MODELS=nvidia/nemotron-3-ultra-550b-a55b-20260604:free,openrouter/free",
+              "GROQ_TEXT_MODEL=openai/gpt-oss-120b",
+              "GROQ_WHISPER_MODEL=whisper-large-v3-turbo",
+              "GROQ_WHISPER_LANGUAGE=ru"
+          )
+          [IO.File]::WriteAllLines(
+              (Join-Path $repo ".env"),
+              $lines,
+              [Text.UTF8Encoding]::new($false)
+          )
+
+          python -m pip install -r requirements.txt
+          python -m py_compile bot.py ai_service.py run_background.py watchdog.py
+
+      - name: Restart FINYA HELPER
+        shell: powershell
+        run: |
+          $repo = "C:\Users\TNKC\FINYA-HELPER"
+          Get-CimInstance Win32_Process |
+            Where-Object {
+              $_.Name -match "^(python|pythonw|py)\.exe$" -and
+              $_.CommandLine -match "FINYA-HELPER" -and
+              $_.CommandLine -match "(watchdog\.py|run_background\.py)"
+            } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+
+          Start-Sleep -Seconds 2
+          $python = (python -c "import sys; print(sys.executable)").Trim()
+          $pythonw = Join-Path (Split-Path $python) "pythonw.exe"
+          Start-Process -FilePath $pythonw -ArgumentList "watchdog.py" -WorkingDirectory $repo
+          Start-Sleep -Seconds 5
+
+          $heartbeat = Join-Path $repo "runtime\heartbeat.txt"
+          if (-not (Test-Path $heartbeat)) { throw "Heartbeat was not created" }
+          Write-Output "FINYA HELPER deploy OK"
