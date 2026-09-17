@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+logs/
+*.log
+*.pid
+.env
+emoji_tools/
+emoji_output/
+emoji_previews/
+emoji_set.json
+squad_emoji_set.json
+*.tgs
