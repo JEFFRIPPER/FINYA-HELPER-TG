@@ -5,7 +5,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, windows, x64]
+    runs-on: self-hosted
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
