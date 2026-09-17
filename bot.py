@@ -216,9 +216,17 @@ def heartbeat_age():
 def status_text():
     age = heartbeat_age()
     hb = "нет данных" if age is None else f"{age} сек назад"
+    cfg = ai_config_status()
+    providers = []
+    if cfg["openrouter"]:
+        providers.append("OpenRouter")
+    if cfg["groq"]:
+        providers.append("Groq")
+    ai_state = " + ".join(providers) if providers else "ожидает API-ключ"
     return (
         "<b>🟢 Статус FINYA HELPER</b>\n\n"
         "✅ Бот: работает\n"
+        f"🤖 FINYA AI: {ai_state}\n"
         f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
         f"💓 Heartbeat: {hb}\n"
         f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
