@@ -1,4 +1,4 @@
-"""Run the bot continuously with rotating logs and a single-instance lock."""
+"""Run FINYA HELPER continuously with rotating logs and a single-instance lock."""
 import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -8,20 +8,32 @@ import time
 
 ROOT = Path(__file__).resolve().parent
 LOGS = ROOT / "logs"
+RUNTIME = ROOT / "runtime"
 LOGS.mkdir(exist_ok=True)
+RUNTIME.mkdir(exist_ok=True)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-    handlers=[
-        RotatingFileHandler(
-            LOGS / "bot.log",
-            maxBytes=2_000_000,
-            backupCount=3,
-            encoding="utf-8",
-        )
-    ],
+fmt = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+main_log = RotatingFileHandler(
+    LOGS / "bot.log",
+    maxBytes=2_000_000,
+    backupCount=3,
+    encoding="utf-8",
 )
+main_log.setFormatter(fmt)
+root_logger.addHandler(main_log)
+
+error_log = RotatingFileHandler(
+    LOGS / "error.log",
+    maxBytes=1_000_000,
+    backupCount=3,
+    encoding="utf-8",
+)
+error_log.setLevel(logging.ERROR)
+error_log.setFormatter(fmt)
+root_logger.addHandler(error_log)
 
 # HTTP request URLs can contain the bot token.
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -29,8 +41,8 @@ logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 def acquire_lock():
-    """Keep only one bot process running on Windows or Linux."""
-    lock = (LOGS / "bot.lock").open("a+b")
+    """Keep only one launcher instance running on Windows or Linux."""
+    lock = (RUNTIME / "runner.lock").open("a+b")
     lock.seek(0)
     if not lock.read(1):
         lock.write(b"0")
@@ -45,35 +57,45 @@ def acquire_lock():
             import fcntl
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except (OSError, BlockingIOError):
-        logging.info("Another bot instance is already running; exiting.")
+        logging.info("Another launcher instance is already running; exiting.")
         sys.exit(0)
 
     return lock
 
 
 def run_forever():
-    # Keep this handle referenced for the lifetime of the process so the lock stays active.
     lock_handle = acquire_lock()
+    heartbeat = RUNTIME / "heartbeat.txt"
+    try:
+        heartbeat.unlink(missing_ok=True)
+    except Exception:
+        pass
 
     from bot import main
 
     delay = 3
-    while True:
-        try:
-            logging.info("Starting FINYA HELPER bot")
-            main()
-            logging.warning("Bot stopped without an exception; restarting in %s seconds", delay)
-        except KeyboardInterrupt:
-            logging.info("Bot stopped by user")
-            break
-        except Exception:
-            logging.exception("Bot crashed; restarting in %s seconds", delay)
+    try:
+        while True:
+            started = time.monotonic()
+            try:
+                logging.info("Starting FINYA HELPER bot")
+                main()
+                logging.warning("Bot stopped without an exception; restart in %s s", delay)
+            except KeyboardInterrupt:
+                logging.info("Bot stopped by user")
+                break
+            except Exception:
+                logging.exception("Bot crashed; restart in %s s", delay)
 
-        time.sleep(delay)
-        delay = min(delay * 2, 30)
+            alive_for = time.monotonic() - started
+            if alive_for >= 300:
+                delay = 3
+            else:
+                delay = min(delay * 2, 60)
 
-    # Keep an explicit reference until shutdown.
-    lock_handle.close()
+            time.sleep(delay)
+    finally:
+        lock_handle.close()
 
 
 if __name__ == "__main__":
