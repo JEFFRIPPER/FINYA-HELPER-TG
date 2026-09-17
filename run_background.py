@@ -71,7 +71,30 @@ def run_forever():
     except Exception:
         pass
 
-    from bot import main
+    import bot
+
+    # Do not rewrite state.json on every button press. Disk I/O before every
+    # Telegram API response adds visible latency, especially on slow hosts.
+    original_track_user = bot.track_user
+
+    async def fast_track_user(user):
+        if user is None:
+            return
+        key = str(user.id)
+        now = int(time.time())
+        previous = bot.STATE.get("users", {}).get(key, {})
+        previous_seen = int(previous.get("last_seen", 0) or 0)
+        bot.STATE["users"][key] = {
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_seen": now,
+        }
+        # Persist immediately for a new user, otherwise at most once/minute.
+        if not previous or now - previous_seen >= 60:
+            await bot.save_state()
+
+    bot.track_user = fast_track_user
+    main = bot.main
 
     delay = 3
     try:
