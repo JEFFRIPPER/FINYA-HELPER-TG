@@ -52,9 +52,8 @@ def acquire_lock():
 
 
 def run_forever():
-    # Keep the lock file handle alive for the lifetime of the process.
-    _lock = acquire_lock()
-    del _lock  # reference is retained by the open file descriptor until process exit
+    # Keep this handle referenced for the lifetime of the process so the lock stays active.
+    lock_handle = acquire_lock()
 
     from bot import main
 
@@ -72,6 +71,9 @@ def run_forever():
 
         time.sleep(delay)
         delay = min(delay * 2, 30)
+
+    # Keep an explicit reference until shutdown.
+    lock_handle.close()
 
 
 if __name__ == "__main__":
