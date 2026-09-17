@@ -1,8 +1,10 @@
 __pycache__/
 *.pyc
 logs/
+runtime/
 *.log
 *.pid
+*.lock
 .env
 emoji_tools/
 emoji_output/
