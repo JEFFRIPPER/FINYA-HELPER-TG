@@ -28,12 +28,8 @@ LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
 BOT_VERSION = "1.3"
 
-DEFAULT_ADMIN_USERNAMES = {"THKC_SQUAD_CREATOR"}
-ADMIN_USERNAMES = {
-    name.strip().lstrip("@").lower()
-    for name in os.getenv("ADMIN_USERNAMES", ",".join(DEFAULT_ADMIN_USERNAMES)).split(",")
-    if name.strip()
-}
+# Verified Telegram account: @THKC_SQUAD_CREATOR. Usernames can change.
+OWNER_USER_ID = 7221285861
 
 # Custom emoji from https://t.me/addemoji/sfsymbols.
 BUTTON_ICONS = {
@@ -145,13 +141,7 @@ async def save_state():
 
 
 def is_admin_user(user):
-    if user is None:
-        return False
-    username = (user.username or "").lstrip("@").lower()
-    if username in ADMIN_USERNAMES:
-        return True
-    admin_chat_id = STATE.get("admin_chat_id")
-    return admin_chat_id is not None and int(admin_chat_id) == int(user.id)
+    return user is not None and user.id == OWNER_USER_ID
 
 
 async def track_user(user):
@@ -323,7 +313,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await track_user(update.effective_user)
     if not is_admin_user(update.effective_user):
         return
-    STATE["admin_chat_id"] = update.effective_chat.id
+    STATE["admin_chat_id"] = OWNER_USER_ID
     await save_state()
     await update.message.reply_text(
         "<b>🛠 Админ-панель FINYA HELPER</b>\n\nУправление ботом:",
@@ -382,6 +372,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_admin_callback(query, context, action):
+    if not is_admin_user(query.from_user):
+        return
     if action == "stats":
         text = (
             "<b>📊 Статистика</b>\n\n"
@@ -478,7 +470,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_state()
         await update.message.reply_text("✅ Отправлено владельцу. Спасибо ❤️")
 
-        admin_chat_id = STATE.get("admin_chat_id")
+        admin_chat_id = OWNER_USER_ID
         if admin_chat_id:
             who = f"@{user.username}" if user.username else f"{user.first_name} ({user.id})"
             try:
