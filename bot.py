@@ -254,17 +254,34 @@ def squad_keyboard():
     ])
 
 
+# Icons from HowDidYouDoThis, materialexpressive and UnigramIcons.
+ADMIN_BUTTON_ICONS = {
+    "stats": "5870930636742595124",
+    "status": "5346022209389372742",
+    "feedback": "5870755659774955152",
+    "news": "5870687545888607770",
+    "broadcast": "5870886806601338791",
+    "maintenance": "5438513664388803768",
+    "logs": "5870450390679425417",
+    "restart": "5870892901159932239",
+}
+
+
+def admin_button(text, action):
+    return InlineKeyboardButton(
+        text, callback_data=f"admin:{action}",
+        icon_custom_emoji_id=ADMIN_BUTTON_ICONS[action],
+    )
+
+
 def admin_keyboard():
-    maintenance = "🟠 Техработы: ВКЛ" if STATE.get("maintenance") else "🟢 Техработы: ВЫКЛ"
+    maintenance = "Техработы: ВКЛ" if STATE.get("maintenance") else "Техработы: ВЫКЛ"
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("📊 Статистика", callback_data="admin:stats"),
-         InlineKeyboardButton("🟢 Статус", callback_data="admin:status")],
-        [InlineKeyboardButton("📬 Фидбек", callback_data="admin:feedback"),
-         InlineKeyboardButton("📢 Новость", callback_data="admin:news")],
-        [InlineKeyboardButton("📣 Рассылка", callback_data="admin:broadcast")],
-        [InlineKeyboardButton(maintenance, callback_data="admin:maintenance")],
-        [InlineKeyboardButton("🧾 Логи", callback_data="admin:logs"),
-         InlineKeyboardButton("♻️ Перезапуск", callback_data="admin:restart")],
+        [admin_button("Статистика", "stats"), admin_button("Статус", "status")],
+        [admin_button("Фидбек", "feedback"), admin_button("Новость", "news")],
+        [admin_button("Рассылка", "broadcast")],
+        [admin_button(maintenance, "maintenance")],
+        [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
     ])
 
 
