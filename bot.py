@@ -165,6 +165,10 @@ async def save_state():
         os.replace(tmp, STATE_PATH)
 
 
+def bold_html(text):
+    value = str(text).replace("<b>", "").replace("</b>", "")
+    return f"<b>{value}</b>"
+
 def is_admin_user(user):
     return user is not None and user.id == OWNER_USER_ID
 
@@ -329,6 +333,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def edit_or_send(query, text, keyboard=None):
+    text = bold_html(text)
     if query.message.photo:
         await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
     else:
@@ -339,7 +344,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await track_user(update.effective_user)
     if STATE.get("maintenance") and not is_admin_user(update.effective_user):
         await update.message.reply_text(
-            "🛠 <b>Бот временно на техработах.</b>\nПопробуй чуть позже.",
+            bold_html("🛠 Бот временно на техработах.\nПопробуй чуть позже."),
             parse_mode="HTML",
         )
         return
@@ -358,7 +363,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     STATE["admin_chat_id"] = OWNER_USER_ID
     await save_state()
     await update.message.reply_text(
-        "<b>🛠 Админ-панель FINYA HELPER</b>\n\nУправление ботом:",
+        bold_html("🛠 Админ-панель FINYA HELPER\n\nУправление ботом:"),
         parse_mode="HTML",
         reply_markup=admin_keyboard(),
     )
@@ -466,7 +471,7 @@ async def handle_admin_callback(query, context, action):
     else:
         return
 
-    await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=admin_keyboard())
+    await query.edit_message_text(text=bold_html(text), parse_mode="HTML", reply_markup=admin_keyboard())
 
 
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -480,20 +485,21 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "set_news":
             STATE["news"] = text[:3500]
             await save_state()
-            await update.message.reply_text("✅ Новость обновлена.", reply_markup=admin_keyboard())
+            await update.message.reply_text(bold_html("✅ Новость обновлена."), parse_mode="HTML", reply_markup=admin_keyboard())
             return
         if action == "broadcast":
             ok = 0
             failed = 0
             for user_id in list(STATE.get("users", {}).keys()):
                 try:
-                    await context.bot.send_message(chat_id=int(user_id), text=text)
+                    await context.bot.send_message(chat_id=int(user_id), text=bold_html(html.escape(text)), parse_mode="HTML")
                     ok += 1
                 except Exception:
                     failed += 1
                 await asyncio.sleep(0.04)
             await update.message.reply_text(
-                f"✅ Рассылка завершена.\nДоставлено: {ok}\nОшибок: {failed}",
+                bold_html(f"✅ Рассылка завершена.\nДоставлено: {ok}\nОшибок: {failed}"),
+                parse_mode="HTML",
                 reply_markup=admin_keyboard(),
             )
             return
@@ -510,7 +516,7 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         STATE["feedback"].append(item)
         STATE["feedback"] = STATE["feedback"][-200:]
         await save_state()
-        await update.message.reply_text("✅ Отправлено владельцу. Спасибо ❤️")
+        await update.message.reply_text(bold_html("✅ Отправлено владельцу. Спасибо ❤️"), parse_mode="HTML")
 
         admin_chat_id = OWNER_USER_ID
         if admin_chat_id:
@@ -518,7 +524,8 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=int(admin_chat_id),
-                    text=f"📬 Новый фидбек от {who}:\n\n{text[:3500]}",
+                    text=bold_html(f"📬 Новый фидбек от {html.escape(str(who))}:\n\n{html.escape(text[:3500])}"),
+                    parse_mode="HTML",
                 )
             except Exception:
                 pass
