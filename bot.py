@@ -49,9 +49,9 @@ def load_local_env(path):
 
 
 load_local_env(ROOT / ".env")
-TOKEN = os.environ.get("8906365781:AAHHjiwnwvNKaIVIIWtYfUzZAdnHWH8prvs", "").strip()
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
-    raise RuntimeError("8906365781:AAHHjiwnwvNKaIVIIWtYfUzZAdnHWH8prvs is not configured")
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
 
 # Verified Telegram account: @THKC_SQUAD_CREATOR. Usernames can change.
 OWNER_USER_ID = 7221285861
