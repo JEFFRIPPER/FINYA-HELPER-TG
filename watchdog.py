@@ -15,6 +15,27 @@ HEARTBEAT = ROOT / "runtime" / "heartbeat.txt"
 CHECK_EVERY = 15
 STALE_AFTER = 120
 START_GRACE = 90
+WATCHDOG_LOCK = ROOT / "runtime" / "watchdog.lock"
+
+
+def acquire_watchdog_lock():
+    lock = WATCHDOG_LOCK.open("a+b")
+    try:
+        lock.seek(0)
+        if not lock.read(1):
+            lock.write(b"0")
+            lock.flush()
+        lock.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, BlockingIOError):
+        lock.close()
+        raise SystemExit(0)
+    return lock
 
 
 def heartbeat_age():
@@ -49,26 +70,32 @@ def start_runner():
 
 def main():
     (ROOT / "runtime").mkdir(exist_ok=True)
+    watchdog_lock = acquire_watchdog_lock()
     proc = None
     started_at = 0.0
 
-    while True:
-        if proc is None or proc.poll() is not None:
-            proc = start_runner()
-            started_at = time.time()
-            time.sleep(3)
+    try:
+        while True:
+            if proc is None or proc.poll() is not None:
+                proc = start_runner()
+                started_at = time.time()
+                time.sleep(3)
 
-        age = heartbeat_age()
-        grace_over = time.time() - started_at > START_GRACE
-        if grace_over and (age is None or age > STALE_AFTER):
+            age = heartbeat_age()
+            grace_over = time.time() - started_at > START_GRACE
+            if grace_over and (age is None or age > STALE_AFTER):
+                stop_process(proc)
+                try:
+                    HEARTBEAT.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                proc = None
+
+            time.sleep(CHECK_EVERY)
+    finally:
+        if proc is not None:
             stop_process(proc)
-            try:
-                HEARTBEAT.unlink(missing_ok=True)
-            except Exception:
-                pass
-            proc = None
-
-        time.sleep(CHECK_EVERY)
+        watchdog_lock.close()
 
 
 if __name__ == "__main__":

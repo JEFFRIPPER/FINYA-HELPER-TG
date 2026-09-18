@@ -341,18 +341,22 @@ def admin_keyboard():
     ])
 
 
-async def heartbeat_loop():
+async def heartbeat_loop(application: Application):
     RUNTIME_DIR.mkdir(exist_ok=True)
     while True:
         try:
+            # Heartbeat now proves that Telegram itself is reachable, not just
+            # that the Python process is alive. If Telegram networking stays
+            # broken, watchdog.py will see a stale heartbeat and restart us.
+            await application.bot.get_me()
             HEARTBEAT_PATH.write_text(str(time.time()), encoding="utf-8")
-        except OSError:
-            pass
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Telegram heartbeat failed: %s", exc)
         await asyncio.sleep(30)
 
 
 async def post_init(application: Application):
-    asyncio.create_task(heartbeat_loop(), name="heartbeat")
+    asyncio.create_task(heartbeat_loop(application), name="heartbeat")
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
