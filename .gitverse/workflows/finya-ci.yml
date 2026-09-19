@@ -16,13 +16,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Quick OpenRouter secret check
+      - name: Probe OpenRouter HTTP status
         continue-on-error: true
         shell: bash
         run: |
           test -n "$OPENROUTER_API_KEY"
           code=$(curl -sS -o /tmp/openrouter.json -w "%{http_code}"             -H "Authorization: Bearer $OPENROUTER_API_KEY"             https://openrouter.ai/api/v1/key)
-          test "$code" = "200"
+          echo "$code" > /tmp/openrouter_status
+
+      - name: OpenRouter HTTP 200
+        continue-on-error: true
+        shell: bash
+        run: test "$(cat /tmp/openrouter_status)" = "200"
+
+      - name: OpenRouter HTTP 401
+        continue-on-error: true
+        shell: bash
+        run: test "$(cat /tmp/openrouter_status)" = "401"
+
+      - name: OpenRouter HTTP 403
+        continue-on-error: true
+        shell: bash
+        run: test "$(cat /tmp/openrouter_status)" = "403"
+
+      - name: OpenRouter HTTP 429
+        continue-on-error: true
+        shell: bash
+        run: test "$(cat /tmp/openrouter_status)" = "429"
 
       - name: Python
         uses: actions/setup-python@v5
