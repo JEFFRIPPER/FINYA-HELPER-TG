@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.error import BadRequest, Forbidden, RetryAfter
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -25,7 +26,10 @@ HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 STATE_PATH = RUNTIME_DIR / "state.json"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.0"
+BOT_VERSION = "2.1"
+SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
+SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
+SQUAD_CHANNEL_ID = os.environ.get("SQUAD_CHANNEL_ID", "").strip()
 
 
 def load_local_env(path):
@@ -137,6 +141,8 @@ def default_state():
         "news": "Пока свежих объявлений нет. Следи за @THKC_SQUAD 👀",
         "maintenance": False,
         "admin_chat_id": None,
+        "channel_subscribers": {},
+        "channel_broadcast_enabled": True,
     }
 
 
@@ -151,6 +157,8 @@ def load_state():
         pass
     state.setdefault("users", {})
     state.setdefault("feedback", [])
+    state.setdefault("channel_subscribers", {})
+    state.setdefault("channel_broadcast_enabled", True)
     return state
 
 
@@ -213,6 +221,7 @@ def status_text():
     return (
         "<b>🟢 Статус FINYA HELPER</b>\n\n"
         "✅ Бот: работает\n"
+        f"🔔 Подписчиков рассылки ТГК: {sum(1 for v in STATE.get('channel_subscribers', {}).values() if v)}\n"
         f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
         f"💓 Heartbeat: {hb}\n"
         f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
@@ -239,12 +248,41 @@ def home_keyboard():
             InlineKeyboardButton("🟢 Статус", callback_data="status"),
             InlineKeyboardButton("💬 Обратная связь", callback_data="feedback"),
         ],
+        [InlineKeyboardButton("🔔 Рассылка ТГК", callback_data="channel_notify")],
         [menu_button("👤 ЛС Владельца", url="https://t.me/THKC_SQUAD_CREATOR")],
     ])
 
 
 def back_home_keyboard():
     return InlineKeyboardMarkup([[menu_button("⬅️ Главное меню", callback_data="home")]])
+
+
+def channel_is_subscribed(user_id):
+    return bool(STATE.get("channel_subscribers", {}).get(str(user_id)))
+
+
+def channel_subscription_text(user_id):
+    if channel_is_subscribed(user_id):
+        return (
+            "🔔 <b>Рассылка T.N.K.C SQUAD включена</b>\n\n"
+            "Новые посты из @THKC_SQUAD будут автоматически приходить тебе сюда в личку."
+        )
+    return (
+        "🔕 <b>Рассылка T.N.K.C SQUAD выключена</b>\n\n"
+        "Подпишись, и новые посты из @THKC_SQUAD будут автоматически приходить тебе сюда в личку."
+    )
+
+
+def channel_subscription_keyboard(user_id):
+    if channel_is_subscribed(user_id):
+        toggle = InlineKeyboardButton("🔕 Отписаться", callback_data="channel:unsubscribe")
+    else:
+        toggle = InlineKeyboardButton("🔔 Подписаться", callback_data="channel:subscribe")
+    return InlineKeyboardMarkup([
+        [toggle],
+        [InlineKeyboardButton("💠 Открыть T.N.K.C SQUAD", url=SQUAD_CHANNEL_URL)],
+        [menu_button("⬅️ Главное меню", callback_data="home")],
+    ])
 
 
 def info_keyboard():
@@ -290,6 +328,7 @@ ADMIN_BUTTON_ICONS = {
     "feedback": "5870755659774955152",
     "news": "5870687545888607770",
     "broadcast": "5870886806601338791",
+    "channel": "5870886806601338791",
     "maintenance": "5438513664388803768",
     "logs": "5870450390679425417",
     "restart": "5870892901159932239",
@@ -305,10 +344,12 @@ def admin_button(text, action):
 
 def admin_keyboard():
     maintenance = "Техработы: ВКЛ" if STATE.get("maintenance") else "Техработы: ВЫКЛ"
+    channel_mode = "Авто ТГК: ВКЛ" if STATE.get("channel_broadcast_enabled", True) else "Авто ТГК: ВЫКЛ"
     return InlineKeyboardMarkup([
         [admin_button("Статистика", "stats"), admin_button("Статус", "status")],
         [admin_button("Фидбек", "feedback"), admin_button("Новость", "news")],
         [admin_button("Рассылка", "broadcast")],
+        [admin_button(channel_mode, "channel")],
         [admin_button(maintenance, "maintenance")],
         [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
     ])
@@ -397,6 +438,19 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ])
     elif query.data == "status":
         text, keyboard = status_text(), back_home_keyboard()
+    elif query.data == "channel_notify":
+        text = channel_subscription_text(update.effective_user.id)
+        keyboard = channel_subscription_keyboard(update.effective_user.id)
+    elif query.data == "channel:subscribe":
+        STATE["channel_subscribers"][str(update.effective_user.id)] = True
+        await save_state()
+        text = "✅ <b>Готово. Рассылка T.N.K.C SQUAD включена.</b>\n\nНовые посты будут приходить сюда автоматически."
+        keyboard = channel_subscription_keyboard(update.effective_user.id)
+    elif query.data == "channel:unsubscribe":
+        STATE["channel_subscribers"].pop(str(update.effective_user.id), None)
+        await save_state()
+        text = "🔕 <b>Рассылка T.N.K.C SQUAD выключена.</b>"
+        keyboard = channel_subscription_keyboard(update.effective_user.id)
     elif query.data == "feedback":
         context.user_data["awaiting_feedback"] = True
         text = (
@@ -429,6 +483,7 @@ async def handle_admin_callback(query, context, action):
         text = (
             "<b>📊 Статистика</b>\n\n"
             f"👥 Пользователей: <b>{len(STATE['users'])}</b>\n"
+            f"🔔 Подписчиков ТГК: <b>{sum(1 for v in STATE.get('channel_subscribers', {}).values() if v)}</b>\n"
             f"📬 Обращений: <b>{len(STATE['feedback'])}</b>\n"
             f"⏱ Аптайм: <b>{fmt_uptime(time.time() - BOT_STARTED_AT)}</b>"
         )
@@ -452,6 +507,11 @@ async def handle_admin_callback(query, context, action):
     elif action == "broadcast":
         context.user_data["admin_action"] = "broadcast"
         text = "<b>📣 Рассылка</b>\n\nОтправь следующим сообщением текст для всех пользователей бота."
+    elif action == "channel":
+        STATE["channel_broadcast_enabled"] = not bool(STATE.get("channel_broadcast_enabled", True))
+        await save_state()
+        mode = "включена" if STATE["channel_broadcast_enabled"] else "выключена"
+        text = f"<b>🔔 Авторассылка постов ТГК {mode}.</b>"
     elif action == "maintenance":
         STATE["maintenance"] = not bool(STATE.get("maintenance"))
         await save_state()
@@ -476,6 +536,93 @@ async def handle_admin_callback(query, context, action):
         return
 
     await query.edit_message_text(text=bold_html(text), parse_mode="HTML", reply_markup=admin_keyboard())
+
+
+def is_squad_channel(chat):
+    if chat is None:
+        return False
+    if SQUAD_CHANNEL_ID:
+        try:
+            if chat.id == int(SQUAD_CHANNEL_ID):
+                return True
+        except ValueError:
+            pass
+    return (chat.username or "").lstrip("@").lower() == SQUAD_CHANNEL_USERNAME.lower()
+
+
+async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.channel_post
+    if message is None or not is_squad_channel(update.effective_chat):
+        return
+    if not STATE.get("channel_broadcast_enabled", True):
+        return
+
+    subscribers = [
+        user_id
+        for user_id, enabled in STATE.get("channel_subscribers", {}).items()
+        if enabled
+    ]
+    if not subscribers:
+        return
+
+    username = (update.effective_chat.username or SQUAD_CHANNEL_USERNAME).lstrip("@")
+    post_url = f"https://t.me/{username}/{message.message_id}"
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("💠 Открыть пост в канале", url=post_url)]
+    ])
+
+    delivered = 0
+    failed = 0
+    stale = []
+    for user_id in subscribers:
+        try:
+            await context.bot.copy_message(
+                chat_id=int(user_id),
+                from_chat_id=message.chat_id,
+                message_id=message.message_id,
+                reply_markup=keyboard,
+            )
+            delivered += 1
+        except RetryAfter as exc:
+            retry_after = exc.retry_after
+            delay = retry_after.total_seconds() if hasattr(retry_after, "total_seconds") else float(retry_after)
+            await asyncio.sleep(delay + 0.2)
+            try:
+                await context.bot.copy_message(
+                    chat_id=int(user_id),
+                    from_chat_id=message.chat_id,
+                    message_id=message.message_id,
+                    reply_markup=keyboard,
+                )
+                delivered += 1
+            except Exception:
+                failed += 1
+        except Forbidden:
+            stale.append(user_id)
+            failed += 1
+        except BadRequest as exc:
+            if "chat not found" in str(exc).lower() or "user is deactivated" in str(exc).lower():
+                stale.append(user_id)
+            failed += 1
+        except Exception:
+            logging.getLogger(__name__).exception(
+                "Channel post delivery failed for user %s", user_id
+            )
+            failed += 1
+        await asyncio.sleep(0.04)
+
+    if stale:
+        for user_id in stale:
+            STATE["channel_subscribers"].pop(str(user_id), None)
+        await save_state()
+
+    logging.getLogger(__name__).info(
+        "Channel post %s distributed: delivered=%s failed=%s subscribers=%s",
+        message.message_id,
+        delivered,
+        failed,
+        len(subscribers),
+    )
 
 
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -551,6 +698,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
     app.add_error_handler(error_handler)
 
