@@ -68,10 +68,25 @@ jobs:
           key = os.environ.get("OPENROUTER_API_KEY", "").strip()
           if not key:
               raise SystemExit("OPENROUTER_API_KEY missing")
-          r = httpx.get("https://openrouter.ai/api/v1/key", headers={"Authorization": f"Bearer {key}"}, timeout=20)
+          r = httpx.post(
+              "https://openrouter.ai/api/v1/chat/completions",
+              headers={
+                  "Authorization": f"Bearer {key}",
+                  "Content-Type": "application/json",
+              },
+              json={
+                  "model": "openrouter/free",
+                  "messages": [{"role": "user", "content": "Reply with OK"}],
+                  "max_tokens": 4,
+              },
+              timeout=30,
+          )
           if r.status_code >= 400:
-              raise SystemExit(f"OpenRouter auth failed: HTTP {r.status_code}")
-          print("OpenRouter auth: OK")
+              raise SystemExit(f"OpenRouter completion failed: HTTP {r.status_code}")
+          data = r.json()
+          if not data.get("choices"):
+              raise SystemExit("OpenRouter completion returned no choices")
+          print("OpenRouter completion: OK")
           PY
 
       - name: Verify Groq key
