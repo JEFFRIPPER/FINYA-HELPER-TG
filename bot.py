@@ -248,7 +248,7 @@ def home_keyboard():
             InlineKeyboardButton("🟢 Статус", callback_data="status"),
             InlineKeyboardButton("💬 Обратная связь", callback_data="feedback"),
         ],
-        [InlineKeyboardButton("🔔 Рассылка ТГК", callback_data="channel_notify")],
+        [InlineKeyboardButton("Рассылка ТГК", callback_data="channel_notify", icon_custom_emoji_id="5408901642999335517")],
         [menu_button("👤 ЛС Владельца", url="https://t.me/THKC_SQUAD_CREATOR")],
     ])
 
@@ -275,12 +275,12 @@ def channel_subscription_text(user_id):
 
 def channel_subscription_keyboard(user_id):
     if channel_is_subscribed(user_id):
-        toggle = InlineKeyboardButton("🔕 Отписаться", callback_data="channel:unsubscribe")
+        toggle = InlineKeyboardButton("Отписаться", callback_data="channel:unsubscribe", icon_custom_emoji_id="5409003906170651374")
     else:
-        toggle = InlineKeyboardButton("🔔 Подписаться", callback_data="channel:subscribe")
+        toggle = InlineKeyboardButton("Подписаться", callback_data="channel:subscribe", icon_custom_emoji_id="5408901642999335517")
     return InlineKeyboardMarkup([
         [toggle],
-        [InlineKeyboardButton("💠 Открыть T.N.K.C SQUAD", url=SQUAD_CHANNEL_URL)],
+        [InlineKeyboardButton("Открыть T.N.K.C SQUAD", url=SQUAD_CHANNEL_URL, icon_custom_emoji_id="5411527152212411235")],
         [menu_button("⬅️ Главное меню", callback_data="home")],
     ])
 
@@ -328,7 +328,7 @@ ADMIN_BUTTON_ICONS = {
     "feedback": "5870755659774955152",
     "news": "5870687545888607770",
     "broadcast": "5870886806601338791",
-    "channel": "5870886806601338791",
+    "channel": "5411335287433364660",
     "maintenance": "5438513664388803768",
     "logs": "5870450390679425417",
     "restart": "5870892901159932239",
@@ -568,7 +568,7 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = (update.effective_chat.username or SQUAD_CHANNEL_USERNAME).lstrip("@")
     post_url = f"https://t.me/{username}/{message.message_id}"
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💠 Открыть пост в канале", url=post_url)]
+        [InlineKeyboardButton("Открыть пост в канале", url=post_url, icon_custom_emoji_id="5411527152212411235")]
     ])
 
     delivered = 0
