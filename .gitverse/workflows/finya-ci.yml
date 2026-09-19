@@ -44,6 +44,51 @@ jobs:
         shell: bash
         run: test -n "$GROQ_API_KEY"
 
+      - name: Verify Telegram token
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, httpx
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          if not token:
+              raise SystemExit("TELEGRAM_BOT_TOKEN missing")
+          r = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=20)
+          if r.status_code >= 400 or not r.json().get("ok"):
+              raise SystemExit(f"Telegram auth failed: HTTP {r.status_code}")
+          print("Telegram auth: OK")
+          PY
+
+      - name: Verify OpenRouter key
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, httpx
+          key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("OPENROUTER_API_KEY missing")
+          r = httpx.get("https://openrouter.ai/api/v1/key", headers={"Authorization": f"Bearer {key}"}, timeout=20)
+          if r.status_code >= 400:
+              raise SystemExit(f"OpenRouter auth failed: HTTP {r.status_code}")
+          print("OpenRouter auth: OK")
+          PY
+
+      - name: Verify Groq key
+        continue-on-error: true
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os, httpx
+          key = os.environ.get("GROQ_API_KEY", "").strip()
+          if not key:
+              raise SystemExit("GROQ_API_KEY missing")
+          r = httpx.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=20)
+          if r.status_code >= 400:
+              raise SystemExit(f"Groq auth failed: HTTP {r.status_code}")
+          print("Groq auth: OK")
+          PY
+
       - name: Validate GitVerse secrets and provider auth
         shell: bash
         run: |
