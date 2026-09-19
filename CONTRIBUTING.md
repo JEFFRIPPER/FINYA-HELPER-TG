@@ -15,10 +15,9 @@
 
 ```bash
 pip install -r requirements.txt
-python -m py_compile bot.py ai_service.py run_background.py watchdog.py
+python -m py_compile bot.py run_background.py watchdog.py
 ```
 
-Если меняется AI-контур, отдельно проверьте работу без заданных AI-ключей: бот не должен падать.
 
 ## Коммиты
 
@@ -28,7 +27,7 @@ python -m py_compile bot.py ai_service.py run_background.py watchdog.py
 
 ```text
 Fix Telegram reconnect handling
-Add FINYA AI memory reset
+Improve watchdog recovery
 Update GitVerse CI checks
 ```
 

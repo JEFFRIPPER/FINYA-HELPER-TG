@@ -18,8 +18,6 @@ from telegram.ext import (
     filters,
 )
 
-from ai_service import ai_config_status, generate_reply, transcribe_audio
-
 ROOT = Path(__file__).resolve().parent
 PHOTO_PATH = str(ROOT / "info.jpg")
 RUNTIME_DIR = ROOT / "runtime"
@@ -139,8 +137,6 @@ def default_state():
         "news": "Пока свежих объявлений нет. Следи за @THKC_SQUAD 👀",
         "maintenance": False,
         "admin_chat_id": None,
-        "ai_enabled": {},
-        "ai_memory": {},
     }
 
 
@@ -155,8 +151,6 @@ def load_state():
         pass
     state.setdefault("users", {})
     state.setdefault("feedback", [])
-    state.setdefault("ai_enabled", {})
-    state.setdefault("ai_memory", {})
     return state
 
 
@@ -216,17 +210,9 @@ def heartbeat_age():
 def status_text():
     age = heartbeat_age()
     hb = "нет данных" if age is None else f"{age} сек назад"
-    cfg = ai_config_status()
-    providers = []
-    if cfg["openrouter"]:
-        providers.append("OpenRouter")
-    if cfg["groq"]:
-        providers.append("Groq")
-    ai_state = " + ".join(providers) if providers else "ожидает API-ключ"
     return (
         "<b>🟢 Статус FINYA HELPER</b>\n\n"
         "✅ Бот: работает\n"
-        f"🤖 FINYA AI: {ai_state}\n"
         f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
         f"💓 Heartbeat: {hb}\n"
         f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
@@ -253,25 +239,12 @@ def home_keyboard():
             InlineKeyboardButton("🟢 Статус", callback_data="status"),
             InlineKeyboardButton("💬 Обратная связь", callback_data="feedback"),
         ],
-        [InlineKeyboardButton("🤖 ФИНЯ AI", callback_data="ai")],
         [menu_button("👤 ЛС Владельца", url="https://t.me/THKC_SQUAD_CREATOR")],
     ])
 
 
 def back_home_keyboard():
     return InlineKeyboardMarkup([[menu_button("⬅️ Главное меню", callback_data="home")]])
-
-
-def ai_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧹 Очистить память", callback_data="ai:reset")],
-        [InlineKeyboardButton("⏹ Выключить AI", callback_data="ai:off")],
-        [menu_button("⬅️ Главное меню", callback_data="home")],
-    ])
-
-
-def ai_is_enabled(user_id):
-    return bool(STATE.get("ai_enabled", {}).get(str(user_id)))
 
 
 def info_keyboard():
@@ -415,29 +388,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text, keyboard = SQUAD_TEXT, squad_keyboard()
     elif query.data == "home":
         text, keyboard = HOME_TEXT, home_keyboard()
-    elif query.data == "ai":
-        user_id = str(update.effective_user.id)
-        STATE["ai_enabled"][user_id] = True
-        await save_state()
-        cfg = ai_config_status()
-        ready = cfg["openrouter"] or cfg["groq"]
-        text = (
-            "🤖 ФИНЯ AI включена.\n\n"
-            "Пиши мне обычным сообщением — я буду отвечать с памятью последних реплик.\n"
-            "Голосовые тоже поддерживаются через Whisper.\n\n"
-            + ("✅ AI-провайдер подключён." if ready else "⚠️ AI-контур готов, но API-ключ ещё не подключён.")
-        )
-        keyboard = ai_keyboard()
-    elif query.data == "ai:reset":
-        user_id = str(update.effective_user.id)
-        STATE["ai_memory"].pop(user_id, None)
-        await save_state()
-        text, keyboard = "🧹 Память диалога Фини очищена.", ai_keyboard()
-    elif query.data == "ai:off":
-        user_id = str(update.effective_user.id)
-        STATE["ai_enabled"][user_id] = False
-        await save_state()
-        text, keyboard = "⏹ ФИНЯ AI выключена.", back_home_keyboard()
     elif query.data == "news":
         news = html.escape(str(STATE.get("news") or "Пока новостей нет."))
         text = f"<b>📢 Новости / объявления</b>\n\n{news}"
@@ -528,68 +478,6 @@ async def handle_admin_callback(query, context, action):
     await query.edit_message_text(text=bold_html(text), parse_mode="HTML", reply_markup=admin_keyboard())
 
 
-def split_ai_text(text, limit=3500):
-    text = str(text).strip()
-    if not text:
-        return ["..."]
-    chunks = []
-    while len(text) > limit:
-        cut = text.rfind("\n", 0, limit)
-        if cut < limit // 2:
-            cut = text.rfind(" ", 0, limit)
-        if cut < limit // 2:
-            cut = limit
-        chunks.append(text[:cut].strip())
-        text = text[cut:].strip()
-    if text:
-        chunks.append(text)
-    return chunks
-
-
-async def handle_ai_input(update, context, user_text):
-    user = update.effective_user
-    user_id = str(user.id)
-    history = STATE["ai_memory"].get(user_id, [])[-12:]
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    try:
-        reply, provider = await generate_reply(history, user_text, user.first_name)
-    except RuntimeError as exc:
-        code = str(exc)
-        if "AI_API_KEY_MISSING" in code:
-            message = "⚠️ ФИНЯ AI уже встроена, но пока не подключён OPENROUTER_API_KEY или GROQ_API_KEY."
-        else:
-            message = "⚠️ Сейчас AI-провайдер не ответил. Попробуй ещё раз чуть позже."
-        await update.message.reply_text(bold_html(message), parse_mode="HTML")
-        return
-
-    history.extend([
-        {"role": "user", "content": user_text[:6000]},
-        {"role": "assistant", "content": reply[:6000]},
-    ])
-    STATE["ai_memory"][user_id] = history[-12:]
-    await save_state()
-    logging.getLogger(__name__).info("AI reply via %s for user %s", provider, user.id)
-    for chunk in split_ai_text(reply):
-        await update.message.reply_text(bold_html(html.escape(chunk)), parse_mode="HTML")
-
-
-async def ai_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await track_user(update.effective_user)
-    STATE["ai_enabled"][str(update.effective_user.id)] = True
-    await save_state()
-    await update.message.reply_text(
-        bold_html("🤖 ФИНЯ AI включена. Просто пиши мне сообщения."),
-        parse_mode="HTML",
-        reply_markup=ai_keyboard(),
-    )
-
-
-async def ai_reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    STATE["ai_memory"].pop(str(update.effective_user.id), None)
-    await save_state()
-    await update.message.reply_text(bold_html("🧹 Память диалога Фини очищена."), parse_mode="HTML")
-
-
 async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await track_user(update.effective_user)
     text = (update.message.text or "").strip()
@@ -647,50 +535,6 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    if ai_is_enabled(update.effective_user.id):
-        await handle_ai_input(update, context, text)
-
-
-async def voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await track_user(update.effective_user)
-    user_id = str(update.effective_user.id)
-    if not ai_is_enabled(update.effective_user.id):
-        STATE["ai_enabled"][user_id] = True
-        await save_state()
-
-    media = update.message.voice or update.message.audio
-    if media is None:
-        return
-    suffix = ".ogg"
-    if update.message.audio and update.message.audio.file_name:
-        suffix = Path(update.message.audio.file_name).suffix or ".mp3"
-    temp_path = RUNTIME_DIR / f"voice_{user_id}_{update.message.message_id}{suffix}"
-
-    try:
-        tg_file = await context.bot.get_file(media.file_id)
-        await tg_file.download_to_drive(custom_path=temp_path)
-        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        transcript = await transcribe_audio(temp_path)
-        await handle_ai_input(update, context, transcript)
-    except RuntimeError as exc:
-        if "GROQ_API_KEY_MISSING" in str(exc):
-            msg = "🎙 Голосовые готовы, но для распознавания нужен GROQ_API_KEY."
-        else:
-            msg = "⚠️ Не получилось распознать голосовое. Попробуй ещё раз."
-        await update.message.reply_text(bold_html(msg), parse_mode="HTML")
-    except Exception:
-        logging.getLogger(__name__).exception("Voice AI error")
-        await update.message.reply_text(
-            bold_html("⚠️ Ошибка обработки голосового."),
-            parse_mode="HTML",
-        )
-    finally:
-        try:
-            temp_path.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-
 def main():
     app = (
         Application.builder()
@@ -706,10 +550,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("ai", ai_command))
-    app.add_handler(CommandHandler("resetai", ai_reset_command))
     app.add_handler(CallbackQueryHandler(button))
-    app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, voice_message))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
     app.add_error_handler(error_handler)
 

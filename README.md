@@ -83,39 +83,10 @@ python watchdog.py
 
 Или скопируй `.env.example` в локальный `.env` и замени значение-заглушку. Настоящий `.env` уже исключён через `.gitignore`.
 
-## FINYA AI
-
-Кнопка **ФИНЯ AI** включает режим диалога с памятью последних сообщений пользователя.
-
-Текстовый AI:
-- основной провайдер: OpenRouter;
-- модели по умолчанию: NVIDIA Nemotron 3 Ultra Free -> OpenRouter Free Router;
-- fallback: Groq openai/gpt-oss-120b, если задан GROQ_API_KEY.
-
-Голосовые:
-- Telegram voice/audio скачивается только во временный файл;
-- распознавание: Groq Whisper whisper-large-v3-turbo;
-- временный файл удаляется сразу после обработки.
-
-Локальный .env:
-OPENROUTER_API_KEY=...
-GROQ_API_KEY=...
-
-Команды:
-- /ai — включить FINYA AI;
-- /resetai — очистить память диалога.
-
-API-ключи никогда не коммитить в GitVerse.
-
 ## GitVerse Secrets
 
-В настройках репозитория создай секреты с точными именами:
+Для CI/CD используется один секрет репозитория:
 - TELEGRAM_BOT_TOKEN
-- OPENROUTER_API_KEY
-- GROQ_API_KEY
 
-Workflow .gitverse/workflows/finya-ci.yml проверяет наличие секретов, синтаксис Python и авторизацию Telegram/OpenRouter/Groq без вывода значений в лог.
-
-Workflow .gitverse/workflows/deploy-tnkc.yml предназначен для self-hosted Windows runner на TNKC-WORLD: он синхронизирует main, формирует локальный .env из GitVerse Secrets, проверяет код и перезапускает FINYA HELPER.
-
-Важно: GitVerse Secrets доступны только внутри workflow. Обычный процесс bot.py на ПК не может прочитать их напрямую без self-hosted runner/deploy workflow.
+Workflow `.gitverse/workflows/finya-ci.yml` проверяет зависимости и синтаксис Python.
+Workflow `.gitverse/workflows/deploy-tnkc.yml` предназначен для self-hosted Windows runner на TNKC-WORLD и умеет сформировать локальный `.env` из Telegram-токена.

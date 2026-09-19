@@ -1,4 +1,4 @@
-name: FINYA CI and secrets check
+name: FINYA CI
 
 on:
   push:
@@ -10,39 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Probe OpenRouter HTTP status
-        continue-on-error: true
-        shell: bash
-        run: |
-          test -n "$OPENROUTER_API_KEY"
-          code=$(curl -sS -o /tmp/openrouter.json -w "%{http_code}"             -H "Authorization: Bearer $OPENROUTER_API_KEY"             https://openrouter.ai/api/v1/key)
-          echo "$code" > /tmp/openrouter_status
-
-      - name: OpenRouter HTTP 200
-        continue-on-error: true
-        shell: bash
-        run: test "$(cat /tmp/openrouter_status)" = "200"
-
-      - name: OpenRouter HTTP 401
-        continue-on-error: true
-        shell: bash
-        run: test "$(cat /tmp/openrouter_status)" = "401"
-
-      - name: OpenRouter HTTP 403
-        continue-on-error: true
-        shell: bash
-        run: test "$(cat /tmp/openrouter_status)" = "403"
-
-      - name: OpenRouter HTTP 429
-        continue-on-error: true
-        shell: bash
-        run: test "$(cat /tmp/openrouter_status)" = "429"
 
       - name: Python
         uses: actions/setup-python@v5
@@ -55,106 +25,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Compile
-        run: python -m py_compile bot.py ai_service.py run_background.py watchdog.py
+        run: python -m py_compile bot.py run_background.py watchdog.py
 
-      - name: Check TELEGRAM_BOT_TOKEN
-        continue-on-error: true
+      - name: Check Telegram secret
         shell: bash
         run: test -n "$TELEGRAM_BOT_TOKEN"
-
-      - name: Check OPENROUTER_API_KEY
-        continue-on-error: true
-        shell: bash
-        run: test -n "$OPENROUTER_API_KEY"
-
-      - name: Check GROQ_API_KEY
-        continue-on-error: true
-        shell: bash
-        run: test -n "$GROQ_API_KEY"
-
-      - name: Verify Telegram token
-        continue-on-error: true
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os, httpx
-          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
-          if not token:
-              raise SystemExit("TELEGRAM_BOT_TOKEN missing")
-          r = httpx.get(f"https://api.telegram.org/bot{token}/getMe", timeout=20)
-          if r.status_code >= 400 or not r.json().get("ok"):
-              raise SystemExit(f"Telegram auth failed: HTTP {r.status_code}")
-          print("Telegram auth: OK")
-          PY
-
-      - name: Verify OpenRouter key
-        continue-on-error: true
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os, httpx
-          key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-          if not key:
-              raise SystemExit("OPENROUTER_API_KEY missing")
-          r = httpx.post(
-              "https://openrouter.ai/api/v1/chat/completions",
-              headers={
-                  "Authorization": f"Bearer {key}",
-                  "Content-Type": "application/json",
-              },
-              json={
-                  "model": "openrouter/free",
-                  "messages": [{"role": "user", "content": "Reply with OK"}],
-                  "max_tokens": 4,
-              },
-              timeout=30,
-          )
-          if r.status_code >= 400:
-              raise SystemExit(f"OpenRouter completion failed: HTTP {r.status_code}")
-          data = r.json()
-          if not data.get("choices"):
-              raise SystemExit("OpenRouter completion returned no choices")
-          print("OpenRouter completion: OK")
-          PY
-
-      - name: Verify Groq key
-        continue-on-error: true
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os, httpx
-          key = os.environ.get("GROQ_API_KEY", "").strip()
-          if not key:
-              raise SystemExit("GROQ_API_KEY missing")
-          r = httpx.get("https://api.groq.com/openai/v1/models", headers={"Authorization": f"Bearer {key}"}, timeout=20)
-          if r.status_code >= 400:
-              raise SystemExit(f"Groq auth failed: HTTP {r.status_code}")
-          print("Groq auth: OK")
-          PY
-
-      - name: Validate GitVerse secrets and provider auth
-        shell: bash
-        run: |
-          python - <<'PY'
-          import os
-          import httpx
-
-          required = ["TELEGRAM_BOT_TOKEN", "OPENROUTER_API_KEY", "GROQ_API_KEY"]
-          missing = [name for name in required if not os.environ.get(name, "").strip()]
-          if missing:
-              raise SystemExit("Missing repository secrets: " + ", ".join(missing))
-
-          checks = [
-              ("Telegram", f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/getMe", {}),
-              ("OpenRouter", "https://openrouter.ai/api/v1/key",
-               {"Authorization": f"Bearer {os.environ['OPENROUTER_API_KEY']}"}),
-              ("Groq", "https://api.groq.com/openai/v1/models",
-               {"Authorization": f"Bearer {os.environ['GROQ_API_KEY']}"}),
-          ]
-          with httpx.Client(timeout=20) as client:
-              for name, url, headers in checks:
-                  response = client.get(url, headers=headers)
-                  if response.status_code >= 400:
-                      raise SystemExit(f"{name} auth failed: HTTP {response.status_code}")
-                  print(f"{name}: OK")
-          PY

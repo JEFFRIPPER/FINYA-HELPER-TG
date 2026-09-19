@@ -8,10 +8,8 @@ jobs:
     runs-on: self-hosted
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     steps:
-      - name: Sync project and secrets
+      - name: Sync project and Telegram secret
         shell: powershell
         run: |
           $repo = "C:\Users\TNKC\FINYA-HELPER"
@@ -19,27 +17,16 @@ jobs:
           git fetch origin main
           git reset --hard origin/main
 
-          foreach ($name in @("TELEGRAM_BOT_TOKEN","OPENROUTER_API_KEY","GROQ_API_KEY")) {
-              if (-not (Get-Item "env:$name").Value) { throw "Missing secret: $name" }
-          }
+          if (-not $env:TELEGRAM_BOT_TOKEN) { throw "Missing secret: TELEGRAM_BOT_TOKEN" }
 
-          $lines = @(
-              "TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN",
-              "OPENROUTER_API_KEY=$env:OPENROUTER_API_KEY",
-              "GROQ_API_KEY=$env:GROQ_API_KEY",
-              "OPENROUTER_MODELS=nvidia/nemotron-3-ultra-550b-a55b-20260604:free,openrouter/free",
-              "GROQ_TEXT_MODEL=openai/gpt-oss-120b",
-              "GROQ_WHISPER_MODEL=whisper-large-v3-turbo",
-              "GROQ_WHISPER_LANGUAGE=ru"
-          )
           [IO.File]::WriteAllLines(
               (Join-Path $repo ".env"),
-              $lines,
+              @("TELEGRAM_BOT_TOKEN=$env:TELEGRAM_BOT_TOKEN"),
               [Text.UTF8Encoding]::new($false)
           )
 
           python -m pip install -r requirements.txt
-          python -m py_compile bot.py ai_service.py run_background.py watchdog.py
+          python -m py_compile bot.py run_background.py watchdog.py
 
       - name: Restart FINYA HELPER
         shell: powershell
