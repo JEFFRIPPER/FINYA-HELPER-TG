@@ -26,7 +26,7 @@ HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 STATE_PATH = RUNTIME_DIR / "state.json"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.1"
+BOT_VERSION = "2.2"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 SQUAD_CHANNEL_ID = os.environ.get("SQUAD_CHANNEL_ID", "").strip()
@@ -143,6 +143,7 @@ def default_state():
         "admin_chat_id": None,
         "channel_subscribers": {},
         "channel_broadcast_enabled": True,
+        "last_channel_post_id": None,
     }
 
 
@@ -159,6 +160,7 @@ def load_state():
     state.setdefault("feedback", [])
     state.setdefault("channel_subscribers", {})
     state.setdefault("channel_broadcast_enabled", True)
+    state.setdefault("last_channel_post_id", None)
     return state
 
 
@@ -184,12 +186,46 @@ def is_admin_user(user):
 async def track_user(user):
     if user is None:
         return
-    STATE["users"][str(user.id)] = {
+    user_id = str(user.id)
+    now = int(time.time())
+    previous = STATE["users"].get(user_id, {})
+    first_seen = previous.get("first_seen") or previous.get("last_seen") or now
+    STATE["users"][user_id] = {
+        **previous,
         "username": user.username,
         "first_name": user.first_name,
-        "last_seen": int(time.time()),
+        "first_seen": int(first_seen),
+        "last_seen": now,
+        "blocked": False,
     }
+    STATE["users"][user_id].pop("blocked_at", None)
     await save_state()
+
+
+def mark_user_unreachable(user_id):
+    user_id = str(user_id)
+    record = STATE["users"].setdefault(user_id, {})
+    record["blocked"] = True
+    record["blocked_at"] = int(time.time())
+    STATE.get("channel_subscribers", {}).pop(user_id, None)
+
+
+def user_stats_snapshot():
+    now = int(time.time())
+    result = {"new": 0, "active": 0, "inactive": 0, "blocked": 0}
+    for record in STATE.get("users", {}).values():
+        if record.get("blocked"):
+            result["blocked"] += 1
+            continue
+        last_seen = int(record.get("last_seen") or 0)
+        first_seen = int(record.get("first_seen") or last_seen or now)
+        if now - first_seen <= 86400:
+            result["new"] += 1
+        if last_seen and now - last_seen <= 7 * 86400:
+            result["active"] += 1
+        else:
+            result["inactive"] += 1
+    return result
 
 
 def fmt_uptime(seconds):
@@ -215,18 +251,21 @@ def heartbeat_age():
         return None
 
 
-def status_text():
+def status_text(user_id=None):
     age = heartbeat_age()
     hb = "нет данных" if age is None else f"{age} сек назад"
+    personal = ""
+    if user_id is not None:
+        personal = f"🔔 Рассылка ТГК: {'ВКЛ' if channel_is_subscribed(user_id) else 'ВЫКЛ'}\n"
     return (
         "<b>🟢 Статус FINYA HELPER</b>\n\n"
         "✅ Бот: работает\n"
-        f"🔔 Подписчиков рассылки ТГК: {sum(1 for v in STATE.get('channel_subscribers', {}).values() if v)}\n"
-        f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
-        f"💓 Heartbeat: {hb}\n"
-        f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
-        f"🐍 Python: <code>{platform.python_version()}</code>\n"
-        f"📦 Версия бота: <code>{BOT_VERSION}</code>"
+        + personal
+        + f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
+        + f"💓 Heartbeat: {hb}\n"
+        + f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
+        + f"🐍 Python: <code>{platform.python_version()}</code>\n"
+        + f"📦 Версия бота: <code>{BOT_VERSION}</code>"
     )
 
 
@@ -248,7 +287,6 @@ def home_keyboard():
             InlineKeyboardButton("🟢 Статус", callback_data="status"),
             InlineKeyboardButton("💬 Обратная связь", callback_data="feedback"),
         ],
-        [InlineKeyboardButton("Рассылка ТГК", callback_data="channel_notify", icon_custom_emoji_id="5408901642999335517")],
         [menu_button("👤 ЛС Владельца", url="https://t.me/THKC_SQUAD_CREATOR")],
     ])
 
@@ -259,6 +297,47 @@ def back_home_keyboard():
 
 def channel_is_subscribed(user_id):
     return bool(STATE.get("channel_subscribers", {}).get(str(user_id)))
+
+
+def status_keyboard(user_id):
+    subscribed = channel_is_subscribed(user_id)
+    toggle = InlineKeyboardButton(
+        "Выключить рассылку" if subscribed else "Включить рассылку",
+        callback_data="status:unsubscribe" if subscribed else "status:subscribe",
+        icon_custom_emoji_id="5409003906170651374" if subscribed else "5408901642999335517",
+    )
+    rows = [[toggle]]
+    if subscribed and STATE.get("last_channel_post_id"):
+        rows.append([InlineKeyboardButton("Последний пост", callback_data="channel:last", icon_custom_emoji_id="5411614357228390551")])
+    rows.append([menu_button("⬅️ Главное меню", callback_data="home")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def channel_news_view(context):
+    try:
+        chat = await context.bot.get_chat(f"@{SQUAD_CHANNEL_USERNAME}")
+        pinned = getattr(chat, "pinned_message", None)
+        if pinned:
+            body = (pinned.text or pinned.caption or "Закреплённый медиа-пост без текста.").strip()
+            if len(body) > 2800:
+                body = body[:2797] + "..."
+            return (
+                f"<b>📌 Закреплённый пост @THKC_SQUAD</b>\n\n{html.escape(body)}",
+                InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Открыть закреп", url=f"{SQUAD_CHANNEL_URL}/{pinned.message_id}", icon_custom_emoji_id="5411614357228390551")],
+                    [menu_button("⬅️ Главное меню", callback_data="home")],
+                ]),
+            )
+    except Exception as exc:
+        logging.getLogger(__name__).warning("Could not load pinned channel post: %s", exc)
+    news = html.escape(str(STATE.get("news") or "Пока новостей нет."))
+    return (
+        f"<b>📢 Новости / объявления</b>\n\n{news}",
+        InlineKeyboardMarkup([
+            [InlineKeyboardButton("Открыть канал", url=SQUAD_CHANNEL_URL, icon_custom_emoji_id="5411527152212411235")],
+            [menu_button("⬅️ Главное меню", callback_data="home")],
+        ]),
+    )
 
 
 def channel_subscription_text(user_id):
@@ -386,6 +465,7 @@ async def edit_or_send(query, text, keyboard=None):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    returning = str(update.effective_user.id) in STATE.get("users", {})
     await track_user(update.effective_user)
     if STATE.get("maintenance") and not is_admin_user(update.effective_user):
         await update.message.reply_text(
@@ -393,9 +473,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
         return
+    caption = (
+        "<b>С возвращением. FINYA HELPER на месте. Выбирай раздел:</b>"
+        if returning else HOME_TEXT
+    )
     await update.message.reply_photo(
         photo=PHOTO_PATH,
-        caption=HOME_TEXT,
+        caption=caption,
         parse_mode="HTML",
         reply_markup=home_keyboard(),
     )
@@ -430,14 +514,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "home":
         text, keyboard = HOME_TEXT, home_keyboard()
     elif query.data == "news":
-        news = html.escape(str(STATE.get("news") or "Пока новостей нет."))
-        text = f"<b>📢 Новости / объявления</b>\n\n{news}"
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💠 Открыть канал", url="https://t.me/THKC_SQUAD")],
-            [menu_button("⬅️ Главное меню", callback_data="home")],
-        ])
+        text, keyboard = await channel_news_view(context)
     elif query.data == "status":
-        text, keyboard = status_text(), back_home_keyboard()
+        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+    elif query.data == "status:subscribe":
+        STATE["channel_subscribers"][str(update.effective_user.id)] = True
+        await save_state()
+        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+    elif query.data == "status:unsubscribe":
+        STATE["channel_subscribers"].pop(str(update.effective_user.id), None)
+        await save_state()
+        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
     elif query.data == "channel_notify":
         text = channel_subscription_text(update.effective_user.id)
         keyboard = channel_subscription_keyboard(update.effective_user.id)
@@ -451,6 +538,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_state()
         text = "🔕 <b>Рассылка T.N.K.C SQUAD выключена.</b>"
         keyboard = channel_subscription_keyboard(update.effective_user.id)
+    elif query.data == "channel:last":
+        last_post_id = STATE.get("last_channel_post_id")
+        if not last_post_id:
+            await query.answer("Последний пост пока не сохранён.", show_alert=True)
+            return
+        try:
+            await context.bot.copy_message(
+                chat_id=update.effective_user.id,
+                from_chat_id=f"@{SQUAD_CHANNEL_USERNAME}",
+                message_id=int(last_post_id),
+            )
+        except Exception as exc:
+            logging.getLogger(__name__).warning("Could not send last channel post: %s", exc)
+            await query.answer("Не получилось получить последний пост.", show_alert=True)
+        return
     elif query.data == "feedback":
         context.user_data["awaiting_feedback"] = True
         text = (
@@ -480,15 +582,20 @@ async def handle_admin_callback(query, context, action):
     if not is_admin_user(query.from_user):
         return
     if action == "stats":
+        roles = user_stats_snapshot()
         text = (
             "<b>📊 Статистика</b>\n\n"
             f"👥 Пользователей: <b>{len(STATE['users'])}</b>\n"
+            f"🆕 Новые за 24ч: <b>{roles['new']}</b>\n"
+            f"⚡ Активные за 7д: <b>{roles['active']}</b>\n"
+            f"💤 Неактивные: <b>{roles['inactive']}</b>\n"
+            f"🚫 Недоступны / заблокировали: <b>{roles['blocked']}</b>\n"
             f"🔔 Подписчиков ТГК: <b>{sum(1 for v in STATE.get('channel_subscribers', {}).values() if v)}</b>\n"
             f"📬 Обращений: <b>{len(STATE['feedback'])}</b>\n"
             f"⏱ Аптайм: <b>{fmt_uptime(time.time() - BOT_STARTED_AT)}</b>"
         )
     elif action == "status":
-        text = status_text()
+        text = status_text(query.from_user.id)
     elif action == "feedback":
         items = STATE.get("feedback", [])[-5:]
         if not items:
@@ -554,6 +661,11 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.channel_post
     if message is None or not is_squad_channel(update.effective_chat):
         return
+
+    if STATE.get("last_channel_post_id") != message.message_id:
+        STATE["last_channel_post_id"] = message.message_id
+        await save_state()
+
     if not STATE.get("channel_broadcast_enabled", True):
         return
 
@@ -613,7 +725,7 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if stale:
         for user_id in stale:
-            STATE["channel_subscribers"].pop(str(user_id), None)
+            mark_user_unreachable(user_id)
         await save_state()
 
     logging.getLogger(__name__).info(
@@ -641,13 +753,25 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if action == "broadcast":
             ok = 0
             failed = 0
+            state_changed = False
             for user_id in list(STATE.get("users", {}).keys()):
                 try:
                     await context.bot.send_message(chat_id=int(user_id), text=bold_html(html.escape(text)), parse_mode="HTML")
                     ok += 1
+                except Forbidden:
+                    mark_user_unreachable(user_id)
+                    state_changed = True
+                    failed += 1
+                except BadRequest as exc:
+                    if "chat not found" in str(exc).lower() or "user is deactivated" in str(exc).lower():
+                        mark_user_unreachable(user_id)
+                        state_changed = True
+                    failed += 1
                 except Exception:
                     failed += 1
                 await asyncio.sleep(0.04)
+            if state_changed:
+                await save_state()
             await update.message.reply_text(
                 bold_html(f"✅ Рассылка завершена.\nДоставлено: {ok}\nОшибок: {failed}"),
                 parse_mode="HTML",
