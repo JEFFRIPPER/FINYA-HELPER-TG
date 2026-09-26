@@ -807,6 +807,19 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
 def main():
+    # Each launch needs its own loop: run_polling closes it on shutdown.
+    # Python 3.14 also requires an explicitly configured event loop.
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        _run_bot()
+    finally:
+        if not loop.is_closed():
+            loop.close()
+        asyncio.set_event_loop(None)
+
+
+def _run_bot():
     app = (
         Application.builder()
         .token(TOKEN)
