@@ -6,13 +6,16 @@ import os
 import platform
 import socket
 import time
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from channel_blacklist import ChannelBlacklist
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.error import BadRequest, Forbidden, RetryAfter
+from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
+    ChatMemberHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -23,13 +26,11 @@ ROOT = Path(__file__).resolve().parent
 PHOTO_PATH = str(ROOT / "info.jpg")
 RUNTIME_DIR = ROOT / "runtime"
 HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
-STATE_PATH = RUNTIME_DIR / "state.json"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.2"
+BOT_VERSION = "2.3"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
-SQUAD_CHANNEL_ID = os.environ.get("SQUAD_CHANNEL_ID", "").strip()
 
 
 def load_local_env(path):
@@ -53,6 +54,12 @@ def load_local_env(path):
 
 
 load_local_env(ROOT / ".env")
+STATE_DIR = Path(os.environ.get("FINYA_STATE_DIR") or
+                 os.environ.get("RAILWAY_VOLUME_MOUNT_PATH") or RUNTIME_DIR)
+STATE_PATH = STATE_DIR / "state.json"
+SQUAD_CHANNEL_ID = os.environ.get("SQUAD_CHANNEL_ID", "").strip()
+# Verified @THKC_SQUAD ID; usernames can change or be reassigned.
+BLACKLIST_CHANNEL_ID = int(os.environ.get("BLACKLIST_CHANNEL_ID", "-1001192817776"))
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 if not TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN is not configured")
@@ -144,11 +151,13 @@ def default_state():
         "channel_subscribers": {},
         "channel_broadcast_enabled": True,
         "last_channel_post_id": None,
+        "channel_blacklist": {},
     }
 
 
 def load_state():
     RUNTIME_DIR.mkdir(exist_ok=True)
+    STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     state = default_state()
     try:
         loaded = json.loads(STATE_PATH.read_text(encoding="utf-8"))
@@ -173,6 +182,13 @@ async def save_state():
         tmp = STATE_PATH.with_suffix(".tmp")
         tmp.write_text(json.dumps(STATE, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, STATE_PATH)
+
+
+def is_blacklist_channel(chat):
+    return chat is not None and chat.type == "channel" and chat.id == BLACKLIST_CHANNEL_ID
+
+
+CHANNEL_BLACKLIST = ChannelBlacklist(STATE, save_state, is_blacklist_channel, OWNER_USER_ID)
 
 
 def bold_html(text):
@@ -411,6 +427,7 @@ ADMIN_BUTTON_ICONS = {
     "maintenance": "5438513664388803768",
     "logs": "5870450390679425417",
     "restart": "5870892901159932239",
+    "blacklist": "5438513664388803768",
 }
 
 
@@ -429,9 +446,74 @@ def admin_keyboard():
         [admin_button("Фидбек", "feedback"), admin_button("Новость", "news")],
         [admin_button("Рассылка", "broadcast")],
         [admin_button(channel_mode, "channel")],
+        [admin_button("Чёрный список", "blacklist")],
         [admin_button(maintenance, "maintenance")],
         [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
     ])
+
+
+async def show_blacklist(query, context, page=0):
+    # The list contains personal information and belongs in the owner's private chat.
+    if not is_admin_user(query.from_user) or query.message.chat.type != "private":
+        return
+    context.user_data.pop("admin_action", None)
+    records = [r for r in STATE.get("channel_blacklist", {}).values()
+               if r["chat_id"] == BLACKLIST_CHANNEL_ID]
+    records.sort(key=lambda r: (r["left_at"], r["user_id"]), reverse=True)
+    page_size = 5
+    pages = max(1, (len(records) + page_size - 1) // page_size)
+    page = max(0, min(page, pages - 1))
+    banned = sum(r["status"] == "banned" for r in records)
+    channel_label = "@THKC_SQUAD" if BLACKLIST_CHANNEL_ID == -1001192817776 else str(BLACKLIST_CHANNEL_ID)
+    text = (f"Чёрный список канала {channel_label}\n\n"
+            f"Записей: {len(records)} · Бан подтверждён: {banned}\n"
+            f"Ожидают / ошибка: {len(records) - banned}\n")
+    try:
+        member = await context.bot.get_chat_member(BLACKLIST_CHANNEL_ID, context.bot.id)
+        ready = member.status == "administrator" and member.can_restrict_members
+        text += ("Автобан: включён\n" if ready else
+                 "Автобан: нужны права администратора на блокировку участников\n")
+    except TelegramError:
+        text += "Автобан: не удалось проверить права в Telegram\n"
+    text += "\nПричина: самостоятельный выход из канала.\n"
+    if not records:
+        text += "\nПока список пуст. Здесь появятся новые выходы после включения функции."
+    statuses = {"banned": "Заблокирован", "pending": "Ожидает блокировки",
+                "failed": "Бан не выполнен"}
+    for index, record in enumerate(records[page * page_size:(page + 1) * page_size], page * page_size + 1):
+        name = html.escape(str(record.get("full_name") or record["user_id"])[:100])
+        username = record.get("username")
+        label = f" @{html.escape(str(username)[:40])}" if username else ""
+        date = datetime.fromtimestamp(record["left_at"], timezone(timedelta(hours=3)))
+        text += (f"\n{index}. {name}{label}\nID: {record['user_id']}\n"
+                 f"Выход: {date:%d.%m.%Y %H:%M} МСК\n"
+                 f"Статус: {statuses.get(record['status'], 'Неизвестен')}\n")
+        if record.get("last_error"):
+            text += f"Причина ошибки: {html.escape(str(record['last_error'])[:100])}\n"
+    text += f"\nСтраница {page + 1} из {pages}"
+    navigation = []
+    if page > 0:
+        navigation.append(InlineKeyboardButton("Назад", callback_data=f"admin:blacklist:{page - 1}"))
+    if page + 1 < pages:
+        navigation.append(InlineKeyboardButton("Далее", callback_data=f"admin:blacklist:{page + 1}"))
+    rows = [navigation] if navigation else []
+    rows.append([InlineKeyboardButton("Обновить", callback_data=f"admin:blacklist:{page}")])
+    rows.append([menu_button("⬅️ Админ-панель", callback_data="admin:menu")])
+    try:
+        await query.edit_message_text(text=bold_html(text), parse_mode="HTML",
+                                      reply_markup=InlineKeyboardMarkup(rows))
+    except BadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            raise
+
+
+async def blacklist_retry_loop(application):
+    while True:
+        try:
+            await CHANNEL_BLACKLIST.retry_pending(application.bot)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not retry pending channel bans")
+        await asyncio.sleep(30)
 
 
 async def heartbeat_loop(application: Application):
@@ -449,7 +531,19 @@ async def heartbeat_loop(application: Application):
 
 
 async def post_init(application: Application):
-    asyncio.create_task(heartbeat_loop(application), name="heartbeat")
+    logging.getLogger(__name__).info("Channel blacklist enabled for %s; state: %s",
+                                     BLACKLIST_CHANNEL_ID, STATE_PATH)
+    application.bot_data["background_tasks"] = [
+        asyncio.create_task(heartbeat_loop(application), name="heartbeat"),
+        asyncio.create_task(blacklist_retry_loop(application), name="blacklist-retry"),
+    ]
+
+
+async def post_stop(application: Application):
+    tasks = application.bot_data.pop("background_tasks", [])
+    for task in tasks:
+        task.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
@@ -581,7 +675,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_callback(query, context, action):
     if not is_admin_user(query.from_user):
         return
-    if action == "stats":
+    if action == "blacklist" or action.startswith("blacklist:"):
+        try:
+            page = int(action.split(":", 1)[1]) if ":" in action else 0
+        except ValueError:
+            return
+        await show_blacklist(query, context, page)
+        return
+    if action == "menu":
+        text = "Админ-панель FINYA HELPER\n\nУправление ботом:"
+    elif action == "stats":
         roles = user_stats_snapshot()
         text = (
             "<b>📊 Статистика</b>\n\n"
@@ -829,12 +932,15 @@ def _run_bot():
         .get_updates_connect_timeout(20)
         .get_updates_read_timeout(40)
         .post_init(post_init)
+        .post_stop(post_stop)
+        .post_shutdown(post_stop)
         .build()
     )
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(button))
+    app.add_handler(ChatMemberHandler(CHANNEL_BLACKLIST.handle_update, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
     app.add_error_handler(error_handler)
@@ -845,6 +951,7 @@ def _run_bot():
         poll_interval=0.5,
         timeout=30,
         drop_pending_updates=False,
+        allowed_updates=["message", "callback_query", "channel_post", "chat_member"],
     )
 
 
