@@ -133,11 +133,6 @@ PARTNERS = {
         "tiktok": "https://www.tiktok.com/@wryysn356?_t=8lG9pEcs8Jc&_r=1",
         "telegram": "https://t.me/wryysnscoffin",
     },
-    "red_may": {
-        "name": "Красный Май",
-        "tiktok": "https://www.tiktok.com/@remchik_13?_r=1&_t=ZS-98riJx5qMRV",
-        "telegram": "https://t.me/urbanriot",
-    },
 }
 
 
@@ -385,7 +380,7 @@ def info_keyboard():
         [InlineKeyboardButton("Сквад", callback_data="squad",
                               icon_custom_emoji_id=SQUAD_ICON_ID)],
         *[[menu_button(f"🤝 {PARTNERS[key]['name']}", callback_data=f"partner:{key}")]
-          for key in ("red_may", "asahi", "wryushin")],
+          for key in ("asahi", "wryushin")],
         [menu_button("⬅️ Главное меню", callback_data="home")],
     ])
 
@@ -658,9 +653,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data and query.data.startswith("partner:"):
         partner = PARTNERS.get(query.data.split(":", 1)[1])
         if partner is None:
-            return
-        text = f"<b>🤝 {partner['name']}\n\nПартнёр Сквада\nВыбери соцсеть:</b>"
-        keyboard = partner_keyboard(partner)
+            text, keyboard = INFO_TEXT, info_keyboard()
+        else:
+            text = f"<b>🤝 {partner['name']}\n\nПартнёр Сквада\nВыбери соцсеть:</b>"
+            keyboard = partner_keyboard(partner)
     elif query.data and query.data.startswith("admin:"):
         if not is_admin_user(update.effective_user):
             return
