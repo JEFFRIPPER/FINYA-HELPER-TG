@@ -9,6 +9,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from activity_xp import ActivityXP, DAILY_XP_LIMIT, RANKS, rank_for
 from channel_blacklist import ChannelBlacklist
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
@@ -19,6 +20,7 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     MessageHandler,
+    MessageReactionHandler,
     filters,
 )
 
@@ -28,7 +30,7 @@ RUNTIME_DIR = ROOT / "runtime"
 HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.3"
+BOT_VERSION = "2.4"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 
@@ -147,6 +149,7 @@ def default_state():
         "channel_broadcast_enabled": True,
         "last_channel_post_id": None,
         "channel_blacklist": {},
+        "xp_discussion_chat_id": None,
     }
 
 
@@ -298,6 +301,8 @@ def home_keyboard():
             InlineKeyboardButton("🟢 Статус", callback_data="status"),
             InlineKeyboardButton("💬 Обратная связь", callback_data="feedback"),
         ],
+        [InlineKeyboardButton("Мой ранг", callback_data="xp:profile"),
+         InlineKeyboardButton("Топ участников", callback_data="xp:top")],
         [menu_button("👤 ЛС Владельца", url="https://t.me/THKC_SQUAD_CREATOR")],
     ])
 
@@ -413,6 +418,7 @@ def squad_keyboard():
 
 # Icons from HowDidYouDoThis, materialexpressive and UnigramIcons.
 ADMIN_BUTTON_ICONS = {
+    "xp": "5870930636742595124",
     "stats": "5870930636742595124",
     "status": "5346022209389372742",
     "feedback": "5870755659774955152",
@@ -442,6 +448,7 @@ def admin_keyboard():
         [admin_button("Рассылка", "broadcast")],
         [admin_button(channel_mode, "channel")],
         [admin_button("Чёрный список", "blacklist")],
+        [admin_button("Активность / XP", "xp")],
         [admin_button(maintenance, "maintenance")],
         [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
     ])
@@ -528,10 +535,18 @@ async def heartbeat_loop(application: Application):
 async def post_init(application: Application):
     logging.getLogger(__name__).info("Channel blacklist enabled for %s; state: %s",
                                      BLACKLIST_CHANNEL_ID, STATE_PATH)
+    application.bot_data["activity_xp"] = ActivityXP(STATE_DIR / "xp.sqlite3")
+    try:
+        await resolve_xp_chat(application.bot, application.bot_data)
+    except TelegramError:
+        logging.getLogger(__name__).warning("XP discussion group not available at startup")
     application.bot_data["background_tasks"] = [
         asyncio.create_task(heartbeat_loop(application), name="heartbeat"),
         asyncio.create_task(blacklist_retry_loop(application), name="blacklist-retry"),
     ]
+    application.bot_data["background_tasks"].append(
+        asyncio.create_task(xp_discovery_loop(application), name="xp-discussion")
+    )
 
 
 async def post_stop(application: Application):
@@ -539,18 +554,215 @@ async def post_stop(application: Application):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    activity = application.bot_data.pop("activity_xp", None)
+    if activity is not None:
+        activity.close()
 
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.getLogger(__name__).exception("Unhandled bot error", exc_info=context.error)
 
 
+def xp_keyboard():
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("Мой ранг", callback_data="xp:profile")],
+        [InlineKeyboardButton("За всё время", callback_data="xp:top"),
+         InlineKeyboardButton("За неделю", callback_data="xp:week")],
+        [InlineKeyboardButton("Звания и правила XP", callback_data="xp:rules")],
+        [menu_button("⬅️ Главное меню", callback_data="home")],
+    ])
+
+
+def xp_profile_text(user, context):
+    profile = context.bot_data["activity_xp"].profile(user)
+    current, following = rank_for(profile["xp"], founder=user.id == OWNER_USER_ID)
+    progress = (
+        f"До {following[2]}: {following[0] - profile['xp']} XP"
+        if following else "Высшее звание достигнуто."
+    )
+    return (
+        f"Мой ранг · T.N.K.C SQUAD\n\n{html.escape(user.full_name[:100])}\n"
+        f"{current[1]} · {current[2]}\n\n"
+        f"Всего: {profile['xp']} XP\nЗа неделю: {profile['week']} XP\n"
+        f"Сегодня: {profile['today']} / {DAILY_XP_LIMIT} XP\n\n{progress}\n\n"
+        "Комментарий: +5 XP · Реакция: +1 XP\n"
+        "Учитываются обсуждения постов Сквада."
+    )
+
+
+def xp_top_text(context, *, weekly=False):
+    rows = context.bot_data["activity_xp"].leaderboard(weekly=weekly)
+    text = "Топ Сквада · " + ("текущая неделя (МСК)" if weekly else "за всё время")
+    if not rows:
+        return text + "\n\nПока никто не заработал XP. Начни с комментария под постом."
+    for number, row in enumerate(rows, 1):
+        current, _ = rank_for(row["xp"], founder=row["user_id"] == OWNER_USER_ID)
+        text += f"\n\n{number}. {html.escape(row['name'][:35])} — {row['score']} XP\n{current[1]} · {current[2]}"
+    return text
+
+
+def xp_rules_text():
+    ranks = "\n".join(f"{roman} · {name} — от {points} XP" for points, roman, name in RANKS)
+    return (
+        "Звания Сквада\n\n" + ranks + "\nX · Основатель SQUAD — только владелец\n\n"
+        "+5 XP за комментарий под постом: минимум 5 букв/цифр, не чаще раза в минуту.\n"
+        "+1 XP за личную реакцию в обсуждениях: один раз на сообщение, до 20 в день.\n"
+        "Смена эмодзи, снятие и повторная установка не дают новых XP. Снятие реакции не вычитает XP.\n"
+        "Реакции на свои комментарии, пересланные сообщения, команды, стикеры и сообщения от имени канала не учитываются.\n"
+        "Общий лимит: 100 XP в день, по Москве. Неделя начинается в понедельник.\n"
+        "Анонимные реакции самого канала не учитываются. Учёт начинается после подключения Фини; прошлый актив не восстанавливается.\n"
+        "Звание видно в Фине и не выдаёт права администратора."
+    )
+
+
+def xp_source_channel_id():
+    return int(SQUAD_CHANNEL_ID or -1001192817776)
+
+
+def xp_explicit_chat_id():
+    raw = os.environ.get("XP_DISCUSSION_CHAT_ID", "").strip()
+    value = int(raw) if raw else STATE.get("xp_discussion_chat_id")
+    if value is not None and (not isinstance(value, int) or value >= 0):
+        raise ValueError("XP_DISCUSSION_CHAT_ID must be a negative Telegram group ID")
+    return value
+
+
+async def resolve_xp_chat(bot, bot_data):
+    explicit = xp_explicit_chat_id()
+    if explicit:
+        bot_data["xp_chat_id"] = explicit
+        return explicit
+    chat = await bot.get_chat(xp_source_channel_id())
+    linked = getattr(chat, "linked_chat_id", None)
+    bot_data["xp_chat_id"] = linked
+    return linked
+
+
+async def xp_discovery_loop(application):
+    while True:
+        await asyncio.sleep(300)
+        try:
+            await resolve_xp_chat(application.bot, application.bot_data)
+        except Exception:
+            logging.getLogger(__name__).exception("Could not discover XP discussion group")
+
+
+async def xp_setup_text(context):
+    try:
+        chat_id = await resolve_xp_chat(context.bot, context.bot_data)
+        if not chat_id:
+            status = "Группа обсуждений не найдена. Привяжи её к каналу или отправь /xpchat в нужной группе."
+        else:
+            member = await context.bot.get_chat_member(chat_id, context.bot.id)
+            ready = member.status in {"administrator", "creator"}
+            status = (f"Группа: {chat_id}\nУчёт подключён." if ready else
+                      f"Группа: {chat_id}\nДля учёта назначь Финю администратором этой группы.")
+    except TelegramError:
+        status = "Не удалось проверить группу. Добавь Финю администратором обсуждений и отправь там /xpchat от своего аккаунта."
+    return (
+        "Активность / XP\n\n" + status + "\n\n"
+        "Комментарий: +5 XP, пауза 60 секунд, минимум 5 букв/цифр.\n"
+        "Реакция: +1 XP, максимум 20 в день, один раз на сообщение.\n"
+        "Общий лимит: 100 XP в день.\n\n"
+        "Настройка: /xpchat в группе — подключить; /xpchat auto — вернуться к группе канала.\n"
+        "XP сохраняется рядом с состоянием бота. На Railway нужен постоянный Volume."
+    )
+
+
+async def xp_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user):
+        return
+    message = update.message
+    if os.environ.get("XP_DISCUSSION_CHAT_ID", "").strip():
+        await message.reply_text("Группа XP задана переменной XP_DISCUSSION_CHAT_ID. Измени её в настройках сервера.")
+        return
+    if context.args == ["auto"]:
+        STATE["xp_discussion_chat_id"] = None
+        context.bot_data.pop("xp_chat_id", None)
+        await save_state()
+        await message.reply_text("Включено автоматическое определение обсуждений канала. Проверка: /admin → Активность / XP.")
+        return
+    if context.args or update.effective_chat.type not in {"group", "supergroup"}:
+        await message.reply_text("Отправь /xpchat в группе обсуждений, где Финя назначена администратором.")
+        return
+    member = await context.bot.get_chat_member(update.effective_chat.id, context.bot.id)
+    if member.status not in {"administrator", "creator"}:
+        await message.reply_text("Сначала назначь Финю администратором этой группы, затем повтори /xpchat.")
+        return
+    STATE["xp_discussion_chat_id"] = update.effective_chat.id
+    await save_state()
+    context.bot_data["xp_chat_id"] = update.effective_chat.id
+    await message.reply_text("Учёт XP подключён. +5 за комментарий, +1 за реакцию в обсуждениях постов @THKC_SQUAD. Профиль: /rank, рейтинг: /top.")
+
+
+async def rank_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type == "private":
+        await track_user(update.effective_user)
+    await update.message.reply_text(bold_html(xp_profile_text(update.effective_user, context)),
+                                    parse_mode="HTML", reply_markup=xp_keyboard())
+
+
+async def top_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_chat.type == "private":
+        await track_user(update.effective_user)
+    weekly = bool(context.args and context.args[0].lower() in {"week", "неделя"})
+    await update.message.reply_text(bold_html(xp_top_text(context, weekly=weekly)),
+                                    parse_mode="HTML", reply_markup=xp_keyboard())
+
+
+async def notify_xp_promotion(user, award, context):
+    if not award or not award.promoted or user.id == OWNER_USER_ID:
+        return
+    # Do not try to initiate private chats with discussion-only participants.
+    known = STATE.get("users", {}).get(str(user.id))
+    if not known or known.get("blocked"):
+        return
+    try:
+        await context.bot.send_message(
+            chat_id=user.id,
+            text=bold_html(f"Новое звание Сквада!\n\n{award.new_rank[1]} · {award.new_rank[2]}\nВсего: {award.total} XP"),
+            parse_mode="HTML", reply_markup=xp_keyboard(),
+        )
+    except TelegramError:
+        logging.getLogger(__name__).info("Could not deliver rank promotion to %s", user.id)
+
+
+async def activity_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message = update.message
+    if message is None or message.chat.type not in {"group", "supergroup"}:
+        return
+    chat_id = xp_explicit_chat_id() or context.bot_data.get("xp_chat_id")
+    if not chat_id or message.chat.id != chat_id or STATE.get("maintenance"):
+        return
+    award = context.bot_data["activity_xp"].comment(message, xp_source_channel_id())
+    if award:
+        await notify_xp_promotion(message.from_user, award, context)
+
+
+async def activity_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    event = update.message_reaction
+    if event is None or event.chat.type not in {"group", "supergroup"}:
+        return
+    chat_id = xp_explicit_chat_id() or context.bot_data.get("xp_chat_id")
+    if not chat_id or event.chat.id != chat_id or STATE.get("maintenance"):
+        return
+    award = context.bot_data["activity_xp"].reaction(event)
+    if award:
+        await notify_xp_promotion(event.user, award, context)
+
+
 async def edit_or_send(query, text, keyboard=None):
     text = bold_html(text)
-    if query.message.photo:
-        await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
-    else:
-        await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
+    try:
+        if query.message.photo and len(text) <= 1024:
+            await query.edit_message_caption(caption=text, parse_mode="HTML", reply_markup=keyboard)
+        elif query.message.photo:
+            await query.message.reply_text(text, parse_mode="HTML", reply_markup=keyboard)
+        else:
+            await query.edit_message_text(text=text, parse_mode="HTML", reply_markup=keyboard)
+    except BadRequest as exc:
+        if "message is not modified" not in str(exc).lower():
+            raise
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -590,11 +802,16 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await track_user(update.effective_user)
+    if update.effective_chat.type == "private":
+        await track_user(update.effective_user)
 
     if STATE.get("maintenance") and not is_admin_user(update.effective_user) and query.data != "home":
         await edit_or_send(query, "🛠 <b>Бот временно на техработах.</b>", back_home_keyboard())
         return
+
+    if query.data and query.data.startswith("xp:"):
+        context.user_data.pop("awaiting_feedback", None)
+        context.user_data.pop("admin_action", None)
 
     if query.data == "info":
         text, keyboard = INFO_TEXT, info_keyboard()
@@ -606,6 +823,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text, keyboard = await channel_news_view(context)
     elif query.data == "status":
         text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+    elif query.data == "xp:profile":
+        text, keyboard = xp_profile_text(update.effective_user, context), xp_keyboard()
+    elif query.data in {"xp:top", "xp:week"}:
+        weekly = query.data == "xp:week"
+        text, keyboard = xp_top_text(context, weekly=weekly), xp_keyboard()
+    elif query.data == "xp:rules":
+        text, keyboard = xp_rules_text(), xp_keyboard()
     elif query.data == "status:subscribe":
         STATE["channel_subscribers"][str(update.effective_user.id)] = True
         await save_state()
@@ -670,6 +894,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_admin_callback(query, context, action):
     if not is_admin_user(query.from_user):
+        return
+    if action == "xp":
+        if query.message.chat.type != "private":
+            return
+        context.user_data.pop("admin_action", None)
+        text = await xp_setup_text(context)
+        await edit_or_send(query, text, InlineKeyboardMarkup([
+            [InlineKeyboardButton("Обновить", callback_data="admin:xp")],
+            [menu_button("⬅️ Админ-панель", callback_data="admin:menu")],
+        ]))
         return
     if action == "blacklist" or action.startswith("blacklist:"):
         try:
@@ -933,12 +1167,22 @@ def _run_bot():
         .build()
     )
 
+    # A separate handler group observes discussion messages without stealing
+    # commands or private conversations from the existing bot handlers.
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.UpdateType.MESSAGE,
+                                   activity_message), group=-1)
+    app.add_handler(MessageReactionHandler(
+        activity_reaction, message_reaction_types=MessageReactionHandler.MESSAGE_REACTION_UPDATED,
+    ), group=-1)
+    app.add_handler(CommandHandler("rank", rank_command))
+    app.add_handler(CommandHandler("top", top_command))
+    app.add_handler(CommandHandler("xpchat", xp_chat_command))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(ChatMemberHandler(CHANNEL_BLACKLIST.handle_update, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message))
+    app.add_handler(MessageHandler(filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, text_message))
     app.add_error_handler(error_handler)
 
     print("FINYA HELPER запущен.")
@@ -947,7 +1191,7 @@ def _run_bot():
         poll_interval=0.5,
         timeout=30,
         drop_pending_updates=False,
-        allowed_updates=["message", "callback_query", "channel_post", "chat_member"],
+        allowed_updates=["message", "callback_query", "channel_post", "chat_member", "message_reaction"],
     )
 
 
