@@ -128,8 +128,8 @@ class XPIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_promotion_only_goes_to_known_private_users(self):
         user = User(10, "Alice", False)
-        for i in range(10):
-            award = self.xp.award(user, GROUP, i, "comment", NOW - 600 + i * 60)
+        for i in range(20):
+            award = self.xp.award(user, GROUP, i, "comment", NOW - 1200 + i * 60)
         self.assertTrue(award.promoted)
         await self.bot.notify_xp_promotion(user, award, self.context)
         self.context.bot.send_message.assert_not_awaited()
