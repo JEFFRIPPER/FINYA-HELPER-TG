@@ -144,6 +144,9 @@ class ActivityXP:
             root_id = message_id
         else:
             root_id = None
+            known = self.message_record(chat_id, message_id)
+            if known:
+                root_id = known["root_id"]
             reply = getattr(message, "reply_to_message", None)
             if reply:
                 if self.is_channel_root(reply, channel_id):

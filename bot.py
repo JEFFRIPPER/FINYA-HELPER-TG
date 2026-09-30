@@ -11,6 +11,7 @@ from pathlib import Path
 
 from activity_xp import ActivityXP, DAILY_XP_LIMIT, RANKS, rank_for
 from channel_blacklist import ChannelBlacklist
+from channel_relay import ChannelRelay
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (
@@ -30,7 +31,7 @@ RUNTIME_DIR = ROOT / "runtime"
 HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.4.1"
+BOT_VERSION = "2.5"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 
@@ -418,6 +419,7 @@ def squad_keyboard():
 
 # Icons from HowDidYouDoThis, materialexpressive and UnigramIcons.
 ADMIN_BUTTON_ICONS = {
+    "posts": "5411335287433364660",
     "xp": "5870930636742595124",
     "stats": "5870930636742595124",
     "status": "5346022209389372742",
@@ -449,6 +451,7 @@ def admin_keyboard():
         [admin_button(channel_mode, "channel")],
         [admin_button("Чёрный список", "blacklist")],
         [admin_button("Активность / XP", "xp")],
+        [admin_button("Посты в чаты", "posts")],
         [admin_button(maintenance, "maintenance")],
         [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
     ])
@@ -536,6 +539,7 @@ async def post_init(application: Application):
     logging.getLogger(__name__).info("Channel blacklist enabled for %s; state: %s",
                                      BLACKLIST_CHANNEL_ID, STATE_PATH)
     application.bot_data["activity_xp"] = ActivityXP(STATE_DIR / "xp.sqlite3")
+    application.bot_data["channel_relay"] = ChannelRelay(application.bot_data["activity_xp"])
     try:
         await resolve_xp_chat(application.bot, application.bot_data)
     except TelegramError:
@@ -547,6 +551,9 @@ async def post_init(application: Application):
     application.bot_data["background_tasks"].append(
         asyncio.create_task(xp_discovery_loop(application), name="xp-discussion")
     )
+    application.bot_data["background_tasks"].append(
+        asyncio.create_task(channel_relay_loop(application), name="channel-relay")
+    )
 
 
 async def post_stop(application: Application):
@@ -554,6 +561,7 @@ async def post_stop(application: Application):
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
+    application.bot_data.pop("channel_relay", None)
     activity = application.bot_data.pop("activity_xp", None)
     if activity is not None:
         activity.close()
@@ -561,6 +569,106 @@ async def post_stop(application: Application):
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logging.getLogger(__name__).exception("Unhandled bot error", exc_info=context.error)
+
+
+async def channel_relay_loop(application: Application):
+    while True:
+        await asyncio.sleep(1)
+        if STATE.get("maintenance"):
+            continue
+        try:
+            await application.bot_data["channel_relay"].deliver_next(application.bot)
+        except Exception:
+            logging.getLogger(__name__).exception("Channel-to-group delivery failed")
+
+
+def relay_status_text(context):
+    targets = context.bot_data["channel_relay"].status()
+    text = (
+        "Посты T.N.K.C SQUAD в чаты\n\n"
+        "Включить: /posts_on в нужном чате от владельца.\n"
+        "Отключить: /posts_off в том же чате.\n"
+        "Личная рассылка и отправка в чаты управляются отдельно.\n"
+    )
+    if not targets:
+        return text + "\nЧаты пока не подключены. Назначь Финю администратором Family и отправь там /posts_on."
+    for target in targets[:3]:
+        title = html.escape(target["title"][:30])
+        mode = "ВКЛ" if target["enabled"] else "ВЫКЛ"
+        text += (f"\n{title} · {mode}\nID: {target['chat_id']}\n"
+                 f"Ожидают: {target['pending']} · Неизвестный результат: {target['uncertain']}\n")
+        if target["uncertain_ids"]:
+            text += "ID постов с неизвестным результатом: " + ", ".join(map(str, target["uncertain_ids"])) + "\n"
+        if target["error"]:
+            text += f"Последняя ошибка: {html.escape(target['error'][:120])}\n"
+    if len(targets) > 3:
+        text += f"\nПоказаны 3 из {len(targets)} подключённых чатов.\n"
+    return text + (
+        "\nПосле неоднозначного обрыва проверь, не появился ли пост в чате. "
+        "Если его нет — /posts_retry ID_поста повторит выбранную отправку.\n"
+        "Реакции и ответы на доставленные посты учитываются в XP."
+    )
+
+
+def relay_command_allowed(update, context):
+    return (is_admin_user(update.effective_user)
+            and update.effective_chat.type in {"group", "supergroup"}
+            and not context.args)
+
+
+async def posts_on_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user):
+        return
+    if not relay_command_allowed(update, context):
+        await update.message.reply_text("Отправь /posts_on в том чате, куда нужно присылать посты @THKC_SQUAD.")
+        return
+    chat = update.effective_chat
+    try:
+        member = await context.bot.get_chat_member(chat.id, context.bot.id)
+        if member.status not in {"administrator", "creator"}:
+            await update.message.reply_text("Назначь Финю администратором этого чата: это нужно для постов и учёта реакций. Затем повтори /posts_on.")
+            return
+        source = await context.bot.get_chat(xp_source_channel_id())
+        member = await context.bot.get_chat_member(source.id, context.bot.id)
+        if member.status not in {"administrator", "creator"}:
+            await update.message.reply_text("Для получения новых постов Финя должна быть администратором канала @THKC_SQUAD.")
+            return
+        if getattr(source, "linked_chat_id", None) == chat.id:
+            await update.message.reply_text("Этот чат уже привязан к каналу как обсуждения. Telegram присылает посты сам; вторую копию Финя добавлять не будет.")
+            return
+    except TelegramError:
+        await update.message.reply_text("Не удалось проверить права. Проверь доступ Фини к каналу и этому чату, затем повтори /posts_on.")
+        return
+    new = context.bot_data["channel_relay"].enable(chat.id, chat.title)
+    await update.message.reply_text(
+        "Готово: новые посты @THKC_SQUAD будут приходить сюда. Реакции: +1 XP, ответы на посты: +5 XP. Отключить: /posts_off."
+        if new else "Посты @THKC_SQUAD уже включены для этого чата. Повтор команды не создаёт дублей."
+    )
+
+
+async def posts_off_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user):
+        return
+    if not relay_command_allowed(update, context):
+        await update.message.reply_text("Отправь /posts_off в чате, где нужно отключить посты.")
+        return
+    context.bot_data["channel_relay"].disable(update.effective_chat.id)
+    await update.message.reply_text("Отправка постов в этот чат отключена, ожидающие отправки отменены. Накопленный XP сохраняется.")
+
+
+async def posts_retry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin_user(update.effective_user):
+        return
+    if (update.effective_chat.type not in {"group", "supergroup"} or len(context.args) != 1
+            or not context.args[0].isdigit() or int(context.args[0]) <= 0):
+        await update.message.reply_text("Проверь, что пост не появился в чате, затем отправь /posts_retry ID_поста. ID виден в /admin → Посты в чаты.")
+        return
+    relay = context.bot_data["channel_relay"]
+    if not relay.enabled(update.effective_chat.id):
+        await update.message.reply_text("Сначала включи отправку в этот чат командой /posts_on.")
+        return
+    count = relay.retry_uncertain(update.effective_chat.id, int(context.args[0]))
+    await update.message.reply_text(f"Поставлено на повтор: {count}. Подтверждённо доставленные посты повторно не отправляются.")
 
 
 def xp_keyboard():
@@ -732,7 +840,9 @@ async def activity_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message is None or message.chat.type not in {"group", "supergroup"}:
         return
     chat_id = xp_explicit_chat_id() or context.bot_data.get("xp_chat_id")
-    if not chat_id or message.chat.id != chat_id or STATE.get("maintenance"):
+    relay = context.bot_data.get("channel_relay")
+    family_chat = relay is not None and relay.has_target(message.chat.id)
+    if (message.chat.id != chat_id and not family_chat) or STATE.get("maintenance"):
         return
     award = context.bot_data["activity_xp"].comment(message, xp_source_channel_id())
     if award:
@@ -744,7 +854,9 @@ async def activity_reaction(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if event is None or event.chat.type not in {"group", "supergroup"}:
         return
     chat_id = xp_explicit_chat_id() or context.bot_data.get("xp_chat_id")
-    if not chat_id or event.chat.id != chat_id or STATE.get("maintenance"):
+    relay = context.bot_data.get("channel_relay")
+    family_chat = relay is not None and relay.has_target(event.chat.id)
+    if (event.chat.id != chat_id and not family_chat) or STATE.get("maintenance"):
         return
     award = context.bot_data["activity_xp"].reaction(event)
     if award:
@@ -895,6 +1007,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_callback(query, context, action):
     if not is_admin_user(query.from_user):
         return
+    if action == "posts":
+        if query.message.chat.type != "private":
+            return
+        context.user_data.pop("admin_action", None)
+        await edit_or_send(query, relay_status_text(context), InlineKeyboardMarkup([
+            [InlineKeyboardButton("Обновить", callback_data="admin:posts")],
+            [menu_button("⬅️ Админ-панель", callback_data="admin:menu")],
+        ]))
+        return
     if action == "xp":
         if query.message.chat.type != "private":
             return
@@ -995,6 +1116,13 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if message is None or not is_squad_channel(update.effective_chat):
         return
 
+    # Group delivery is independent of personal subscribers and their toggle.
+    username = (update.effective_chat.username or SQUAD_CHANNEL_USERNAME).lstrip("@")
+    post_url = f"https://t.me/{username}/{message.message_id}"
+    relay = context.bot_data.get("channel_relay")
+    if relay is not None:
+        relay.enqueue(message, post_url)
+
     if STATE.get("last_channel_post_id") != message.message_id:
         STATE["last_channel_post_id"] = message.message_id
         await save_state()
@@ -1010,8 +1138,6 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not subscribers:
         return
 
-    username = (update.effective_chat.username or SQUAD_CHANNEL_USERNAME).lstrip("@")
-    post_url = f"https://t.me/{username}/{message.message_id}"
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("Открыть пост в канале", url=post_url, icon_custom_emoji_id="5411527152212411235")]
     ])
@@ -1177,6 +1303,9 @@ def _run_bot():
     app.add_handler(CommandHandler("rank", rank_command))
     app.add_handler(CommandHandler("top", top_command))
     app.add_handler(CommandHandler("xpchat", xp_chat_command))
+    app.add_handler(CommandHandler("posts_on", posts_on_command))
+    app.add_handler(CommandHandler("posts_off", posts_off_command))
+    app.add_handler(CommandHandler("posts_retry", posts_retry_command))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CallbackQueryHandler(button))
