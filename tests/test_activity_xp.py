@@ -144,6 +144,7 @@ class ActivityTests(unittest.TestCase):
         self.assertIsNone(self.award(3, actor=user(bot=True)))
 
     def test_all_rank_boundaries_and_founder_reserved(self):
+        self.assertEqual([rank[0] for rank in RANKS], sorted(rank[0] for rank in RANKS))
         for i, rank in enumerate(RANKS):
             self.assertEqual(rank_for(rank[0])[0], rank)
             if i:
@@ -153,15 +154,15 @@ class ActivityTests(unittest.TestCase):
         self.assertIsNone(rank_for(0, founder=True)[1])
 
     def test_promotion_and_weekly_top_reset_but_lifetime_remains(self):
-        for mid in range(10):
+        for mid in range(20):
             result = self.award(mid)
             self.now += 60
         self.assertTrue(result.promoted)
         self.assertEqual(result.new_rank[1], "II")
-        self.assertEqual(self.xp.leaderboard(weekly=True)[0]["score"], 50)
+        self.assertEqual(self.xp.leaderboard(weekly=True)[0]["score"], 100)
         self.now = week_start(NOW) + 7 * 86400
         self.assertEqual(self.xp.leaderboard(weekly=True), [])
-        self.assertEqual(self.xp.leaderboard()[0]["score"], 50)
+        self.assertEqual(self.xp.leaderboard()[0]["score"], 100)
 
     def test_moscow_day_and_monday_week_boundaries(self):
         before = datetime(2026, 9, 27, 20, 59, tzinfo=timezone.utc).timestamp()
