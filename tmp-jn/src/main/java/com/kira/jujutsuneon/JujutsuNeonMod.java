@@ -1118,7 +1118,7 @@ public class JujutsuNeonMod {
     private static final int RED_MODE_PROJECTILE = 2;
     private static final double RED_MAX_DISTANCE = 75.0;
     private static final double RED_SPEED = 3.75;
-    private static final double RED_BALL_RADIUS = 0.62;
+    private static final double RED_BALL_RADIUS = 0.22; // диаметр ~0.44 блока
     private static final float RED_DAMAGE = 50.0F; // 25 сердец
     private static final float RED_EXPLOSION_POWER = 6.0F; // ≈ два обычных крипера
 
@@ -1143,7 +1143,7 @@ public class JujutsuNeonMod {
                     i % 3 == 0
                             ? new Vector3f(1.0f, 0.00f, 0.05f)
                             : new Vector3f(0.72f, 0.00f, 0.03f),
-                    i % 3 == 0 ? 1.15f : 0.90f
+                    i % 3 == 0 ? 0.72f : 0.56f
             );
         }
 
@@ -1159,13 +1159,13 @@ public class JujutsuNeonMod {
                     Math.sin(phi) * Math.sin(theta) * r
             );
 
-            sendDust(level, p, new Vector3f(0.95f, 0.00f, 0.04f), 0.70f);
+            sendDust(level, p, new Vector3f(0.95f, 0.00f, 0.04f), 0.48f);
         }
     }
 
     private static Vec3 redHeldPosition(ServerPlayer player) {
         return player.getEyePosition()
-                .add(player.getLookAngle().normalize().scale(1.85))
+                .add(player.getLookAngle().normalize().scale(1.45))
                 .add(0.0, -0.08, 0.0);
     }
 
