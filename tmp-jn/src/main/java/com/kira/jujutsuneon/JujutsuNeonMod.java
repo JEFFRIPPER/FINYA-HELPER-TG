@@ -13,6 +13,7 @@ import net.minecraft.client.particle.ParticleProvider;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.particles.ParticleType;
@@ -32,6 +33,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
 import net.minecraft.world.item.CreativeModeTabs;
@@ -39,9 +41,15 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RegisterKeyMappingsEvent;
 import net.minecraftforge.client.event.RegisterParticleProvidersEvent;
 import net.minecraftforge.client.event.RenderHandEvent;
@@ -64,8 +72,10 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 
@@ -104,7 +114,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "5";
+    private static final String PROTOCOL = "6";
 
     private static final double CE_MAX = 100.0;
 
@@ -202,6 +212,14 @@ public class JujutsuNeonMod {
                 HudSyncPacket::encode,
                 HudSyncPacket::decode,
                 HudSyncPacket::handle
+        );
+
+        NETWORK.registerMessage(
+                packetId++,
+                BlueActionPacket.class,
+                BlueActionPacket::encode,
+                BlueActionPacket::decode,
+                BlueActionPacket::handle
         );
     }
 
@@ -313,7 +331,13 @@ public class JujutsuNeonMod {
         if (!consumeEnergy(player, cost)) return;
 
         switch (ability) {
-            case BLUE -> { castBlue(player); setCooldown(player, ability, 100); }
+            case BLUE -> {
+                if (castBlue(player)) {
+                    setCooldown(player, ability, 100);
+                } else {
+                    setEnergy(player, getEnergy(player) + cost);
+                }
+            }
             case MAX_BLUE -> { castMaxBlue(player); setCooldown(player, ability, 220); }
             case RED -> { castRed(player); setCooldown(player, ability, 140); }
             case HOLLOW_PURPLE -> { castHollowPurple(player); setCooldown(player, ability, 420); }
@@ -502,54 +526,468 @@ public class JujutsuNeonMod {
         }
     }
 
-    private static void castBlue(ServerPlayer player) {
-        ServerLevel level = player.serverLevel();
-        handSign(player);
-        playSfx(level, player, SFX_BLUE, 1.15f, 1.0f);
+    private static final int BLUE_MODE_NONE = 0;
+    private static final int BLUE_MODE_BLOCKS = 1;
+    private static final int BLUE_MODE_ENTITY = 2;
+    private static final int BLUE_MODE_PROJECTILE = 3;
+    private static final double BLUE_RANGE = 18.0;
+
+    private static boolean isBlueInteractionActive(ServerPlayer player) {
+        int mode = player.getPersistentData().getInt("jn_blue_mode");
+        return mode == BLUE_MODE_BLOCKS || mode == BLUE_MODE_ENTITY;
+    }
+
+    private static LivingEntity findBlueLivingTarget(ServerLevel level, ServerPlayer player) {
+        Vec3 start = player.getEyePosition();
         Vec3 look = player.getLookAngle().normalize();
-        Vec3 center = player.getEyePosition().add(look.scale(7.0));
-        spawnEnergySpiral(level, player.getEyePosition(), look, 7.0, 0.72, 2.8,
-                new Vector3f(0.02f, 0.85f, 1.0f),
-                new Vector3f(0.45f, 0.02f, 1.0f));
-        spawnStylizedShockwave(level, center, 2.1, new Vector3f(0.03f, 0.75f, 1.0f));
-        playEnergyLayer(level, center, 0.85f, 1.18f);
-        spawnVfx(level, VFX_BLUE, center, 1);
+        Vec3 end = start.add(look.scale(BLUE_RANGE));
 
-        spawnNeonSphere(
-                level,
-                center,
-                2.7,
-                new Vector3f(0.05f, 0.75f, 1.0f),
-                new Vector3f(0.55f, 0.05f, 1.0f)
-        );
+        BlockHitResult blockHit = level.clip(new ClipContext(
+                start, end,
+                ClipContext.Block.OUTLINE,
+                ClipContext.Fluid.NONE,
+                player
+        ));
 
-        AABB area = new AABB(center, center).inflate(5.0);
-        List<LivingEntity> targets = level.getEntitiesOfClass(
-                LivingEntity.class,
-                area,
-                e -> e.isAlive() && e != player
-        );
+        double blockDistanceSq = blockHit.getType() == HitResult.Type.MISS
+                ? BLUE_RANGE * BLUE_RANGE
+                : start.distanceToSqr(blockHit.getLocation());
 
-        for (LivingEntity target : targets) {
-            Vec3 delta = center.subtract(target.position());
-            if (delta.lengthSqr() < 0.01) continue;
+        AABB searchBox = player.getBoundingBox()
+                .expandTowards(look.scale(BLUE_RANGE))
+                .inflate(1.25);
 
-            Vec3 pull = delta.normalize().scale(0.95);
-            target.setDeltaMovement(
-                    target.getDeltaMovement().add(
-                            pull.x,
-                            Mth.clamp(pull.y + 0.10, -0.15, 0.55),
-                            pull.z
-                    )
-            );
-            target.hurtMarked = true;
-            target.hurt(level.damageSources().playerAttack(player), 5.0F);
+        return level.getEntitiesOfClass(
+                        LivingEntity.class,
+                        searchBox,
+                        e -> e.isAlive() && e != player && !e.isSpectator()
+                )
+                .stream()
+                .filter(e -> e.getBoundingBox().inflate(0.35).clip(start, end)
+                        .map(hit -> start.distanceToSqr(hit) <= blockDistanceSq + 0.20)
+                        .orElse(false))
+                .min(Comparator.comparingDouble(e -> start.distanceToSqr(e.getBoundingBox().getCenter())))
+                .orElse(null);
+    }
+
+    private static List<BlockPos> findBlueBlocks(ServerLevel level, BlockPos center) {
+        List<BlockPos> candidates = new ArrayList<>();
+
+        for (int dy = -2; dy <= 2; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    BlockPos pos = center.offset(dx, dy, dz);
+                    BlockState state = level.getBlockState(pos);
+
+                    if (state.isAir()) continue;
+                    if (state.hasBlockEntity()) continue;
+                    if (!state.getFluidState().isEmpty()) continue;
+                    if (state.getDestroySpeed(level, pos) < 0.0F) continue;
+                    if (state.is(Blocks.MOVING_PISTON) || state.is(Blocks.END_PORTAL) || state.is(Blocks.NETHER_PORTAL)) continue;
+
+                    candidates.add(pos.immutable());
+                }
+            }
         }
 
+        candidates.sort(Comparator.comparingDouble(p -> p.distSqr(center)));
+        if (candidates.size() > 5) {
+            return new ArrayList<>(candidates.subList(0, 5));
+        }
+        return candidates;
+    }
+
+    private static Vec3 horizontalLook(ServerPlayer player) {
+        Vec3 look = player.getLookAngle();
+        Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
+        if (horizontal.lengthSqr() < 1.0E-4) {
+            double yaw = Math.toRadians(player.getYRot());
+            horizontal = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
+        }
+        return horizontal.normalize();
+    }
+
+    private static void startBlueEntityHold(ServerPlayer player, LivingEntity target) {
+        ServerLevel level = player.serverLevel();
+        long now = level.getGameTime();
+
+        Vec3 forward = horizontalLook(player);
+        Vec3 targetLock = player.position().add(forward.scale(2.35));
+        targetLock = new Vec3(targetLock.x, player.getY() + 0.10, targetLock.z);
+
+        target.teleportTo(targetLock.x, targetLock.y, targetLock.z);
+        target.setDeltaMovement(Vec3.ZERO);
+        target.hurtMarked = true;
+
+        player.getPersistentData().putInt("jn_blue_mode", BLUE_MODE_ENTITY);
+        player.getPersistentData().putString("jn_blue_target_uuid", target.getStringUUID());
+        player.getPersistentData().putLong("jn_blue_until", now + 40);
+
+        player.getPersistentData().putDouble("jn_blue_owner_x", player.getX());
+        player.getPersistentData().putDouble("jn_blue_owner_y", player.getY());
+        player.getPersistentData().putDouble("jn_blue_owner_z", player.getZ());
+
+        player.getPersistentData().putDouble("jn_blue_target_x", targetLock.x);
+        player.getPersistentData().putDouble("jn_blue_target_y", targetLock.y);
+        player.getPersistentData().putDouble("jn_blue_target_z", targetLock.z);
+
+        for (int i = 0; i < 18; i++) {
+            double t = i / 17.0;
+            Vec3 p = player.getEyePosition().lerp(
+                    target.position().add(0.0, target.getBbHeight() * 0.55, 0.0),
+                    t
+            );
+            sendDust(level, p, new Vector3f(0.18f, 0.72f, 1.0f), 0.72f);
+        }
+
+        playSfx(level, player, SFX_BLUE, 0.72f, 1.12f);
         player.displayClientMessage(
-                Component.literal("BLUE — притяжение").withStyle(ChatFormatting.AQUA),
+                Component.literal("BLUE // ЦЕЛЬ ЗАФИКСИРОВАНА // ЛКМ: ОТБРОСИТЬ")
+                        .withStyle(ChatFormatting.AQUA),
                 true
         );
+    }
+
+    private static boolean startBlueBlockHold(ServerPlayer player, BlockHitResult hit) {
+        ServerLevel level = player.serverLevel();
+        List<BlockPos> blocks = findBlueBlocks(level, hit.getBlockPos());
+
+        if (blocks.size() < 5) {
+            player.displayClientMessage(
+                    Component.literal("BLUE // рядом с курсором нужно 5 подходящих блоков")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        int[] ids = new int[5];
+        for (int i = 0; i < 5; i++) {
+            BlockPos pos = blocks.get(i);
+            BlockState state = level.getBlockState(pos);
+            FallingBlockEntity falling = FallingBlockEntity.fall(level, pos, state);
+            falling.setNoGravity(true);
+            falling.noPhysics = true;
+            falling.setDeltaMovement(Vec3.ZERO);
+            falling.fallDistance = 0.0F;
+            ids[i] = falling.getId();
+        }
+
+        player.getPersistentData().putInt("jn_blue_mode", BLUE_MODE_BLOCKS);
+        player.getPersistentData().putIntArray("jn_blue_block_ids", ids);
+        player.getPersistentData().putLong("jn_blue_until", level.getGameTime() + 200);
+
+        playSfx(level, player, SFX_BLUE, 0.68f, 1.18f);
+        player.displayClientMessage(
+                Component.literal("BLUE // 5 БЛОКОВ ЗАХВАЧЕНО // ЛКМ: БРОСИТЬ")
+                        .withStyle(ChatFormatting.AQUA),
+                true
+        );
+        return true;
+    }
+
+    private static boolean castBlue(ServerPlayer player) {
+        if (isBlueInteractionActive(player) ||
+                player.getPersistentData().getInt("jn_blue_mode") == BLUE_MODE_PROJECTILE) {
+            player.displayClientMessage(
+                    Component.literal("BLUE // предыдущий захват ещё активен")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        ServerLevel level = player.serverLevel();
+        handSign(player);
+
+        LivingEntity target = findBlueLivingTarget(level, player);
+        if (target != null) {
+            startBlueEntityHold(player, target);
+            return true;
+        }
+
+        Vec3 start = player.getEyePosition();
+        Vec3 end = start.add(player.getLookAngle().normalize().scale(BLUE_RANGE));
+        BlockHitResult blockHit = level.clip(new ClipContext(
+                start, end,
+                ClipContext.Block.OUTLINE,
+                ClipContext.Fluid.NONE,
+                player
+        ));
+
+        if (blockHit.getType() == HitResult.Type.MISS) {
+            player.displayClientMessage(
+                    Component.literal("BLUE // нет цели под курсором")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        return startBlueBlockHold(player, blockHit);
+    }
+
+    private static LivingEntity getBlueTarget(ServerLevel level, ServerPlayer player) {
+        String raw = player.getPersistentData().getString("jn_blue_target_uuid");
+        if (raw == null || raw.isEmpty()) return null;
+
+        try {
+            Entity e = level.getEntity(UUID.fromString(raw));
+            return e instanceof LivingEntity living && living.isAlive() ? living : null;
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static void clearBlueState(ServerPlayer player) {
+        player.getPersistentData().putInt("jn_blue_mode", BLUE_MODE_NONE);
+        player.getPersistentData().remove("jn_blue_target_uuid");
+        player.getPersistentData().remove("jn_blue_block_ids");
+        player.getPersistentData().remove("jn_blue_until");
+        player.getPersistentData().remove("jn_blue_projectile_until");
+        player.getPersistentData().remove("jn_blue_owner_x");
+        player.getPersistentData().remove("jn_blue_owner_y");
+        player.getPersistentData().remove("jn_blue_owner_z");
+        player.getPersistentData().remove("jn_blue_target_x");
+        player.getPersistentData().remove("jn_blue_target_y");
+        player.getPersistentData().remove("jn_blue_target_z");
+    }
+
+    private static void releaseBlueBlocks(ServerPlayer player, boolean launch) {
+        ServerLevel level = player.serverLevel();
+        int[] ids = player.getPersistentData().getIntArray("jn_blue_block_ids");
+
+        if (!launch) {
+            for (int id : ids) {
+                Entity e = level.getEntity(id);
+                if (e instanceof FallingBlockEntity falling) {
+                    falling.noPhysics = false;
+                    falling.setNoGravity(false);
+                    falling.setDeltaMovement(new Vec3(rnd(-0.08, 0.08), 0.03, rnd(-0.08, 0.08)));
+                    falling.fallDistance = 0.0F;
+                }
+            }
+            clearBlueState(player);
+            return;
+        }
+
+        Vec3 dir = player.getLookAngle().normalize();
+        for (int i = 0; i < ids.length; i++) {
+            Entity e = level.getEntity(ids[i]);
+            if (e instanceof FallingBlockEntity falling) {
+                falling.noPhysics = false;
+                falling.setNoGravity(false);
+                Vec3 spread = new Vec3(
+                        rnd(-0.035, 0.035),
+                        rnd(-0.020, 0.040),
+                        rnd(-0.035, 0.035)
+                );
+                falling.setDeltaMovement(dir.scale(2.85).add(spread));
+                falling.hurtMarked = true;
+                falling.fallDistance = 0.0F;
+            }
+        }
+
+        player.getPersistentData().putInt("jn_blue_mode", BLUE_MODE_PROJECTILE);
+        player.getPersistentData().putLong("jn_blue_projectile_until", level.getGameTime() + 70);
+        playSfx(level, player, SFX_BLUE, 0.82f, 1.32f);
+    }
+
+    private static void releaseBlueEntity(ServerPlayer player, boolean throwTarget) {
+        ServerLevel level = player.serverLevel();
+        LivingEntity target = getBlueTarget(level, player);
+
+        if (target != null) {
+            target.setDeltaMovement(Vec3.ZERO);
+
+            if (throwTarget) {
+                Vec3 dir = player.getLookAngle().normalize();
+
+                player.getPersistentData().putBoolean("jn_blue_custom_damage", true);
+                target.hurt(level.damageSources().playerAttack(player), 40.0F); // 20 сердец
+                player.getPersistentData().putBoolean("jn_blue_custom_damage", false);
+
+                target.setDeltaMovement(dir.scale(3.25).add(0.0, 0.48, 0.0));
+                target.hurtMarked = true;
+
+                Vec3 impact = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+                for (int i = 0; i < 28; i++) {
+                    sendDust(level,
+                            impact.add(rnd(-0.45, 0.45), rnd(-0.45, 0.45), rnd(-0.45, 0.45)),
+                            new Vector3f(0.15f, 0.74f, 1.0f),
+                            0.90f);
+                }
+
+                playImpactLayer(level, impact, 0.72f, 1.35f);
+            }
+        }
+
+        player.setDeltaMovement(Vec3.ZERO);
+        clearBlueState(player);
+    }
+
+    private static void bluePrimaryAction(ServerPlayer player) {
+        int mode = player.getPersistentData().getInt("jn_blue_mode");
+
+        if (mode == BLUE_MODE_BLOCKS) {
+            releaseBlueBlocks(player, true);
+        } else if (mode == BLUE_MODE_ENTITY) {
+            releaseBlueEntity(player, true);
+        }
+    }
+
+    private static void tickBlueState(ServerPlayer player, ServerLevel level, long now) {
+        int mode = player.getPersistentData().getInt("jn_blue_mode");
+        if (mode == BLUE_MODE_NONE) return;
+
+        if (!hasGojoBlindfold(player) || !player.isAlive()) {
+            if (mode == BLUE_MODE_BLOCKS) releaseBlueBlocks(player, false);
+            else if (mode == BLUE_MODE_ENTITY) releaseBlueEntity(player, false);
+            else clearBlueState(player);
+            return;
+        }
+
+        if (mode == BLUE_MODE_BLOCKS) {
+            player.setSprinting(false);
+
+            if (now >= player.getPersistentData().getLong("jn_blue_until")) {
+                releaseBlueBlocks(player, false);
+                return;
+            }
+
+            int[] ids = player.getPersistentData().getIntArray("jn_blue_block_ids");
+            Vec3 forward = player.getLookAngle().normalize();
+            Vec3 right = forward.cross(new Vec3(0.0, 1.0, 0.0));
+            if (right.lengthSqr() < 1.0E-4) right = new Vec3(1.0, 0.0, 0.0);
+            right = right.normalize();
+            Vec3 up = right.cross(forward).normalize();
+            Vec3 center = player.getEyePosition().add(forward.scale(2.75)).add(0.0, -0.30, 0.0);
+
+            double[][] offsets = {
+                    {0.00, 0.00},
+                    {0.34, 0.05},
+                    {-0.34, 0.05},
+                    {0.08, 0.34},
+                    {-0.08, -0.34}
+            };
+
+            for (int i = 0; i < ids.length && i < offsets.length; i++) {
+                Entity e = level.getEntity(ids[i]);
+                if (!(e instanceof FallingBlockEntity falling)) continue;
+
+                Vec3 pos = center
+                        .add(right.scale(offsets[i][0]))
+                        .add(up.scale(offsets[i][1]));
+
+                falling.setPos(pos.x, pos.y, pos.z);
+                falling.setDeltaMovement(Vec3.ZERO);
+                falling.setNoGravity(true);
+                falling.noPhysics = true;
+                falling.fallDistance = 0.0F;
+            }
+
+            if (now % 2 == 0) {
+                sendDust(level,
+                        center.add(rnd(-0.45, 0.45), rnd(-0.35, 0.35), rnd(-0.45, 0.45)),
+                        new Vector3f(0.18f, 0.72f, 1.0f),
+                        0.62f);
+            }
+            return;
+        }
+
+        if (mode == BLUE_MODE_ENTITY) {
+            LivingEntity target = getBlueTarget(level, player);
+
+            if (target == null || now >= player.getPersistentData().getLong("jn_blue_until")) {
+                releaseBlueEntity(player, false);
+                return;
+            }
+
+            double ox = player.getPersistentData().getDouble("jn_blue_owner_x");
+            double oy = player.getPersistentData().getDouble("jn_blue_owner_y");
+            double oz = player.getPersistentData().getDouble("jn_blue_owner_z");
+
+            double tx = player.getPersistentData().getDouble("jn_blue_target_x");
+            double ty = player.getPersistentData().getDouble("jn_blue_target_y");
+            double tz = player.getPersistentData().getDouble("jn_blue_target_z");
+
+            player.teleportTo(ox, oy, oz);
+            player.setDeltaMovement(Vec3.ZERO);
+            player.setSprinting(false);
+            player.fallDistance = 0.0F;
+
+            target.teleportTo(tx, ty, tz);
+            target.setDeltaMovement(Vec3.ZERO);
+            target.setSprinting(false);
+            target.fallDistance = 0.0F;
+            target.hurtMarked = true;
+
+            if (now % 2 == 0) {
+                Vec3 mid = player.getEyePosition().lerp(
+                        target.position().add(0.0, target.getBbHeight() * 0.55, 0.0),
+                        0.55
+                );
+                sendDust(level, mid, new Vector3f(0.16f, 0.70f, 1.0f), 0.66f);
+            }
+            return;
+        }
+
+        if (mode == BLUE_MODE_PROJECTILE) {
+            int[] ids = player.getPersistentData().getIntArray("jn_blue_block_ids");
+            LivingEntity hit = null;
+
+            for (int id : ids) {
+                Entity e = level.getEntity(id);
+                if (!(e instanceof FallingBlockEntity falling) || !falling.isAlive()) continue;
+
+                List<LivingEntity> hits = level.getEntitiesOfClass(
+                        LivingEntity.class,
+                        falling.getBoundingBox().inflate(0.65),
+                        living -> living.isAlive() && living != player
+                );
+
+                if (!hits.isEmpty()) {
+                    hit = hits.get(0);
+                    break;
+                }
+            }
+
+            if (hit != null) {
+                player.getPersistentData().putBoolean("jn_blue_custom_damage", true);
+                hit.hurt(level.damageSources().playerAttack(player), 20.0F); // 10 сердец
+                player.getPersistentData().putBoolean("jn_blue_custom_damage", false);
+
+                Vec3 dir = player.getLookAngle().normalize();
+                hit.setDeltaMovement(hit.getDeltaMovement().add(dir.scale(1.25)).add(0.0, 0.28, 0.0));
+                hit.hurtMarked = true;
+
+                Vec3 impact = hit.position().add(0.0, hit.getBbHeight() * 0.5, 0.0);
+                for (int i = 0; i < 22; i++) {
+                    sendDust(level,
+                            impact.add(rnd(-0.42, 0.42), rnd(-0.42, 0.42), rnd(-0.42, 0.42)),
+                            new Vector3f(0.16f, 0.72f, 1.0f),
+                            0.82f);
+                }
+                playImpactLayer(level, impact, 0.62f, 1.42f);
+
+                for (int id : ids) {
+                    Entity e = level.getEntity(id);
+                    if (e instanceof FallingBlockEntity falling) {
+                        falling.noPhysics = false;
+                        falling.setNoGravity(false);
+                        falling.setDeltaMovement(falling.getDeltaMovement().scale(0.38)
+                                .add(rnd(-0.12, 0.12), 0.10, rnd(-0.12, 0.12)));
+                    }
+                }
+
+                clearBlueState(player);
+                return;
+            }
+
+            if (now >= player.getPersistentData().getLong("jn_blue_projectile_until")) {
+                clearBlueState(player);
+            }
+        }
     }
 
     private static void castMaxBlue(ServerPlayer player) {
@@ -1161,6 +1599,12 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onLivingAttack(LivingAttackEvent event) {
+            if (event.getSource().getEntity() instanceof ServerPlayer attacker &&
+                    isBlueInteractionActive(attacker) &&
+                    !attacker.getPersistentData().getBoolean("jn_blue_custom_damage")) {
+                event.setCanceled(true);
+                return;
+            }
             if (!(event.getEntity() instanceof ServerPlayer player)) return;
             if (!hasGojoBlindfold(player)) return;
             if (!player.getPersistentData().getBoolean("jn_infinity")) return;
@@ -1188,6 +1632,8 @@ public class JujutsuNeonMod {
             ServerLevel level = player.serverLevel();
             long now = level.getGameTime();
             boolean equipped = hasGojoBlindfold(player);
+
+            tickBlueState(player, level, now);
 
             if (!equipped) {
                 player.getPersistentData().putBoolean("jn_super_speed", false);
@@ -1295,7 +1741,8 @@ public class JujutsuNeonMod {
                                 player.getPersistentData().getInt("jn_air_jumps"),
                                 player.getPersistentData().getBoolean("jn_infinity"),
                                 (int) flowLeft,
-                                equipped
+                                equipped,
+                                isBlueInteractionActive(player)
                         )
                 );
             }
@@ -1443,7 +1890,26 @@ public class JujutsuNeonMod {
         }
     }
 
-    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold) {
+    private record BlueActionPacket() {
+
+        static void encode(BlueActionPacket msg, FriendlyByteBuf buf) {
+        }
+
+        static BlueActionPacket decode(FriendlyByteBuf buf) {
+            return new BlueActionPacket();
+        }
+
+        static void handle(BlueActionPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player != null) bluePrimaryAction(player);
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
+    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
             buf.writeDouble(msg.energy);
@@ -1451,6 +1917,7 @@ public class JujutsuNeonMod {
             buf.writeBoolean(msg.infinity);
             buf.writeVarInt(msg.flowTicks);
             buf.writeBoolean(msg.blindfold);
+            buf.writeBoolean(msg.blueActive);
         }
 
         static HudSyncPacket decode(FriendlyByteBuf buf) {
@@ -1459,6 +1926,7 @@ public class JujutsuNeonMod {
                     buf.readVarInt(),
                     buf.readBoolean(),
                     buf.readVarInt(),
+                    buf.readBoolean(),
                     buf.readBoolean()
             );
         }
@@ -1603,6 +2071,7 @@ public class JujutsuNeonMod {
         private static boolean hudInfinity = false;
         private static int hudFlowTicks = 0;
         private static boolean hudBlindfold = false;
+        private static boolean hudBlueActive = false;
 
         private static void applyHudSync(HudSyncPacket msg) {
             hudEnergy = msg.energy();
@@ -1610,6 +2079,7 @@ public class JujutsuNeonMod {
             hudInfinity = msg.infinity();
             hudFlowTicks = msg.flowTicks();
             hudBlindfold = msg.blindfold();
+            hudBlueActive = msg.blueActive();
         }
 
         private static String keyName(KeyMapping mapping) {
@@ -1671,6 +2141,15 @@ public class JujutsuNeonMod {
             }
 
             state.wasDown = down;
+        }
+
+        @SubscribeEvent
+        public static void onBlueAttackClick(InputEvent.InteractionKeyMappingTriggered event) {
+            if (!hudBlueActive || !event.isAttack()) return;
+
+            event.setCanceled(true);
+            event.setSwingHand(true);
+            NETWORK.sendToServer(new BlueActionPacket());
         }
 
         @SubscribeEvent
@@ -1775,6 +2254,10 @@ public class JujutsuNeonMod {
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.UTILITY_KEY), "RCT", "HOLD: Blink");
+
+            if (hudBlueActive) {
+                g.drawString(mc.font, "BLUE // ЛКМ: БРОСОК", x + 10, y + h - 30, 0xFF66DFFF, false);
+            }
 
             if (hudInfinity) {
                 g.drawString(mc.font, "INFINITY // ACTIVE", x + 10, y + h - 18, 0xFF6CEBFF, false);
