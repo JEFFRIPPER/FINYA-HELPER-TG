@@ -1,0 +1,45 @@
+name: Build Jujutsu Neon JAR
+on:
+  push:
+    branches:
+      - tmp-jujutsu-jar-build
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.1.1'
+
+      - name: Generate 4K resources and audio
+        working-directory: tmp-jn
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 generate_resources.py
+
+      - name: Build Forge mod
+        working-directory: tmp-jn
+        run: gradle build --stacktrace --no-daemon
+
+      - name: Show output
+        run: ls -lah tmp-jn/build/libs/
+
+      - name: Upload JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: JujutsuNeon-JAR
+          path: tmp-jn/build/libs/*.jar
+          if-no-files-found: error
