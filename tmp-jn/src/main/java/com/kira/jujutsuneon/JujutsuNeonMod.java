@@ -2209,7 +2209,8 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onRenderGui(RenderGuiEvent.Post event) {
-            if (!hudVisible) return;
+            // Без повязки мод не рисует вообще ничего поверх обычного Minecraft.
+            if (!hudVisible || !hudBlindfold) return;
 
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null || mc.options.hideGui) return;
@@ -2289,6 +2290,9 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onRenderHand(RenderHandEvent event) {
+            // Без повязки руки рендерятся полностью ванильно.
+            if (!hudBlindfold) return;
+
             PoseStack pose = event.getPoseStack();
             boolean main = event.getHand() == InteractionHand.MAIN_HAND;
             float side = main ? 1.0f : -1.0f;
