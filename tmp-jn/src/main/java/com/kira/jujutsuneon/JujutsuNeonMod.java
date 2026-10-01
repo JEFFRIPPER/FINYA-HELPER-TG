@@ -75,7 +75,9 @@ import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
@@ -92,7 +94,7 @@ import java.util.function.Supplier;
  * Клавиши по умолчанию:
  * Q — дэш. Q = вперёд, A+Q = влево, D+Q = вправо
  * Left Ctrl — суперскорость; во время режима доступны 10 воздушных прыжков
- * Z — Blue; Z+ (удержание 1 сек) — Maximum Blue
+ * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
  * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
  * C — Black Flash; C+ — Cursed Barrage
  * V — Infinity ON/OFF; V+ — Domain Expansion
@@ -115,7 +117,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "7";
+    private static final String PROTOCOL = "8";
 
     private static final double CE_MAX = 100.0;
 
@@ -230,6 +232,14 @@ public class JujutsuNeonMod {
                 RedControlPacket::decode,
                 RedControlPacket::handle
         );
+
+        NETWORK.registerMessage(
+                packetId++,
+                MaxBlueControlPacket.class,
+                MaxBlueControlPacket::encode,
+                MaxBlueControlPacket::decode,
+                MaxBlueControlPacket::handle
+        );
     }
 
     private void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -264,6 +274,13 @@ public class JujutsuNeonMod {
         START,
         RELEASE,
         CANCEL
+    }
+
+    private enum MaxBlueControlAction {
+        START,
+        RELEASE,
+        FARTHER,
+        CLOSER
     }
 
     private static boolean hasGojoBlindfold(ServerPlayer player) {
@@ -1002,6 +1019,471 @@ public class JujutsuNeonMod {
             if (now >= player.getPersistentData().getLong("jn_blue_projectile_until")) {
                 clearBlueState(player);
             }
+        }
+    }
+
+
+    private static final int MAX_BLUE_PHASE_NONE = 0;
+    private static final int MAX_BLUE_PHASE_FORMING = 1;
+    private static final int MAX_BLUE_PHASE_ACTIVE = 2;
+    private static final int MAX_BLUE_PHASE_FADING = 3;
+
+    private static final long MAX_BLUE_FORM_TICKS = 60L;
+    private static final long MAX_BLUE_ACTIVE_TICKS = 160L;
+    private static final long MAX_BLUE_FADE_TICKS = 20L;
+    private static final double MAX_BLUE_RADIUS = 2.0;
+    private static final double MAX_BLUE_ZONE_HALF = 3.0;
+    private static final double MAX_BLUE_MIN_DISTANCE = 3.0;
+    private static final double MAX_BLUE_MAX_DISTANCE = 20.0;
+    private static final float MAX_BLUE_DAMAGE = 14.0F;
+
+    private static final Map<UUID, List<MaxBlueSuctionBlock>> MAX_BLUE_SUCTION = new HashMap<>();
+
+    private static class MaxBlueSuctionBlock {
+        final int entityId;
+        final Vec3 start;
+        final long startTick;
+        final double phaseOffset;
+
+        MaxBlueSuctionBlock(int entityId, Vec3 start, long startTick, double phaseOffset) {
+            this.entityId = entityId;
+            this.start = start;
+            this.startTick = startTick;
+            this.phaseOffset = phaseOffset;
+        }
+    }
+
+    private static boolean isMaximumBlueActive(ServerPlayer player) {
+        return player.getPersistentData().getInt("jn_max_blue_phase") != MAX_BLUE_PHASE_NONE;
+    }
+
+    private static double maxBlueSmooth(double t) {
+        t = Mth.clamp(t, 0.0, 1.0);
+        return t * t * (3.0 - 2.0 * t);
+    }
+
+    private static Vec3 maxBlueFormationCenter(ServerPlayer player, double progress, double desiredDistance) {
+        double eased = maxBlueSmooth(progress);
+
+        Vec3 eye = player.getEyePosition();
+        Vec3 look = player.getLookAngle().normalize();
+        Vec3 finalPos = eye.add(look.scale(desiredDistance));
+
+        double angle = progress * Math.PI * 4.0;
+        double orbitRadius = 2.7 * (1.0 - eased) + 0.25;
+        Vec3 orbitPos = player.position().add(
+                Math.cos(angle) * orbitRadius,
+                1.15 + Math.sin(angle * 1.5) * 0.72,
+                Math.sin(angle) * orbitRadius
+        );
+
+        return orbitPos.lerp(finalPos, eased);
+    }
+
+    private static double currentMaximumBlueRadius(ServerPlayer player, long now) {
+        int phase = player.getPersistentData().getInt("jn_max_blue_phase");
+
+        if (phase == MAX_BLUE_PHASE_FORMING) {
+            long start = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            double p = Mth.clamp((now - start) / (double) MAX_BLUE_FORM_TICKS, 0.0, 1.0);
+            return 0.12 + (MAX_BLUE_RADIUS - 0.12) * maxBlueSmooth(p);
+        }
+
+        if (phase == MAX_BLUE_PHASE_ACTIVE) return MAX_BLUE_RADIUS;
+
+        if (phase == MAX_BLUE_PHASE_FADING) {
+            long fadeStart = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            double p = Mth.clamp((now - fadeStart) / (double) MAX_BLUE_FADE_TICKS, 0.0, 1.0);
+            double startRadius = player.getPersistentData().getDouble("jn_max_blue_fade_radius");
+            return Math.max(0.0, startRadius * (1.0 - maxBlueSmooth(p)));
+        }
+
+        return 0.0;
+    }
+
+    private static Vec3 currentMaximumBlueCenter(ServerPlayer player, long now) {
+        int phase = player.getPersistentData().getInt("jn_max_blue_phase");
+
+        if (phase == MAX_BLUE_PHASE_FADING) {
+            return new Vec3(
+                    player.getPersistentData().getDouble("jn_max_blue_fade_x"),
+                    player.getPersistentData().getDouble("jn_max_blue_fade_y"),
+                    player.getPersistentData().getDouble("jn_max_blue_fade_z")
+            );
+        }
+
+        double distance = Mth.clamp(
+                player.getPersistentData().getDouble("jn_max_blue_distance"),
+                MAX_BLUE_MIN_DISTANCE,
+                MAX_BLUE_MAX_DISTANCE
+        );
+
+        if (phase == MAX_BLUE_PHASE_FORMING) {
+            long start = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            double p = Mth.clamp((now - start) / (double) MAX_BLUE_FORM_TICKS, 0.0, 1.0);
+            return maxBlueFormationCenter(player, p, distance);
+        }
+
+        return player.getEyePosition().add(player.getLookAngle().normalize().scale(distance));
+    }
+
+    private static boolean startMaximumBlue(ServerPlayer player) {
+        if (player == null || !player.isAlive() || player.isSpectator()) return false;
+        if (!hasGojoBlindfold(player)) {
+            requireBlindfoldMessage(player);
+            return false;
+        }
+        if (isMaximumBlueActive(player)) return false;
+
+        long now = player.level().getGameTime();
+        long cooldownUntil = player.getPersistentData().getLong("jn_cd_max_blue");
+        if (now < cooldownUntil) {
+            long ticksLeft = cooldownUntil - now;
+            double seconds = Math.ceil(ticksLeft / 2.0) / 10.0;
+            player.displayClientMessage(
+                    Component.literal("Maximum Blue: перезарядка " + seconds + " сек.")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        double cost = abilityCost(player, Ability.MAX_BLUE);
+        if (!consumeEnergy(player, cost)) return false;
+
+        player.getPersistentData().putInt("jn_max_blue_phase", MAX_BLUE_PHASE_FORMING);
+        player.getPersistentData().putLong("jn_max_blue_phase_start", now);
+        player.getPersistentData().putDouble("jn_max_blue_distance", 6.0);
+
+        player.getPersistentData().putDouble("jn_max_blue_lock_x", player.getX());
+        player.getPersistentData().putDouble("jn_max_blue_lock_y", player.getY());
+        player.getPersistentData().putDouble("jn_max_blue_lock_z", player.getZ());
+
+        Vec3 center = currentMaximumBlueCenter(player, now);
+        player.getPersistentData().putDouble("jn_max_blue_x", center.x);
+        player.getPersistentData().putDouble("jn_max_blue_y", center.y);
+        player.getPersistentData().putDouble("jn_max_blue_z", center.z);
+
+        setCooldown(player, Ability.MAX_BLUE, 220);
+        playSfx(player.serverLevel(), player, SFX_MAX_BLUE, 1.15f, 0.84f);
+        handSign(player);
+
+        player.displayClientMessage(
+                Component.literal("MAXIMUM BLUE // ФОРМИРОВАНИЕ")
+                        .withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD),
+                true
+        );
+        return true;
+    }
+
+    private static void adjustMaximumBlueDistance(ServerPlayer player, double delta) {
+        if (!isMaximumBlueActive(player)) return;
+        if (player.getPersistentData().getInt("jn_max_blue_phase") == MAX_BLUE_PHASE_FADING) return;
+
+        double distance = player.getPersistentData().getDouble("jn_max_blue_distance");
+        player.getPersistentData().putDouble(
+                "jn_max_blue_distance",
+                Mth.clamp(distance + delta, MAX_BLUE_MIN_DISTANCE, MAX_BLUE_MAX_DISTANCE)
+        );
+    }
+
+    private static void beginMaximumBlueFade(ServerPlayer player) {
+        int phase = player.getPersistentData().getInt("jn_max_blue_phase");
+        if (phase == MAX_BLUE_PHASE_NONE || phase == MAX_BLUE_PHASE_FADING) return;
+
+        long now = player.level().getGameTime();
+        Vec3 center = currentMaximumBlueCenter(player, now);
+        double radius = currentMaximumBlueRadius(player, now);
+
+        player.getPersistentData().putInt("jn_max_blue_phase", MAX_BLUE_PHASE_FADING);
+        player.getPersistentData().putLong("jn_max_blue_phase_start", now);
+        player.getPersistentData().putDouble("jn_max_blue_fade_radius", Math.max(0.08, radius));
+        player.getPersistentData().putDouble("jn_max_blue_fade_x", center.x);
+        player.getPersistentData().putDouble("jn_max_blue_fade_y", center.y);
+        player.getPersistentData().putDouble("jn_max_blue_fade_z", center.z);
+    }
+
+    private static void clearMaximumBlue(ServerPlayer player) {
+        List<MaxBlueSuctionBlock> visuals = MAX_BLUE_SUCTION.remove(player.getUUID());
+        if (visuals != null) {
+            for (MaxBlueSuctionBlock entry : visuals) {
+                Entity e = player.serverLevel().getEntity(entry.entityId);
+                if (e != null) e.discard();
+            }
+        }
+
+        player.getPersistentData().putInt("jn_max_blue_phase", MAX_BLUE_PHASE_NONE);
+        for (String key : new String[]{
+                "jn_max_blue_phase_start","jn_max_blue_distance",
+                "jn_max_blue_lock_x","jn_max_blue_lock_y","jn_max_blue_lock_z",
+                "jn_max_blue_fade_radius","jn_max_blue_fade_x","jn_max_blue_fade_y","jn_max_blue_fade_z",
+                "jn_max_blue_x","jn_max_blue_y","jn_max_blue_z"}) {
+            player.getPersistentData().remove(key);
+        }
+    }
+
+    private static void spawnMaximumBlueVisual(ServerLevel level, Vec3 center, double radius, long now, double fadeFactor) {
+        if (radius <= 0.02 || fadeFactor <= 0.01) return;
+
+        int shellPoints = Math.max(18, (int) (86 * fadeFactor));
+        double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+
+        for (int i = 0; i < shellPoints; i++) {
+            double y = 1.0 - (i / (double) Math.max(1, shellPoints - 1)) * 2.0;
+            double ring = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+            double theta = golden * i + now * 0.055;
+
+            Vec3 p = center.add(
+                    Math.cos(theta) * ring * radius,
+                    y * radius,
+                    Math.sin(theta) * ring * radius
+            );
+
+            sendDust(level, p,
+                    i % 3 == 0 ? new Vector3f(0.02f, 0.86f, 1.0f) : new Vector3f(0.02f, 0.32f, 1.0f),
+                    (float) (0.68 + 0.28 * fadeFactor));
+        }
+
+        int ringPoints = Math.max(16, (int) (42 * fadeFactor));
+        for (int plane = 0; plane < 3; plane++) {
+            for (int i = 0; i < ringPoints; i++) {
+                double a = Math.PI * 2.0 * i / ringPoints + now * (0.045 + plane * 0.015);
+                double r = radius * (1.10 + plane * 0.06);
+                Vec3 p;
+                if (plane == 0) p = center.add(Math.cos(a) * r, 0.0, Math.sin(a) * r);
+                else if (plane == 1) p = center.add(Math.cos(a) * r, Math.sin(a) * r, 0.0);
+                else p = center.add(0.0, Math.cos(a) * r, Math.sin(a) * r);
+
+                sendDust(level, p,
+                        plane == 1 ? new Vector3f(0.00f, 0.70f, 1.0f) : new Vector3f(0.02f, 0.42f, 1.0f),
+                        (float) (0.48 + 0.18 * fadeFactor));
+            }
+        }
+
+        int wisps = Math.max(2, (int) (8 * fadeFactor));
+        for (int i = 0; i < wisps; i++) {
+            double a = rnd(0.0, Math.PI * 2.0);
+            double h = rnd(-radius * 0.85, radius * 0.85);
+            double r = radius * rnd(1.18, 1.58);
+            Vec3 p = center.add(Math.cos(a) * r, h, Math.sin(a) * r);
+            sendDust(level, p, new Vector3f(0.00f, 0.72f, 1.0f), 0.52f);
+        }
+    }
+
+    private static boolean canMaximumBlueConsume(ServerLevel level, ServerPlayer owner, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) return false;
+        if (state.hasBlockEntity()) return false;
+        if (!state.getFluidState().isEmpty()) return false;
+        if (state.getDestroySpeed(level, pos) < 0.0F) return false;
+        if (state.is(Blocks.MOVING_PISTON) || state.is(Blocks.END_PORTAL) || state.is(Blocks.NETHER_PORTAL)) return false;
+
+        BlockPos ownerFloor = BlockPos.containing(owner.getX(), owner.getY() - 0.05, owner.getZ());
+        return !pos.equals(ownerFloor);
+    }
+
+    private static void pullMaximumBlueBlocks(ServerPlayer owner, ServerLevel level, Vec3 center, long now) {
+        if (now % 3 != 0) return;
+
+        List<BlockPos> candidates = new ArrayList<>();
+        int minX = Mth.floor(center.x - MAX_BLUE_ZONE_HALF);
+        int maxX = Mth.floor(center.x + MAX_BLUE_ZONE_HALF);
+        int minY = Mth.floor(center.y - MAX_BLUE_ZONE_HALF);
+        int maxY = Mth.floor(center.y + MAX_BLUE_ZONE_HALF);
+        int minZ = Mth.floor(center.z - MAX_BLUE_ZONE_HALF);
+        int maxZ = Mth.floor(center.z + MAX_BLUE_ZONE_HALF);
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    Vec3 bc = Vec3.atCenterOf(pos);
+                    if (Math.abs(bc.x - center.x) > MAX_BLUE_ZONE_HALF ||
+                            Math.abs(bc.y - center.y) > MAX_BLUE_ZONE_HALF ||
+                            Math.abs(bc.z - center.z) > MAX_BLUE_ZONE_HALF) continue;
+                    if (canMaximumBlueConsume(level, owner, pos)) candidates.add(pos.immutable());
+                }
+            }
+        }
+
+        candidates.sort(Comparator.comparingDouble(p -> Vec3.atCenterOf(p).distanceToSqr(center)));
+
+        int count = Math.min(3, candidates.size());
+        if (count <= 0) return;
+
+        List<MaxBlueSuctionBlock> active = MAX_BLUE_SUCTION.computeIfAbsent(owner.getUUID(), id -> new ArrayList<>());
+
+        for (int i = 0; i < count; i++) {
+            BlockPos pos = candidates.get(i);
+            BlockState state = level.getBlockState(pos);
+
+            FallingBlockEntity falling = FallingBlockEntity.fall(level, pos, state);
+            falling.setNoGravity(true);
+            falling.noPhysics = true;
+            falling.setDeltaMovement(Vec3.ZERO);
+            falling.fallDistance = 0.0F;
+
+            active.add(new MaxBlueSuctionBlock(
+                    falling.getId(), Vec3.atCenterOf(pos), now, rnd(0.0, Math.PI * 2.0)));
+        }
+    }
+
+    private static void tickMaximumBlueSuction(ServerPlayer owner, ServerLevel level, Vec3 center, long now) {
+        List<MaxBlueSuctionBlock> active = MAX_BLUE_SUCTION.get(owner.getUUID());
+        if (active == null || active.isEmpty()) return;
+
+        active.removeIf(entry -> {
+            Entity entity = level.getEntity(entry.entityId);
+            if (!(entity instanceof FallingBlockEntity falling) || !entity.isAlive()) return true;
+
+            double t = Mth.clamp((now - entry.startTick) / 24.0, 0.0, 1.0);
+            Vec3 target;
+
+            if (t < 0.45) {
+                double q = maxBlueSmooth(t / 0.45);
+                double angle = entry.phaseOffset + q * Math.PI * 0.85;
+                Vec3 orbitEntry = center.add(
+                        Math.cos(angle) * (MAX_BLUE_RADIUS + 1.15),
+                        Math.sin(angle * 1.7) * 1.1,
+                        Math.sin(angle) * (MAX_BLUE_RADIUS + 1.15));
+                Vec3 liftedStart = entry.start.add(0.0, Math.sin(q * Math.PI) * 1.25, 0.0);
+                target = liftedStart.lerp(orbitEntry, q);
+            } else if (t < 0.82) {
+                double q = (t - 0.45) / 0.37;
+                double angle = entry.phaseOffset + Math.PI * 0.85 + q * Math.PI * 2.25;
+                double r = (MAX_BLUE_RADIUS + 1.15) * (1.0 - q) + (MAX_BLUE_RADIUS + 0.15) * q;
+                target = center.add(
+                        Math.cos(angle) * r,
+                        Math.sin(angle * 1.35) * (0.95 - q * 0.45),
+                        Math.sin(angle) * r);
+            } else {
+                double q = maxBlueSmooth((t - 0.82) / 0.18);
+                double angle = entry.phaseOffset + Math.PI * 3.10;
+                Vec3 orbitPoint = center.add(
+                        Math.cos(angle) * (MAX_BLUE_RADIUS + 0.15),
+                        Math.sin(angle * 1.35) * 0.50,
+                        Math.sin(angle) * (MAX_BLUE_RADIUS + 0.15));
+                target = orbitPoint.lerp(center, q);
+            }
+
+            falling.setPos(target.x, target.y, target.z);
+            falling.setDeltaMovement(Vec3.ZERO);
+            falling.setNoGravity(true);
+            falling.noPhysics = true;
+            falling.fallDistance = 0.0F;
+
+            if (now % 2 == 0) {
+                sendDust(level,
+                        target.add(rnd(-0.12, 0.12), rnd(-0.12, 0.12), rnd(-0.12, 0.12)),
+                        new Vector3f(0.02f, 0.60f, 1.0f), 0.44f);
+            }
+
+            if (t >= 1.0) {
+                falling.discard();
+                return true;
+            }
+            return false;
+        });
+
+        if (active.isEmpty()) MAX_BLUE_SUCTION.remove(owner.getUUID());
+    }
+
+    private static void damageMaximumBlueZone(ServerPlayer owner, ServerLevel level, Vec3 center, long now) {
+        AABB zone = new AABB(
+                center.x - MAX_BLUE_ZONE_HALF, center.y - MAX_BLUE_ZONE_HALF, center.z - MAX_BLUE_ZONE_HALF,
+                center.x + MAX_BLUE_ZONE_HALF, center.y + MAX_BLUE_ZONE_HALF, center.z + MAX_BLUE_ZONE_HALF);
+
+        String suffix = owner.getUUID().toString().replace("-", "");
+        String seenKey = "jn_mb_seen_" + suffix;
+        String hitKey = "jn_mb_hit_" + suffix;
+
+        List<LivingEntity> targets = level.getEntitiesOfClass(
+                LivingEntity.class, zone,
+                e -> e.isAlive() && e != owner && !e.isSpectator());
+
+        for (LivingEntity target : targets) {
+            long lastSeen = target.getPersistentData().getLong(seenKey);
+            long lastHit = target.getPersistentData().getLong(hitKey);
+
+            if (lastSeen < now - 1 || now - lastHit >= 20) {
+                target.hurt(level.damageSources().playerAttack(owner), MAX_BLUE_DAMAGE);
+                target.getPersistentData().putLong(hitKey, now);
+
+                Vec3 p = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+                for (int i = 0; i < 8; i++) {
+                    sendDust(level,
+                            p.add(rnd(-0.35, 0.35), rnd(-0.35, 0.35), rnd(-0.35, 0.35)),
+                            new Vector3f(0.02f, 0.72f, 1.0f), 0.62f);
+                }
+            }
+
+            target.getPersistentData().putLong(seenKey, now);
+        }
+    }
+
+    private static void freezeMaximumBlueOwner(ServerPlayer player) {
+        double x = player.getPersistentData().getDouble("jn_max_blue_lock_x");
+        double y = player.getPersistentData().getDouble("jn_max_blue_lock_y");
+        double z = player.getPersistentData().getDouble("jn_max_blue_lock_z");
+
+        player.teleportTo(x, y, z);
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setSprinting(false);
+        player.fallDistance = 0.0F;
+    }
+
+    private static void tickMaximumBlueState(ServerPlayer player, ServerLevel level, long now) {
+        int phase = player.getPersistentData().getInt("jn_max_blue_phase");
+        if (phase == MAX_BLUE_PHASE_NONE) return;
+
+        if (!player.isAlive() || !hasGojoBlindfold(player)) {
+            clearMaximumBlue(player);
+            return;
+        }
+
+        freezeMaximumBlueOwner(player);
+
+        Vec3 center = currentMaximumBlueCenter(player, now);
+        double radius = currentMaximumBlueRadius(player, now);
+        player.getPersistentData().putDouble("jn_max_blue_x", center.x);
+        player.getPersistentData().putDouble("jn_max_blue_y", center.y);
+        player.getPersistentData().putDouble("jn_max_blue_z", center.z);
+
+        double fadeFactor = 1.0;
+        if (phase == MAX_BLUE_PHASE_FADING) {
+            long fadeStart = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            fadeFactor = 1.0 - Mth.clamp((now - fadeStart) / (double) MAX_BLUE_FADE_TICKS, 0.0, 1.0);
+        }
+
+        spawnMaximumBlueVisual(level, center, radius, now, fadeFactor);
+        tickMaximumBlueSuction(player, level, center, now);
+
+        if (phase == MAX_BLUE_PHASE_FORMING) {
+            long start = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            if (now - start >= MAX_BLUE_FORM_TICKS) {
+                player.getPersistentData().putInt("jn_max_blue_phase", MAX_BLUE_PHASE_ACTIVE);
+                player.getPersistentData().putLong("jn_max_blue_phase_start", now);
+                playSfx(level, player, SFX_MAX_BLUE, 1.30f, 0.76f);
+                player.displayClientMessage(
+                        Component.literal("MAXIMUM BLUE // ACTIVE")
+                                .withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD), true);
+            }
+            return;
+        }
+
+        if (phase == MAX_BLUE_PHASE_ACTIVE) {
+            damageMaximumBlueZone(player, level, center, now);
+            pullMaximumBlueBlocks(player, level, center, now);
+
+            long activeStart = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            if (now - activeStart >= MAX_BLUE_ACTIVE_TICKS) beginMaximumBlueFade(player);
+            else if (now % 40 == 0) playSfx(level, player, SFX_MAX_BLUE, 0.40f, 0.70f);
+            return;
+        }
+
+        if (phase == MAX_BLUE_PHASE_FADING) {
+            long fadeStart = player.getPersistentData().getLong("jn_max_blue_phase_start");
+            if (now - fadeStart >= MAX_BLUE_FADE_TICKS) clearMaximumBlue(player);
         }
     }
 
@@ -2023,6 +2505,7 @@ public class JujutsuNeonMod {
 
             tickBlueState(player, level, now);
             tickRedState(player, level, now);
+            tickMaximumBlueState(player, level, now);
 
             if (!equipped) {
                 player.getPersistentData().putBoolean("jn_super_speed", false);
@@ -2131,7 +2614,8 @@ public class JujutsuNeonMod {
                                 player.getPersistentData().getBoolean("jn_infinity"),
                                 (int) flowLeft,
                                 equipped,
-                                isBlueInteractionActive(player)
+                                isBlueInteractionActive(player),
+                                isMaximumBlueActive(player)
                         )
                 );
             }
@@ -2326,7 +2810,33 @@ public class JujutsuNeonMod {
         }
     }
 
-    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive) {
+    private record MaxBlueControlPacket(MaxBlueControlAction action) {
+        static void encode(MaxBlueControlPacket msg, FriendlyByteBuf buf) {
+            buf.writeEnum(msg.action);
+        }
+
+        static MaxBlueControlPacket decode(FriendlyByteBuf buf) {
+            return new MaxBlueControlPacket(buf.readEnum(MaxBlueControlAction.class));
+        }
+
+        static void handle(MaxBlueControlPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player == null) return;
+
+                switch (msg.action) {
+                    case START -> startMaximumBlue(player);
+                    case RELEASE -> beginMaximumBlueFade(player);
+                    case FARTHER -> adjustMaximumBlueDistance(player, 0.35);
+                    case CLOSER -> adjustMaximumBlueDistance(player, -0.35);
+                }
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
+    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive, boolean maxBlueActive) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
             buf.writeDouble(msg.energy);
@@ -2335,6 +2845,7 @@ public class JujutsuNeonMod {
             buf.writeVarInt(msg.flowTicks);
             buf.writeBoolean(msg.blindfold);
             buf.writeBoolean(msg.blueActive);
+            buf.writeBoolean(msg.maxBlueActive);
         }
 
         static HudSyncPacket decode(FriendlyByteBuf buf) {
@@ -2343,6 +2854,7 @@ public class JujutsuNeonMod {
                     buf.readVarInt(),
                     buf.readBoolean(),
                     buf.readVarInt(),
+                    buf.readBoolean(),
                     buf.readBoolean(),
                     buf.readBoolean()
             );
@@ -2386,7 +2898,7 @@ public class JujutsuNeonMod {
         );
 
         public static final KeyMapping BLUE_KEY = new KeyMapping(
-                "Z: Blue / удержание: Maximum Blue",
+                "Z: Blue / удержание: Maximum Blue (W/S дистанция)",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_Z,
                 CATEGORY
@@ -2489,6 +3001,7 @@ public class JujutsuNeonMod {
         private static int hudFlowTicks = 0;
         private static boolean hudBlindfold = false;
         private static boolean hudBlueActive = false;
+        private static boolean hudMaxBlueActive = false;
 
         private static void applyHudSync(HudSyncPacket msg) {
             hudEnergy = msg.energy();
@@ -2497,6 +3010,7 @@ public class JujutsuNeonMod {
             hudFlowTicks = msg.flowTicks();
             hudBlindfold = msg.blindfold();
             hudBlueActive = msg.blueActive();
+            hudMaxBlueActive = msg.maxBlueActive();
         }
 
         private static String keyName(KeyMapping mapping) {
@@ -2551,6 +3065,47 @@ public class JujutsuNeonMod {
                     // Направление берётся в момент отпускания клавиши.
                     NETWORK.sendToServer(new RedControlPacket(RedControlAction.RELEASE));
                     startAnim("RED", 12);
+                }
+
+                state.ticks = 0;
+                state.holdTriggered = false;
+            }
+
+            state.wasDown = down;
+        }
+
+        private static void processBlueKey(KeyMapping key, HoldKeyState state) {
+            boolean down = key.isDown();
+
+            if (down) {
+                if (!state.wasDown) {
+                    state.ticks = 0;
+                    state.holdTriggered = false;
+                }
+
+                state.ticks++;
+
+                if (!state.holdTriggered) {
+                    chargingAnim = "CHARGE_BLUE";
+                    chargingProgress = Mth.clamp(state.ticks / (float) HOLD_TICKS, 0.0f, 1.0f);
+                }
+
+                if (!state.holdTriggered && state.ticks >= HOLD_TICKS) {
+                    state.holdTriggered = true;
+                    chargingAnim = "NONE";
+                    chargingProgress = 0.0f;
+                    NETWORK.sendToServer(new MaxBlueControlPacket(MaxBlueControlAction.START));
+                    startAnim("MAX_BLUE", 60);
+                }
+            } else if (state.wasDown) {
+                chargingAnim = "NONE";
+                chargingProgress = 0.0f;
+
+                if (state.holdTriggered) {
+                    NETWORK.sendToServer(new MaxBlueControlPacket(MaxBlueControlAction.RELEASE));
+                } else {
+                    NETWORK.sendToServer(new AbilityPacket(Ability.BLUE));
+                    startAnim("BLUE", 12);
                 }
 
                 state.ticks = 0;
@@ -2660,9 +3215,22 @@ public class JujutsuNeonMod {
             }
             lastJumpHeld = jumpHeld;
 
+            if (hudMaxBlueActive) {
+                if (mc.options.keyUp.isDown() && !mc.options.keyDown.isDown()) {
+                    NETWORK.sendToServer(new MaxBlueControlPacket(MaxBlueControlAction.FARTHER));
+                } else if (mc.options.keyDown.isDown() && !mc.options.keyUp.isDown()) {
+                    NETWORK.sendToServer(new MaxBlueControlPacket(MaxBlueControlAction.CLOSER));
+                }
+
+                mc.player.input.forwardImpulse = 0.0F;
+                mc.player.input.leftImpulse = 0.0F;
+                mc.player.input.jumping = false;
+                mc.player.setSprinting(false);
+            }
+
             // Короткое нажатие и удержание 1 сек — разные способности.
             // Все базовые кнопки переназначаются через меню управления Minecraft.
-            processHoldKey(ClientModEvents.BLUE_KEY, Ability.BLUE, Ability.MAX_BLUE, BLUE_STATE, "CHARGE_BLUE");
+            processBlueKey(ClientModEvents.BLUE_KEY, BLUE_STATE);
             processRedKey(ClientModEvents.RED_KEY, RED_STATE);
             processHoldKey(ClientModEvents.BLACK_FLASH_KEY, Ability.BLACK_FLASH, Ability.CURSED_BARRAGE, BLACK_STATE, "CHARGE_BARRAGE");
             processHoldKey(ClientModEvents.DOMAIN_KEY, Ability.INFINITY_TOGGLE, Ability.DOMAIN, DOMAIN_STATE, "CHARGE_DOMAIN");
@@ -2720,6 +3288,8 @@ public class JujutsuNeonMod {
 
             if (hudBlueActive) {
                 g.drawString(mc.font, "BLUE // ЛКМ: БРОСОК", x + 10, y + h - 30, 0xFF66DFFF, false);
+            } else if (hudMaxBlueActive) {
+                g.drawString(mc.font, "MAX BLUE // W/S: DISTANCE", x + 10, y + h - 30, 0xFF66DFFF, false);
             }
 
             if (hudInfinity) {
