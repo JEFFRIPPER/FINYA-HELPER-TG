@@ -530,7 +530,7 @@ public class JujutsuNeonMod {
     private static final int BLUE_MODE_BLOCKS = 1;
     private static final int BLUE_MODE_ENTITY = 2;
     private static final int BLUE_MODE_PROJECTILE = 3;
-    private static final double BLUE_RANGE = 18.0;
+    private static final double BLUE_RANGE = 7.0;
 
     private static boolean isBlueInteractionActive(ServerPlayer player) {
         int mode = player.getPersistentData().getInt("jn_blue_mode");
