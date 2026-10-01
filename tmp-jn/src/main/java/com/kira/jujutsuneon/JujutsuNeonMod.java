@@ -42,6 +42,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Rarity;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
@@ -92,7 +93,7 @@ import java.util.function.Supplier;
  * Q — дэш. Q = вперёд, A+Q = влево, D+Q = вправо
  * Left Ctrl — суперскорость; во время режима доступны 10 воздушных прыжков
  * Z — Blue; Z+ (удержание 1 сек) — Maximum Blue
- * X — Red; X+ — Hollow Purple
+ * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
  * C — Black Flash; C+ — Cursed Barrage
  * V — Infinity ON/OFF; V+ — Domain Expansion
  * B — RCT/лечение; B+ — Limitless Blink
@@ -114,7 +115,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "6";
+    private static final String PROTOCOL = "7";
 
     private static final double CE_MAX = 100.0;
 
@@ -221,6 +222,14 @@ public class JujutsuNeonMod {
                 BlueActionPacket::decode,
                 BlueActionPacket::handle
         );
+
+        NETWORK.registerMessage(
+                packetId++,
+                RedControlPacket.class,
+                RedControlPacket::encode,
+                RedControlPacket::decode,
+                RedControlPacket::handle
+        );
     }
 
     private void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -249,6 +258,12 @@ public class JujutsuNeonMod {
         EXTRA_JUMP,
         SPEED_ON,
         SPEED_OFF
+    }
+
+    private enum RedControlAction {
+        START,
+        RELEASE,
+        CANCEL
     }
 
     private static boolean hasGojoBlindfold(ServerPlayer player) {
@@ -1097,6 +1112,372 @@ public class JujutsuNeonMod {
         );
     }
 
+
+    private static final int RED_MODE_NONE = 0;
+    private static final int RED_MODE_CHARGING = 1;
+    private static final int RED_MODE_PROJECTILE = 2;
+    private static final double RED_MAX_DISTANCE = 75.0;
+    private static final double RED_SPEED = 3.75;
+    private static final double RED_BALL_RADIUS = 0.62;
+    private static final float RED_DAMAGE = 50.0F; // 25 сердец
+    private static final float RED_EXPLOSION_POWER = 6.0F; // ≈ два обычных крипера
+
+    private static void spawnRedSphere(ServerLevel level, Vec3 center, double radius) {
+        final int shellPoints = 74;
+        final double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+
+        for (int i = 0; i < shellPoints; i++) {
+            double y = 1.0 - (i / (double) (shellPoints - 1)) * 2.0;
+            double ring = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+            double theta = golden * i;
+
+            Vec3 p = center.add(
+                    Math.cos(theta) * ring * radius,
+                    y * radius,
+                    Math.sin(theta) * ring * radius
+            );
+
+            sendDust(
+                    level,
+                    p,
+                    i % 3 == 0
+                            ? new Vector3f(1.0f, 0.00f, 0.05f)
+                            : new Vector3f(0.72f, 0.00f, 0.03f),
+                    i % 3 == 0 ? 1.15f : 0.90f
+            );
+        }
+
+        // Небольшое красное "дыхание" вокруг шара. Только красные оттенки.
+        for (int i = 0; i < 12; i++) {
+            double theta = rnd(0.0, Math.PI * 2.0);
+            double phi = Math.acos(rnd(-1.0, 1.0));
+            double r = radius * rnd(1.05, 1.38);
+
+            Vec3 p = center.add(
+                    Math.sin(phi) * Math.cos(theta) * r,
+                    Math.cos(phi) * r,
+                    Math.sin(phi) * Math.sin(theta) * r
+            );
+
+            sendDust(level, p, new Vector3f(0.95f, 0.00f, 0.04f), 0.70f);
+        }
+    }
+
+    private static Vec3 redHeldPosition(ServerPlayer player) {
+        return player.getEyePosition()
+                .add(player.getLookAngle().normalize().scale(1.85))
+                .add(0.0, -0.08, 0.0);
+    }
+
+    private static boolean startRedCharge(ServerPlayer player) {
+        if (player == null || !player.isAlive() || player.isSpectator()) return false;
+
+        if (!hasGojoBlindfold(player)) {
+            requireBlindfoldMessage(player);
+            return false;
+        }
+
+        if (player.getPersistentData().getInt("jn_red_mode") != RED_MODE_NONE) {
+            return false;
+        }
+
+        long now = player.level().getGameTime();
+        long cooldownUntil = player.getPersistentData().getLong("jn_cd_red");
+
+        if (now < cooldownUntil) {
+            long ticksLeft = cooldownUntil - now;
+            double seconds = Math.ceil(ticksLeft / 2.0) / 10.0;
+            player.displayClientMessage(
+                    Component.literal("Перезарядка Red: " + seconds + " сек.")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        double cost = abilityCost(player, Ability.RED);
+        if (!consumeEnergy(player, cost)) return false;
+
+        player.getPersistentData().putInt("jn_red_mode", RED_MODE_CHARGING);
+        player.getPersistentData().putBoolean("jn_red_energy_reserved", true);
+        player.getPersistentData().putLong("jn_red_started", now);
+
+        Vec3 center = redHeldPosition(player);
+        spawnRedSphere(player.serverLevel(), center, RED_BALL_RADIUS);
+        playSfx(player.serverLevel(), player, SFX_RED, 0.78f, 1.06f);
+        handSign(player);
+
+        return true;
+    }
+
+    private static void cancelRedCharge(ServerPlayer player, boolean refundEnergy) {
+        int mode = player.getPersistentData().getInt("jn_red_mode");
+        if (mode != RED_MODE_CHARGING) return;
+
+        if (refundEnergy && player.getPersistentData().getBoolean("jn_red_energy_reserved")) {
+            setEnergy(player, getEnergy(player) + abilityCost(player, Ability.RED));
+        }
+
+        player.getPersistentData().putInt("jn_red_mode", RED_MODE_NONE);
+        player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_started");
+    }
+
+    private static void launchRed(ServerPlayer player) {
+        if (player.getPersistentData().getInt("jn_red_mode") != RED_MODE_CHARGING) return;
+
+        Vec3 pos = redHeldPosition(player);
+        Vec3 velocity = player.getLookAngle().normalize().scale(RED_SPEED);
+
+        player.getPersistentData().putInt("jn_red_mode", RED_MODE_PROJECTILE);
+        player.getPersistentData().putDouble("jn_red_x", pos.x);
+        player.getPersistentData().putDouble("jn_red_y", pos.y);
+        player.getPersistentData().putDouble("jn_red_z", pos.z);
+        player.getPersistentData().putDouble("jn_red_vx", velocity.x);
+        player.getPersistentData().putDouble("jn_red_vy", velocity.y);
+        player.getPersistentData().putDouble("jn_red_vz", velocity.z);
+        player.getPersistentData().putDouble("jn_red_distance", 0.0);
+        player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_started");
+
+        setCooldown(player, Ability.RED, 140);
+        playSfx(player.serverLevel(), player, SFX_RED, 1.15f, 0.92f);
+    }
+
+    private static void clearRedProjectile(ServerPlayer player) {
+        player.getPersistentData().putInt("jn_red_mode", RED_MODE_NONE);
+        player.getPersistentData().remove("jn_red_x");
+        player.getPersistentData().remove("jn_red_y");
+        player.getPersistentData().remove("jn_red_z");
+        player.getPersistentData().remove("jn_red_vx");
+        player.getPersistentData().remove("jn_red_vy");
+        player.getPersistentData().remove("jn_red_vz");
+        player.getPersistentData().remove("jn_red_distance");
+        player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_started");
+    }
+
+    private static LivingEntity findRedEntityHit(
+            ServerLevel level,
+            ServerPlayer owner,
+            Vec3 from,
+            Vec3 to
+    ) {
+        AABB sweep = new AABB(from, to).inflate(RED_BALL_RADIUS + 0.55);
+
+        return level.getEntitiesOfClass(
+                        LivingEntity.class,
+                        sweep,
+                        e -> e.isAlive() && e != owner && !e.isSpectator()
+                )
+                .stream()
+                .filter(e -> e.getBoundingBox()
+                        .inflate(RED_BALL_RADIUS + 0.25)
+                        .clip(from, to)
+                        .isPresent())
+                .min(Comparator.comparingDouble(e -> from.distanceToSqr(e.getBoundingBox().getCenter())))
+                .orElse(null);
+    }
+
+    private static void explodeRed(ServerPlayer owner, Vec3 center) {
+        ServerLevel level = owner.serverLevel();
+
+        // Собираем живые цели заранее. Ванильный урон самого взрыва ниже отменяется,
+        // чтобы Red всегда наносил ровно 25 сердец, а сила 6 отвечала за разрушение блоков.
+        List<LivingEntity> victims = level.getEntitiesOfClass(
+                LivingEntity.class,
+                new AABB(center, center).inflate(6.25),
+                e -> e.isAlive() && e != owner
+        );
+
+        owner.getPersistentData().putBoolean("jn_red_explosion_blocks_only", true);
+        try {
+            level.explode(
+                    owner,
+                    center.x, center.y, center.z,
+                    RED_EXPLOSION_POWER,
+                    false,
+                    Level.ExplosionInteraction.TNT
+            );
+        } finally {
+            owner.getPersistentData().putBoolean("jn_red_explosion_blocks_only", false);
+        }
+
+        owner.getPersistentData().putBoolean("jn_red_custom_damage", true);
+        try {
+            for (LivingEntity victim : victims) {
+                if (!victim.isAlive()) continue;
+                victim.hurt(level.damageSources().playerAttack(owner), RED_DAMAGE);
+            }
+        } finally {
+            owner.getPersistentData().putBoolean("jn_red_custom_damage", false);
+        }
+
+        // Красный импульс поверх ванильного взрыва. Никаких оранжевых/жёлтых частиц.
+        for (int ring = 0; ring < 4; ring++) {
+            double radius = 1.4 + ring * 1.25;
+            int points = 54 + ring * 10;
+
+            for (int i = 0; i < points; i++) {
+                double a = Math.PI * 2.0 * i / points;
+                Vec3 p = center.add(
+                        Math.cos(a) * radius,
+                        Math.sin(a * 3.0) * 0.18,
+                        Math.sin(a) * radius
+                );
+                sendDust(
+                        level,
+                        p,
+                        ring % 2 == 0
+                                ? new Vector3f(1.0f, 0.00f, 0.04f)
+                                : new Vector3f(0.64f, 0.00f, 0.02f),
+                        1.15f
+                );
+            }
+        }
+
+        for (int i = 0; i < 72; i++) {
+            Vec3 dir = new Vec3(
+                    rnd(-1.0, 1.0),
+                    rnd(-0.65, 0.85),
+                    rnd(-1.0, 1.0)
+            );
+            if (dir.lengthSqr() < 1.0E-4) continue;
+            dir = dir.normalize().scale(rnd(0.8, 4.4));
+            sendDust(
+                    level,
+                    center.add(dir),
+                    new Vector3f(0.92f, 0.00f, 0.035f),
+                    0.95f
+            );
+        }
+
+        playSfx(level, owner, SFX_RED, 1.35f, 0.72f);
+        level.playSound(
+                null,
+                center.x, center.y, center.z,
+                SoundEvents.GENERIC_EXPLODE,
+                SoundSource.PLAYERS,
+                1.6f,
+                0.78f
+        );
+
+        clearRedProjectile(owner);
+    }
+
+    private static void tickRedState(ServerPlayer player, ServerLevel level, long now) {
+        int mode = player.getPersistentData().getInt("jn_red_mode");
+        if (mode == RED_MODE_NONE) return;
+
+        if (!player.isAlive() || !hasGojoBlindfold(player)) {
+            if (mode == RED_MODE_CHARGING) {
+                cancelRedCharge(player, true);
+            } else {
+                clearRedProjectile(player);
+            }
+            return;
+        }
+
+        if (mode == RED_MODE_CHARGING) {
+            Vec3 center = redHeldPosition(player);
+            spawnRedSphere(level, center, RED_BALL_RADIUS);
+
+            // Тонкий красный след от руки/камеры к шару.
+            Vec3 eye = player.getEyePosition();
+            for (int i = 1; i <= 7; i++) {
+                double t = i / 8.0;
+                Vec3 p = eye.lerp(center, t);
+                sendDust(
+                        level,
+                        p,
+                        i % 2 == 0
+                                ? new Vector3f(1.0f, 0.00f, 0.04f)
+                                : new Vector3f(0.68f, 0.00f, 0.02f),
+                        0.58f
+                );
+            }
+            return;
+        }
+
+        if (mode != RED_MODE_PROJECTILE) return;
+
+        Vec3 pos = new Vec3(
+                player.getPersistentData().getDouble("jn_red_x"),
+                player.getPersistentData().getDouble("jn_red_y"),
+                player.getPersistentData().getDouble("jn_red_z")
+        );
+
+        Vec3 velocity = new Vec3(
+                player.getPersistentData().getDouble("jn_red_vx"),
+                player.getPersistentData().getDouble("jn_red_vy"),
+                player.getPersistentData().getDouble("jn_red_vz")
+        );
+
+        Vec3 next = pos.add(velocity);
+
+        BlockHitResult blockHit = level.clip(new ClipContext(
+                pos,
+                next,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                player
+        ));
+
+        LivingEntity entityHit = findRedEntityHit(level, player, pos, next);
+
+        double blockDist = blockHit.getType() == HitResult.Type.MISS
+                ? Double.POSITIVE_INFINITY
+                : pos.distanceToSqr(blockHit.getLocation());
+
+        double entityDist = entityHit == null
+                ? Double.POSITIVE_INFINITY
+                : pos.distanceToSqr(entityHit.getBoundingBox().getCenter());
+
+        if (blockDist != Double.POSITIVE_INFINITY || entityDist != Double.POSITIVE_INFINITY) {
+            Vec3 impact = entityDist < blockDist && entityHit != null
+                    ? entityHit.getBoundingBox().getCenter()
+                    : blockHit.getLocation();
+
+            explodeRed(player, impact);
+            return;
+        }
+
+        // Красный сферический projectile + красный след между тиками.
+        for (int i = 0; i <= 6; i++) {
+            Vec3 trail = pos.lerp(next, i / 6.0);
+            sendDust(
+                    level,
+                    trail,
+                    i % 2 == 0
+                            ? new Vector3f(1.0f, 0.00f, 0.04f)
+                            : new Vector3f(0.62f, 0.00f, 0.02f),
+                    0.66f
+            );
+        }
+
+        spawnRedSphere(level, next, RED_BALL_RADIUS);
+
+        double travelled = player.getPersistentData().getDouble("jn_red_distance") + velocity.length();
+        if (travelled >= RED_MAX_DISTANCE) {
+            // На 75 блоках шар просто растворяется — без взрыва.
+            for (int i = 0; i < 34; i++) {
+                Vec3 fade = next.add(
+                        rnd(-0.80, 0.80),
+                        rnd(-0.80, 0.80),
+                        rnd(-0.80, 0.80)
+                );
+                sendDust(level, fade, new Vector3f(0.75f, 0.00f, 0.025f), 0.55f);
+            }
+            clearRedProjectile(player);
+            return;
+        }
+
+        player.getPersistentData().putDouble("jn_red_x", next.x);
+        player.getPersistentData().putDouble("jn_red_y", next.y);
+        player.getPersistentData().putDouble("jn_red_z", next.z);
+        player.getPersistentData().putDouble("jn_red_distance", travelled);
+    }
+
     private static void castRed(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         handSign(player);
@@ -1599,9 +1980,16 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onLivingAttack(LivingAttackEvent event) {
+            if (event.getSource().getEntity() instanceof ServerPlayer redOwner &&
+                    redOwner.getPersistentData().getBoolean("jn_red_explosion_blocks_only")) {
+                event.setCanceled(true);
+                return;
+            }
+
             if (event.getSource().getEntity() instanceof ServerPlayer attacker &&
                     isBlueInteractionActive(attacker) &&
-                    !attacker.getPersistentData().getBoolean("jn_blue_custom_damage")) {
+                    !attacker.getPersistentData().getBoolean("jn_blue_custom_damage") &&
+                    !attacker.getPersistentData().getBoolean("jn_red_custom_damage")) {
                 event.setCanceled(true);
                 return;
             }
@@ -1634,6 +2022,7 @@ public class JujutsuNeonMod {
             boolean equipped = hasGojoBlindfold(player);
 
             tickBlueState(player, level, now);
+            tickRedState(player, level, now);
 
             if (!equipped) {
                 player.getPersistentData().putBoolean("jn_super_speed", false);
@@ -1909,6 +2298,34 @@ public class JujutsuNeonMod {
         }
     }
 
+    private record RedControlPacket(RedControlAction action) {
+
+        static void encode(RedControlPacket msg, FriendlyByteBuf buf) {
+            buf.writeEnum(msg.action);
+        }
+
+        static RedControlPacket decode(FriendlyByteBuf buf) {
+            return new RedControlPacket(buf.readEnum(RedControlAction.class));
+        }
+
+        static void handle(RedControlPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player == null) return;
+
+                switch (msg.action) {
+                    case START -> startRedCharge(player);
+                    case RELEASE -> launchRed(player);
+                    case CANCEL -> cancelRedCharge(player, true);
+                }
+            });
+
+            context.setPacketHandled(true);
+        }
+    }
+
     private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
@@ -1976,7 +2393,7 @@ public class JujutsuNeonMod {
         );
 
         public static final KeyMapping RED_KEY = new KeyMapping(
-                "X: Red / удержание: Hollow Purple",
+                "X: Red (отпустить = выстрел) / 1с: Hollow Purple",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_X,
                 CATEGORY
@@ -2098,6 +2515,51 @@ public class JujutsuNeonMod {
             activeAnimLength = Math.max(1, ticks);
         }
 
+        private static void processRedKey(KeyMapping key, HoldKeyState state) {
+            boolean down = key.isDown();
+
+            if (down) {
+                if (!state.wasDown) {
+                    state.ticks = 0;
+                    state.holdTriggered = false;
+                    NETWORK.sendToServer(new RedControlPacket(RedControlAction.START));
+                    startAnim("RED", 10);
+                }
+
+                state.ticks++;
+
+                if (!state.holdTriggered) {
+                    chargingAnim = "CHARGE_PURPLE";
+                    chargingProgress = Mth.clamp(state.ticks / (float) HOLD_TICKS, 0.0f, 1.0f);
+                }
+
+                if (!state.holdTriggered && state.ticks >= HOLD_TICKS) {
+                    state.holdTriggered = true;
+                    chargingAnim = "NONE";
+                    chargingProgress = 0.0f;
+
+                    // X+ остаётся Hollow Purple: обычный Red отменяется и возвращает свою CE.
+                    NETWORK.sendToServer(new RedControlPacket(RedControlAction.CANCEL));
+                    NETWORK.sendToServer(new AbilityPacket(Ability.HOLLOW_PURPLE));
+                    startAnim("HOLLOW_PURPLE", 18);
+                }
+            } else if (state.wasDown) {
+                chargingAnim = "NONE";
+                chargingProgress = 0.0f;
+
+                if (!state.holdTriggered) {
+                    // Направление берётся в момент отпускания клавиши.
+                    NETWORK.sendToServer(new RedControlPacket(RedControlAction.RELEASE));
+                    startAnim("RED", 12);
+                }
+
+                state.ticks = 0;
+                state.holdTriggered = false;
+            }
+
+            state.wasDown = down;
+        }
+
         private static void processHoldKey(
                 KeyMapping key,
                 Ability tapAbility,
@@ -2201,7 +2663,7 @@ public class JujutsuNeonMod {
             // Короткое нажатие и удержание 1 сек — разные способности.
             // Все базовые кнопки переназначаются через меню управления Minecraft.
             processHoldKey(ClientModEvents.BLUE_KEY, Ability.BLUE, Ability.MAX_BLUE, BLUE_STATE, "CHARGE_BLUE");
-            processHoldKey(ClientModEvents.RED_KEY, Ability.RED, Ability.HOLLOW_PURPLE, RED_STATE, "CHARGE_PURPLE");
+            processRedKey(ClientModEvents.RED_KEY, RED_STATE);
             processHoldKey(ClientModEvents.BLACK_FLASH_KEY, Ability.BLACK_FLASH, Ability.CURSED_BARRAGE, BLACK_STATE, "CHARGE_BARRAGE");
             processHoldKey(ClientModEvents.DOMAIN_KEY, Ability.INFINITY_TOGGLE, Ability.DOMAIN, DOMAIN_STATE, "CHARGE_DOMAIN");
             processHoldKey(ClientModEvents.UTILITY_KEY, Ability.RCT, Ability.TELEPORT, UTILITY_STATE, "CHARGE_TELEPORT");
@@ -2248,7 +2710,7 @@ public class JujutsuNeonMod {
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLUE_KEY), "Blue", "HOLD: Maximum Blue");
             sy += 18;
-            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "HOLD: Hollow Purple");
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "RELEASE: FIRE / 1s: Purple");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLACK_FLASH_KEY), "Black Flash", "HOLD: Barrage");
             sy += 18;
