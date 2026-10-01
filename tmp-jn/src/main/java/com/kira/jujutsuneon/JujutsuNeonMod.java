@@ -998,3 +998,1002 @@ public class JujutsuNeonMod {
 
         if (action == MovementAction.SPEED_OFF) {
             player.getPersistentData().putBoolean("jn_super_speed", false);
+            return;
+        }
+
+        if (!hasGojoBlindfold(player)) {
+            player.getPersistentData().putBoolean("jn_super_speed", false);
+            if (action != MovementAction.SPEED_ON) {
+                requireBlindfoldMessage(player);
+            }
+            return;
+        }
+
+        switch (action) {
+            case FRONT_DASH -> dash(player, 0);
+            case LEFT_DASH -> dash(player, -1);
+            case RIGHT_DASH -> dash(player, 1);
+            case EXTRA_JUMP -> extraJump(player);
+            case SPEED_ON -> player.getPersistentData().putBoolean("jn_super_speed", true);
+            case SPEED_OFF -> player.getPersistentData().putBoolean("jn_super_speed", false);
+        }
+    }
+
+    /**
+     * side = 0  -> вперёд
+     * side = -1 -> влево
+     * side = 1  -> вправо
+     */
+    private static void dash(ServerPlayer player, int side) {
+        ServerLevel level = player.serverLevel();
+        long now = level.getGameTime();
+        long cooldown = player.getPersistentData().getLong("jn_dash_cd");
+
+        if (now < cooldown) return;
+        player.getPersistentData().putLong("jn_dash_cd", now + 10); // 0.5 сек
+        if (!consumeEnergy(player, side == 0 ? 3.0 : 4.0)) return;
+        playSfx(level, player, SFX_DASH, 1.0f, side == 0 ? 1.0f : 1.15f);
+        spawnVfx(level, VFX_DASH, player.position().add(0, 0.85, 0), 1);
+        spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.85, 0), 2);
+
+        Vec3 look = player.getLookAngle();
+        Vec3 forward = new Vec3(look.x, 0, look.z);
+
+        if (forward.lengthSqr() < 0.001) {
+            forward = new Vec3(0, 0, 1);
+        }
+
+        forward = forward.normalize();
+        Vec3 direction;
+
+        if (side == 0) {
+            direction = forward;
+        } else {
+            Vec3 right = new Vec3(-forward.z, 0, forward.x);
+            direction = side < 0 ? right.scale(-1) : right;
+        }
+
+        Vec3 old = player.getDeltaMovement();
+        double power = side == 0 ? 2.15 : 1.85;
+
+        player.setDeltaMovement(
+                direction.x * power,
+                Math.max(old.y, 0.08),
+                direction.z * power
+        );
+        player.hurtMarked = true;
+
+        Vector3f color = side == 0
+                ? new Vector3f(0.05f, 0.85f, 1.0f)
+                : new Vector3f(0.75f, 0.05f, 1.0f);
+
+        Vec3 base = player.position().add(0, 0.85, 0);
+
+        for (int i = 0; i < 24; i++) {
+            Vec3 p = base.subtract(direction.scale(i * 0.16));
+            sendDust(
+                    level,
+                    p.add(rnd(-0.25, 0.25), rnd(-0.35, 0.35), rnd(-0.25, 0.25)),
+                    color,
+                    1.0f
+            );
+        }
+
+        level.sendParticles(
+                ParticleTypes.ELECTRIC_SPARK,
+                player.getX(),
+                player.getY() + 0.8,
+                player.getZ(),
+                22,
+                0.35, 0.35, 0.35,
+                0.18
+        );
+    }
+
+    private static void extraJump(ServerPlayer player) {
+        if (!player.getPersistentData().getBoolean("jn_super_speed")) {
+            return;
+        }
+
+        if (player.onGround()) {
+            player.getPersistentData().putInt("jn_air_jumps", 0);
+            return;
+        }
+
+        int jumps = player.getPersistentData().getInt("jn_air_jumps");
+
+        if (jumps >= 10) {
+            player.displayClientMessage(
+                    Component.literal("Лимит воздушных прыжков: 10")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return;
+        }
+
+        if (!consumeEnergy(player, 2.0)) return;
+
+        Vec3 velocity = player.getDeltaMovement();
+
+        player.setDeltaMovement(
+                velocity.x * 1.03,
+                0.58,
+                velocity.z * 1.03
+        );
+        player.hurtMarked = true;
+        player.fallDistance = 0;
+        player.getPersistentData().putInt("jn_air_jumps", jumps + 1);
+
+        ServerLevel level = player.serverLevel();
+        spawnNeonRing(
+                level,
+                player.position().add(0, 0.15, 0),
+                0.85,
+                new Vector3f(0.2f, 0.85f, 1.0f)
+        );
+
+        level.sendParticles(
+                ParticleTypes.CLOUD,
+                player.getX(),
+                player.getY() + 0.15,
+                player.getZ(),
+                12,
+                0.28, 0.04, 0.28,
+                0.03
+        );
+    }
+
+    private static boolean isInFront(ServerPlayer player, LivingEntity target, double minDot) {
+        Vec3 look = player.getLookAngle().normalize();
+        Vec3 toTarget = target.position()
+                .add(0, target.getBbHeight() * 0.5, 0)
+                .subtract(player.getEyePosition());
+
+        if (toTarget.lengthSqr() < 0.01) return true;
+        return look.dot(toTarget.normalize()) >= minDot;
+    }
+
+    @Mod.EventBusSubscriber(
+            modid = MODID,
+            bus = Mod.EventBusSubscriber.Bus.FORGE
+    )
+    public static class ForgeEvents {
+
+        @SubscribeEvent
+        public static void onLivingAttack(LivingAttackEvent event) {
+            if (!(event.getEntity() instanceof ServerPlayer player)) return;
+            if (!hasGojoBlindfold(player)) return;
+            if (!player.getPersistentData().getBoolean("jn_infinity")) return;
+
+            // Infinity блокирует внешние прямые атаки, но не отменяет падение/голод/огонь.
+            if (event.getSource().getEntity() != null || event.getSource().getDirectEntity() != null) {
+                if (!consumeEnergy(player, 1.5)) {
+                    player.getPersistentData().putBoolean("jn_infinity", false);
+                    return;
+                }
+                event.setCanceled(true);
+                ServerLevel level = player.serverLevel();
+                for (int r = 0; r < 3; r++) {
+                    spawnNeonRing(level, player.position().add(0, 1.0, 0), 1.05 + r * 0.24,
+                            new Vector3f(0.08f, 0.82f, 1.0f));
+                }
+            }
+        }
+
+        @SubscribeEvent
+        public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
+            if (event.phase != TickEvent.Phase.END) return;
+            if (!(event.player instanceof ServerPlayer player)) return;
+
+            ServerLevel level = player.serverLevel();
+            long now = level.getGameTime();
+            boolean equipped = hasGojoBlindfold(player);
+
+            if (!equipped) {
+                player.getPersistentData().putBoolean("jn_super_speed", false);
+                player.getPersistentData().putBoolean("jn_infinity", false);
+                player.getPersistentData().putInt("jn_air_jumps", 0);
+            } else {
+                if (player.onGround()) {
+                    player.getPersistentData().putInt("jn_air_jumps", 0);
+                }
+
+                boolean flow = player.getPersistentData().getLong("jn_flow_until") > now;
+                boolean speed = player.getPersistentData().getBoolean("jn_super_speed");
+                boolean infinity = player.getPersistentData().getBoolean("jn_infinity");
+                boolean domain = player.getPersistentData().getLong("jn_domain_until") > now;
+
+                // Проклятая энергия: обычная регенерация, FLOW ускоряет восстановление.
+                double regen = flow ? 0.55 : 0.28;
+                if (speed || infinity || domain) regen *= 0.45;
+                setEnergy(player, getEnergy(player) + regen);
+
+                // CTRL: суперскорость, но теперь она реально расходует ресурс.
+                if (speed) {
+                    if (getEnergy(player) <= 0.2) {
+                        player.getPersistentData().putBoolean("jn_super_speed", false);
+                    } else {
+                        setEnergy(player, getEnergy(player) - 0.18);
+                        player.addEffect(new MobEffectInstance(
+                                MobEffects.MOVEMENT_SPEED, 6, flow ? 6 : 5,
+                                false, false, true
+                        ));
+
+                        if (player.zza > 0.0F) {
+                            Vec3 look = player.getLookAngle();
+                            Vec3 horizontal = new Vec3(look.x, 0, look.z);
+                            if (horizontal.lengthSqr() > 0.001) {
+                                horizontal = horizontal.normalize().scale(flow ? 0.075 : 0.055);
+                                player.setDeltaMovement(player.getDeltaMovement().add(horizontal));
+                                player.hurtMarked = true;
+                            }
+                        }
+
+                        if (now % 2 == 0) {
+                            sendDust(level,
+                                    player.position().add(rnd(-0.35, 0.35), rnd(0.05, 1.75), rnd(-0.35, 0.35)),
+                                    flow ? new Vector3f(0.72f, 0.05f, 1.0f) : new Vector3f(0.05f, 0.85f, 1.0f),
+                                    0.85f);
+                        }
+                    }
+                }
+
+                // FLOW после удачного Black Flash.
+                if (flow) {
+                    player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 6, 0, false, false, true));
+                    if (now % 3 == 0) {
+                        sendDust(level,
+                                player.position().add(rnd(-0.55, 0.55), rnd(0.1, 1.8), rnd(-0.55, 0.55)),
+                                new Vector3f(0.72f, 0.03f, 1.0f), 0.75f);
+                    }
+                }
+
+                if (infinity && now % 3 == 0) {
+                    double a = now * 0.25;
+                    Vec3 p = player.position().add(Math.cos(a) * 1.25, 1.0 + Math.sin(a * 0.5) * 0.35, Math.sin(a) * 1.25);
+                    sendDust(level, p, new Vector3f(0.08f, 0.82f, 1.0f), 0.9f);
+                }
+
+                // DOMAIN.
+                long until = player.getPersistentData().getLong("jn_domain_until");
+                if (until > now) {
+                    if (now % 2 == 0) {
+                        double pulseRadius = 4.6 + Math.sin(now * 0.25) * 0.5;
+                        spawnNeonRing(level, player.position().add(0, 0.15, 0), pulseRadius,
+                                new Vector3f(0.35f, 0.03f, 1.0f));
+
+                        level.sendParticles(ParticleTypes.REVERSE_PORTAL,
+                                player.getX(), player.getY() + 1.0, player.getZ(),
+                                18, 4.0, 1.5, 4.0, 0.02);
+                    }
+
+                    long lastPulse = player.getPersistentData().getLong("jn_domain_last_pulse");
+                    if (now - lastPulse >= 10) {
+                        player.getPersistentData().putLong("jn_domain_last_pulse", now);
+                        List<LivingEntity> targets = level.getEntitiesOfClass(
+                                LivingEntity.class,
+                                player.getBoundingBox().inflate(6.0),
+                                e -> e.isAlive() && e != player
+                        );
+
+                        for (LivingEntity target : targets) {
+                            target.hurt(level.damageSources().playerAttack(player), 2.0F);
+                            target.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 18, 2, false, false, true));
+                            target.addEffect(new MobEffectInstance(MobEffects.WEAKNESS, 18, 1, false, false, true));
+                        }
+                    }
+                }
+            }
+
+            // Синхронизация HUD 4 раза в секунду.
+            if (now % 5 == 0) {
+                long flowLeft = Math.max(0, player.getPersistentData().getLong("jn_flow_until") - now);
+                NETWORK.send(
+                        PacketDistributor.PLAYER.with(() -> player),
+                        new HudSyncPacket(
+                                getEnergy(player),
+                                player.getPersistentData().getInt("jn_air_jumps"),
+                                player.getPersistentData().getBoolean("jn_infinity"),
+                                (int) flowLeft,
+                                equipped
+                        )
+                );
+            }
+        }
+    }
+
+    private static void spawnVfx(
+            ServerLevel level,
+            RegistryObject<SimpleParticleType> type,
+            Vec3 pos,
+            int count
+    ) {
+        level.sendParticles(
+                type.get(),
+                pos.x, pos.y, pos.z,
+                count,
+                0.08, 0.08, 0.08,
+                0.0
+        );
+    }
+
+    private static void spawnNeonSphere(
+            ServerLevel level,
+            Vec3 center,
+            double radius,
+            Vector3f colorA,
+            Vector3f colorB
+    ) {
+        for (int i = 0; i < 180; i++) {
+            double theta = rnd(0, Math.PI * 2);
+            double phi = Math.acos(rnd(-1, 1));
+
+            double x = center.x + radius * Math.sin(phi) * Math.cos(theta);
+            double y = center.y + radius * Math.cos(phi);
+            double z = center.z + radius * Math.sin(phi) * Math.sin(theta);
+
+            sendDust(
+                    level,
+                    new Vec3(x, y, z),
+                    i % 2 == 0 ? colorA : colorB,
+                    1.20f
+            );
+        }
+
+        level.sendParticles(
+                ParticleTypes.ELECTRIC_SPARK,
+                center.x, center.y, center.z,
+                55,
+                1.3, 1.3, 1.3,
+                0.18
+        );
+    }
+
+    private static void spawnNeonRing(
+            ServerLevel level,
+            Vec3 center,
+            double radius,
+            Vector3f color
+    ) {
+        int points = 72;
+
+        for (int i = 0; i < points; i++) {
+            double angle = (Math.PI * 2.0 * i) / points;
+            double x = center.x + Math.cos(angle) * radius;
+            double z = center.z + Math.sin(angle) * radius;
+
+            sendDust(
+                    level,
+                    new Vec3(x, center.y, z),
+                    color,
+                    1.25f
+            );
+        }
+    }
+
+    private static void sendDust(
+            ServerLevel level,
+            Vec3 pos,
+            Vector3f color,
+            float scale
+    ) {
+        level.sendParticles(
+                new DustParticleOptions(color, scale),
+                pos.x, pos.y, pos.z,
+                1,
+                0, 0, 0,
+                0
+        );
+    }
+
+    private static double rnd(double min, double max) {
+        return ThreadLocalRandom.current().nextDouble(min, max);
+    }
+
+    private record AbilityPacket(Ability ability) {
+
+        static void encode(AbilityPacket msg, FriendlyByteBuf buf) {
+            buf.writeEnum(msg.ability);
+        }
+
+        static AbilityPacket decode(FriendlyByteBuf buf) {
+            return new AbilityPacket(buf.readEnum(Ability.class));
+        }
+
+        static void handle(
+                AbilityPacket msg,
+                Supplier<NetworkEvent.Context> contextSupplier
+        ) {
+            NetworkEvent.Context context = contextSupplier.get();
+
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player != null) useAbility(player, msg.ability);
+            });
+
+            context.setPacketHandled(true);
+        }
+    }
+
+
+    private record MovementPacket(MovementAction action) {
+
+        static void encode(MovementPacket msg, FriendlyByteBuf buf) {
+            buf.writeEnum(msg.action);
+        }
+
+        static MovementPacket decode(FriendlyByteBuf buf) {
+            return new MovementPacket(buf.readEnum(MovementAction.class));
+        }
+
+        static void handle(
+                MovementPacket msg,
+                Supplier<NetworkEvent.Context> contextSupplier
+        ) {
+            NetworkEvent.Context context = contextSupplier.get();
+
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player != null) {
+                    handleMovement(player, msg.action);
+                }
+            });
+
+            context.setPacketHandled(true);
+        }
+    }
+
+    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold) {
+
+        static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
+            buf.writeDouble(msg.energy);
+            buf.writeVarInt(msg.airJumps);
+            buf.writeBoolean(msg.infinity);
+            buf.writeVarInt(msg.flowTicks);
+            buf.writeBoolean(msg.blindfold);
+        }
+
+        static HudSyncPacket decode(FriendlyByteBuf buf) {
+            return new HudSyncPacket(
+                    buf.readDouble(),
+                    buf.readVarInt(),
+                    buf.readBoolean(),
+                    buf.readVarInt(),
+                    buf.readBoolean()
+            );
+        }
+
+        static void handle(HudSyncPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> DistExecutor.unsafeRunWhenOn(
+                    Dist.CLIENT,
+                    () -> () -> ClientForgeEvents.applyHudSync(msg)
+            ));
+            context.setPacketHandled(true);
+        }
+    }
+
+
+    @Mod.EventBusSubscriber(
+            modid = MODID,
+            bus = Mod.EventBusSubscriber.Bus.MOD,
+            value = Dist.CLIENT
+    )
+    public static class ClientModEvents {
+
+        // Эти бинды автоматически появляются в:
+        // Настройки -> Управление -> Назначение клавиш.
+        // Их можно менять на любые клавиши или кнопки мыши через обычное меню Minecraft.
+        private static final String CATEGORY = "Jujutsu Neon — способности";
+
+        public static final KeyMapping DASH_KEY = new KeyMapping(
+                "Дэш вперёд / вбок",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_Q,
+                CATEGORY
+        );
+
+        public static final KeyMapping SUPER_SPEED_KEY = new KeyMapping(
+                "Суперскорость + мультипрыжок",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_LEFT_CONTROL,
+                CATEGORY
+        );
+
+        public static final KeyMapping BLUE_KEY = new KeyMapping(
+                "Z: Blue / удержание: Maximum Blue",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_Z,
+                CATEGORY
+        );
+
+        public static final KeyMapping RED_KEY = new KeyMapping(
+                "X: Red / удержание: Hollow Purple",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_X,
+                CATEGORY
+        );
+
+        public static final KeyMapping BLACK_FLASH_KEY = new KeyMapping(
+                "C: Black Flash / удержание: Cursed Barrage",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_C,
+                CATEGORY
+        );
+
+        public static final KeyMapping DOMAIN_KEY = new KeyMapping(
+                "V: Infinity / удержание: Domain Expansion",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_V,
+                CATEGORY
+        );
+
+        public static final KeyMapping UTILITY_KEY = new KeyMapping(
+                "RCT / Limitless Blink (удержание)",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_B,
+                CATEGORY
+        );
+
+        public static final KeyMapping HUD_KEY = new KeyMapping(
+                "Показать/скрыть панель способностей",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_H,
+                CATEGORY
+        );
+
+        @SubscribeEvent
+        public static void registerParticles(RegisterParticleProvidersEvent event) {
+            event.registerSpriteSet(VFX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 3.8f, 18, 0.015f));
+            event.registerSpriteSet(VFX_MAX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 6.5f, 30, 0.020f));
+            event.registerSpriteSet(VFX_RED.get(), sprites -> new UltraVfxProvider(sprites, 5.2f, 18, 0.035f));
+            event.registerSpriteSet(VFX_PURPLE.get(), sprites -> new UltraVfxProvider(sprites, 7.5f, 32, 0.018f));
+            event.registerSpriteSet(VFX_BLACK_FLASH.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 14, 0.060f));
+            event.registerSpriteSet(VFX_BARRAGE.get(), sprites -> new UltraVfxProvider(sprites, 4.4f, 18, 0.045f));
+            event.registerSpriteSet(VFX_INFINITY.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 28, 0.008f));
+            event.registerSpriteSet(VFX_DOMAIN.get(), sprites -> new UltraVfxProvider(sprites, 10.0f, 48, 0.010f));
+            event.registerSpriteSet(VFX_RCT.get(), sprites -> new UltraVfxProvider(sprites, 4.5f, 28, 0.018f));
+            event.registerSpriteSet(VFX_TELEPORT.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 14, 0.075f));
+            event.registerSpriteSet(VFX_DASH.get(), sprites -> new UltraVfxProvider(sprites, 3.0f, 10, 0.100f));
+            event.registerSpriteSet(VFX_SHOCKWAVE.get(), sprites -> new UltraVfxProvider(sprites, 5.8f, 14, 0.090f));
+            event.registerSpriteSet(VFX_STAR.get(), sprites -> new UltraVfxProvider(sprites, 4.8f, 10, 0.055f));
+            event.registerSpriteSet(VFX_SLASH.get(), sprites -> new UltraVfxProvider(sprites, 4.2f, 12, 0.030f));
+            event.registerSpriteSet(VFX_TRAIL.get(), sprites -> new UltraVfxProvider(sprites, 2.2f, 9, 0.030f));
+        }
+
+        @SubscribeEvent
+        public static void registerKeys(RegisterKeyMappingsEvent event) {
+            event.register(DASH_KEY);
+            event.register(SUPER_SPEED_KEY);
+            event.register(BLUE_KEY);
+            event.register(RED_KEY);
+            event.register(BLACK_FLASH_KEY);
+            event.register(DOMAIN_KEY);
+            event.register(UTILITY_KEY);
+            event.register(HUD_KEY);
+        }
+    }
+
+    @Mod.EventBusSubscriber(
+            modid = MODID,
+            bus = Mod.EventBusSubscriber.Bus.FORGE,
+            value = Dist.CLIENT
+    )
+    public static class ClientForgeEvents {
+
+        private static final int HOLD_TICKS = 20; // 1 секунда
+        private static boolean lastSpeedHeld = false;
+        private static boolean lastJumpHeld = false;
+
+        private static final HoldKeyState BLUE_STATE = new HoldKeyState();
+        private static final HoldKeyState RED_STATE = new HoldKeyState();
+        private static final HoldKeyState BLACK_STATE = new HoldKeyState();
+        private static final HoldKeyState DOMAIN_STATE = new HoldKeyState();
+        private static final HoldKeyState UTILITY_STATE = new HoldKeyState();
+
+        private static String activeAnim = "NONE";
+        private static int activeAnimTicks = 0;
+        private static int activeAnimLength = 1;
+        private static String chargingAnim = "NONE";
+        private static float chargingProgress = 0.0f;
+
+        private static boolean hudVisible = true;
+        private static double hudEnergy = CE_MAX;
+        private static int hudAirJumps = 0;
+        private static boolean hudInfinity = false;
+        private static int hudFlowTicks = 0;
+        private static boolean hudBlindfold = false;
+
+        private static void applyHudSync(HudSyncPacket msg) {
+            hudEnergy = msg.energy();
+            hudAirJumps = msg.airJumps();
+            hudInfinity = msg.infinity();
+            hudFlowTicks = msg.flowTicks();
+            hudBlindfold = msg.blindfold();
+        }
+
+        private static String keyName(KeyMapping mapping) {
+            return mapping.getTranslatedKeyMessage().getString().toUpperCase();
+        }
+
+        private static class HoldKeyState {
+            boolean wasDown;
+            int ticks;
+            boolean holdTriggered;
+        }
+
+        private static void startAnim(String type, int ticks) {
+            activeAnim = type;
+            activeAnimTicks = ticks;
+            activeAnimLength = Math.max(1, ticks);
+        }
+
+        private static void processHoldKey(
+                KeyMapping key,
+                Ability tapAbility,
+                Ability holdAbility,
+                HoldKeyState state,
+                String chargeType
+        ) {
+            boolean down = key.isDown();
+
+            if (down) {
+                if (!state.wasDown) {
+                    state.ticks = 0;
+                    state.holdTriggered = false;
+                }
+
+                state.ticks++;
+
+                if (!state.holdTriggered) {
+                    chargingAnim = chargeType;
+                    chargingProgress = Mth.clamp(state.ticks / (float) HOLD_TICKS, 0.0f, 1.0f);
+                }
+
+                if (!state.holdTriggered && state.ticks >= HOLD_TICKS) {
+                    state.holdTriggered = true;
+                    chargingAnim = "NONE";
+                    chargingProgress = 0.0f;
+                    NETWORK.sendToServer(new AbilityPacket(holdAbility));
+                    startAnim(holdAbility.name(), 18);
+                }
+            } else if (state.wasDown) {
+                chargingAnim = "NONE";
+                chargingProgress = 0.0f;
+
+                if (!state.holdTriggered) {
+                    NETWORK.sendToServer(new AbilityPacket(tapAbility));
+                    startAnim(tapAbility.name(), 12);
+                }
+
+                state.ticks = 0;
+                state.holdTriggered = false;
+            }
+
+            state.wasDown = down;
+        }
+
+        @SubscribeEvent
+        public static void onClientTick(TickEvent.ClientTickEvent event) {
+            if (event.phase != TickEvent.Phase.END) return;
+
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null) return;
+
+            if (activeAnimTicks > 0) activeAnimTicks--;
+
+            if (mc.screen != null) {
+                if (lastSpeedHeld) {
+                    NETWORK.sendToServer(new MovementPacket(MovementAction.SPEED_OFF));
+                    lastSpeedHeld = false;
+                }
+                lastJumpHeld = false;
+                chargingAnim = "NONE";
+                return;
+            }
+
+            while (ClientModEvents.HUD_KEY.consumeClick()) {
+                hudVisible = !hudVisible;
+            }
+
+            while (ClientModEvents.DASH_KEY.consumeClick()) {
+                if (mc.options.keyLeft.isDown() && !mc.options.keyRight.isDown()) {
+                    NETWORK.sendToServer(new MovementPacket(MovementAction.LEFT_DASH));
+                } else if (mc.options.keyRight.isDown() && !mc.options.keyLeft.isDown()) {
+                    NETWORK.sendToServer(new MovementPacket(MovementAction.RIGHT_DASH));
+                } else {
+                    NETWORK.sendToServer(new MovementPacket(MovementAction.FRONT_DASH));
+                }
+                startAnim("DASH", 8);
+            }
+
+            boolean speedHeld = ClientModEvents.SUPER_SPEED_KEY.isDown();
+            if (speedHeld != lastSpeedHeld) {
+                NETWORK.sendToServer(new MovementPacket(speedHeld ? MovementAction.SPEED_ON : MovementAction.SPEED_OFF));
+                lastSpeedHeld = speedHeld;
+            }
+
+            boolean jumpHeld = mc.options.keyJump.isDown();
+            if (speedHeld && jumpHeld && !lastJumpHeld && !mc.player.onGround()) {
+                NETWORK.sendToServer(new MovementPacket(MovementAction.EXTRA_JUMP));
+            }
+            lastJumpHeld = jumpHeld;
+
+            // Короткое нажатие и удержание 1 сек — разные способности.
+            // Все базовые кнопки переназначаются через меню управления Minecraft.
+            processHoldKey(ClientModEvents.BLUE_KEY, Ability.BLUE, Ability.MAX_BLUE, BLUE_STATE, "CHARGE_BLUE");
+            processHoldKey(ClientModEvents.RED_KEY, Ability.RED, Ability.HOLLOW_PURPLE, RED_STATE, "CHARGE_PURPLE");
+            processHoldKey(ClientModEvents.BLACK_FLASH_KEY, Ability.BLACK_FLASH, Ability.CURSED_BARRAGE, BLACK_STATE, "CHARGE_BARRAGE");
+            processHoldKey(ClientModEvents.DOMAIN_KEY, Ability.INFINITY_TOGGLE, Ability.DOMAIN, DOMAIN_STATE, "CHARGE_DOMAIN");
+            processHoldKey(ClientModEvents.UTILITY_KEY, Ability.RCT, Ability.TELEPORT, UTILITY_STATE, "CHARGE_TELEPORT");
+        }
+
+        @SubscribeEvent
+        public static void onRenderGui(RenderGuiEvent.Post event) {
+            if (!hudVisible) return;
+
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.player == null || mc.options.hideGui) return;
+
+            GuiGraphics g = event.getGuiGraphics();
+            int sw = event.getWindow().getGuiScaledWidth();
+            int x = sw - 192;
+            int y = 20;
+            int w = 178;
+            int h = 176;
+
+            // Полупрозрачная карточка справа.
+            g.fill(x, y, x + w, y + h, 0xB20A0D14);
+            g.fill(x, y, x + 3, y + h, 0xFF20D7FF);
+            g.fill(x + 3, y, x + w, y + 2, 0xFF8B3DFF);
+            g.fill(x + 3, y + h - 2, x + w, y + h, 0xFF20D7FF);
+
+            g.drawString(mc.font, "LIMITLESS // CONTROL", x + 10, y + 8, 0xFFE7F7FF, false);
+            g.drawString(mc.font, hudBlindfold ? "GOJO BLINDFOLD: ONLINE" : "GOJO BLINDFOLD: OFFLINE",
+                    x + 10, y + 20, hudBlindfold ? 0xFF69E9FF : 0xFFFF6E78, false);
+
+            int barX = x + 10;
+            int barY = y + 34;
+            int barW = w - 20;
+            g.fill(barX, barY, barX + barW, barY + 7, 0xFF171B28);
+            int energyW = (int) Math.round(barW * Mth.clamp(hudEnergy / CE_MAX, 0.0, 1.0));
+            g.fill(barX, barY, barX + energyW, barY + 7, 0xFF25D9FF);
+            g.fill(barX, barY + 5, barX + energyW, barY + 7, 0xFF8B3DFF);
+            g.drawString(mc.font, "CE " + (int) Math.round(hudEnergy) + "%", barX, barY + 10, 0xFFBDEFFF, false);
+
+            int sy = barY + 24;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DASH_KEY), "Dash", null);
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.SUPER_SPEED_KEY), "Six Eyes Run", "Jumps " + (10 - Math.min(10, hudAirJumps)) + "/10");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLUE_KEY), "Blue", "HOLD: Maximum Blue");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "HOLD: Hollow Purple");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLACK_FLASH_KEY), "Black Flash", "HOLD: Barrage");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.UTILITY_KEY), "RCT", "HOLD: Blink");
+
+            if (hudInfinity) {
+                g.drawString(mc.font, "INFINITY // ACTIVE", x + 10, y + h - 18, 0xFF6CEBFF, false);
+            }
+            if (hudFlowTicks > 0) {
+                String flow = "FLOW // " + String.format(java.util.Locale.ROOT, "%.1fs", hudFlowTicks / 20.0);
+                g.drawString(mc.font, flow, x + 93, y + h - 18, 0xFFD78BFF, false);
+            }
+
+            if (!"NONE".equals(chargingAnim)) {
+                int cy = y + h + 6;
+                g.fill(x, cy, x + w, cy + 16, 0xB20A0D14);
+                int cw = (int) ((w - 8) * Mth.clamp(chargingProgress, 0.0f, 1.0f));
+                g.fill(x + 4, cy + 4, x + 4 + cw, cy + 12, 0xFF9A49FF);
+                g.drawCenteredString(mc.font, "HOLD +  " + (int)(chargingProgress * 100) + "%", x + w / 2, cy + 4, 0xFFFFFFFF);
+            }
+        }
+
+        private static void drawSkillRow(GuiGraphics g, Minecraft mc, int x, int y, String key, String skill, String hold) {
+            int keyW = Math.max(24, mc.font.width(key) + 8);
+            g.fill(x, y, x + keyW, y + 14, 0xFF152533);
+            g.fill(x, y, x + 2, y + 14, 0xFF28D9FF);
+            g.drawCenteredString(mc.font, key, x + keyW / 2, y + 3, 0xFFFFFFFF);
+            g.drawString(mc.font, skill, x + keyW + 6, y + 1, 0xFFEAF8FF, false);
+            if (hold != null) {
+                g.drawString(mc.font, hold, x + keyW + 6, y + 9, 0xFF9BA9C5, false);
+            }
+        }
+
+        @SubscribeEvent
+        public static void onRenderHand(RenderHandEvent event) {
+            PoseStack pose = event.getPoseStack();
+            boolean main = event.getHand() == InteractionHand.MAIN_HAND;
+            float side = main ? 1.0f : -1.0f;
+
+            if (!"NONE".equals(chargingAnim)) {
+                float p = chargingProgress;
+                float pulse = 0.75f + 0.25f * (float) Math.sin(p * Math.PI * 6.0);
+
+                // Поза зарядки: руки сходятся к центру, напоминает ручные печати,
+                // но не копирует конкретную анимацию из аниме.
+                pose.translate(-side * 0.22 * p, -0.12 * p, -0.30 * p);
+                pose.mulPose(Axis.XP.rotationDegrees(-42.0f * p));
+                pose.mulPose(Axis.YP.rotationDegrees(side * (48.0f * p + 8.0f * pulse)));
+                pose.mulPose(Axis.ZP.rotationDegrees(-side * 18.0f * p));
+                return;
+            }
+
+            if (activeAnimTicks <= 0) return;
+
+            float t = 1.0f - activeAnimTicks / (float) activeAnimLength;
+            float wave = (float) Math.sin(t * Math.PI);
+
+            switch (activeAnim) {
+                case "BLUE", "MAX_BLUE" -> {
+                    pose.translate(-side * 0.16 * wave, -0.10 * wave, -0.18 * wave);
+                    pose.mulPose(Axis.YP.rotationDegrees(side * 36.0f * wave));
+                    pose.mulPose(Axis.XP.rotationDegrees(-28.0f * wave));
+                }
+                case "RED", "HOLLOW_PURPLE" -> {
+                    pose.translate(side * 0.10 * wave, -0.06 * wave, -0.32 * wave);
+                    pose.mulPose(Axis.XP.rotationDegrees(-58.0f * wave));
+                    pose.mulPose(Axis.ZP.rotationDegrees(side * 22.0f * wave));
+                }
+                case "BLACK_FLASH", "CURSED_BARRAGE" -> {
+                    pose.translate(0, 0, -0.48 * wave);
+                    pose.mulPose(Axis.XP.rotationDegrees(-22.0f * wave));
+                    pose.mulPose(Axis.ZP.rotationDegrees(side * 10.0f * wave));
+                }
+                case "DOMAIN", "INFINITY_TOGGLE", "RCT", "TELEPORT" -> {
+                    pose.translate(-side * 0.25 * wave, -0.17 * wave, -0.22 * wave);
+                    pose.mulPose(Axis.XP.rotationDegrees(-48.0f * wave));
+                    pose.mulPose(Axis.YP.rotationDegrees(side * 55.0f * wave));
+                }
+                case "DASH" -> pose.mulPose(Axis.XP.rotationDegrees(-18.0f * wave));
+            }
+        }
+    }
+
+    private static class UltraVfxParticle extends TextureSheetParticle {
+        private final SpriteSet sprites;
+        private final float baseSize;
+        private final float growth;
+
+        protected UltraVfxParticle(
+                ClientLevel level,
+                double x, double y, double z,
+                double xd, double yd, double zd,
+                SpriteSet sprites,
+                float size,
+                int lifetime,
+                float growth
+        ) {
+            super(level, x, y, z, xd, yd, zd);
+            this.sprites = sprites;
+            this.baseSize = size;
+            this.growth = growth;
+            this.lifetime = lifetime;
+            this.quadSize = size;
+            this.hasPhysics = false;
+            this.friction = 0.92f;
+            this.gravity = 0.0f;
+            this.alpha = 1.0f;
+            this.setSpriteFromAge(sprites);
+        }
+
+        @Override
+        public void tick() {
+            super.tick();
+            if (!this.removed) {
+                this.setSpriteFromAge(this.sprites);
+                float life = this.age / (float) Math.max(1, this.lifetime);
+                this.alpha = Mth.clamp((1.0f - life) * 1.25f, 0.0f, 1.0f);
+                this.quadSize = this.baseSize * (1.0f + life * this.growth * 20.0f);
+            }
+        }
+
+        @Override
+        public ParticleRenderType getRenderType() {
+            return ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
+        }
+
+        @Override
+        public int getLightColor(float partialTick) {
+            return 0xF000F0;
+        }
+    }
+
+    private static class UltraVfxProvider implements ParticleProvider<SimpleParticleType> {
+        private final SpriteSet sprites;
+        private final float size;
+        private final int lifetime;
+        private final float growth;
+
+        UltraVfxProvider(SpriteSet sprites, float size, int lifetime, float growth) {
+            this.sprites = sprites;
+            this.size = size;
+            this.lifetime = lifetime;
+            this.growth = growth;
+        }
+
+        @Override
+        public Particle createParticle(
+                SimpleParticleType type,
+                ClientLevel level,
+                double x, double y, double z,
+                double xd, double yd, double zd
+        ) {
+            return new UltraVfxParticle(level, x, y, z, xd, yd, zd, sprites, size, lifetime, growth);
+        }
+    }
+
+    /**
+     * Предмет-активатор способностей.
+     *
+     * Материал возвращает имя "leather", поэтому без отдельной модели
+     * Minecraft использует совместимое поведение шлема. Позже можно
+     * подложить собственную модель/текстуру повязки через resources.
+     */
+    private static class GojoBlindfoldItem extends ArmorItem {
+
+        public GojoBlindfoldItem(ArmorMaterial material, Type type, Properties properties) {
+            super(material, type, properties);
+        }
+
+        @Override
+        public Component getName(ItemStack stack) {
+            return Component.literal("Повязка Годжо")
+                    .withStyle(ChatFormatting.LIGHT_PURPLE);
+        }
+
+        @Override
+        public String getArmorTexture(ItemStack stack, Entity entity, EquipmentSlot slot, String type) {
+            return MODID + ":textures/models/armor/gojo_layer_1.png";
+        }
+    }
+
+    private enum GojoBlindfoldMaterial implements ArmorMaterial {
+        INSTANCE;
+
+        @Override
+        public int getDurabilityForType(ArmorItem.Type type) {
+            return 275;
+        }
+
+        @Override
+        public int getDefenseForType(ArmorItem.Type type) {
+            return type == ArmorItem.Type.HELMET ? 2 : 0;
+        }
+
+        @Override
+        public int getEnchantmentValue() {
+            return 18;
+        }
+
+        @Override
+        public SoundEvent getEquipSound() {
+            return SoundEvents.ARMOR_EQUIP_LEATHER;
+        }
+
+        @Override
+        public Ingredient getRepairIngredient() {
+            return Ingredient.EMPTY;
+        }
+
+        @Override
+        public String getName() {
+            // Используем ванильную leather-текстуру брони как fallback.
+            return "leather";
+        }
+
+        @Override
+        public float getToughness() {
+            return 0.0F;
+        }
+
+        @Override
+        public float getKnockbackResistance() {
+            return 0.0F;
+        }
+    }
+}
