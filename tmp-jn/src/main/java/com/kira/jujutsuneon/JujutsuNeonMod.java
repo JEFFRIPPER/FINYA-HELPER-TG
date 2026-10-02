@@ -128,7 +128,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "12";
+    private static final String PROTOCOL = "13";
 
     private static final double CE_MAX = 100.0;
 
@@ -421,6 +421,83 @@ public class JujutsuNeonMod {
 
 
     /**
+     * Common safety rule for destructive Limitless techniques.
+     * - A real solid block currently supporting the owner is protected.
+     * - Any block/fluid cell actually occupied by the owner's hitbox is protected.
+     * - In air there is no fake protected floor.
+     * - In water/lava only the fluid cell containing the owner is protected; blocks below remain valid targets.
+     */
+    private static boolean isOwnerSafeBlock(ServerPlayer owner, BlockPos pos) {
+        ServerLevel level = owner.serverLevel();
+
+        AABB body = owner.getBoundingBox().inflate(0.001);
+        AABB cell = new AABB(
+                pos.getX(), pos.getY(), pos.getZ(),
+                pos.getX() + 1.0, pos.getY() + 1.0, pos.getZ() + 1.0
+        );
+
+        if (body.intersects(cell)) return true;
+
+        BlockPos support = BlockPos.containing(
+                owner.getX(),
+                owner.getY() - 0.05,
+                owner.getZ()
+        );
+
+        if (!pos.equals(support)) return false;
+
+        BlockState supportState = level.getBlockState(support);
+        return !supportState.isAir() &&
+                supportState.getFluidState().isEmpty() &&
+                !supportState.getCollisionShape(level, support).isEmpty();
+    }
+
+    private static Map<BlockPos, BlockState> snapshotOwnerSafeBlocks(ServerPlayer owner) {
+        ServerLevel level = owner.serverLevel();
+        Map<BlockPos, BlockState> result = new HashMap<>();
+
+        AABB body = owner.getBoundingBox().inflate(0.001);
+        int minX = Mth.floor(body.minX);
+        int maxX = Mth.floor(body.maxX);
+        int minY = Mth.floor(body.minY);
+        int maxY = Mth.floor(body.maxY);
+        int minZ = Mth.floor(body.minZ);
+        int maxZ = Mth.floor(body.maxZ);
+
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (isOwnerSafeBlock(owner, pos)) {
+                        result.put(pos.immutable(), level.getBlockState(pos));
+                    }
+                }
+            }
+        }
+
+        BlockPos support = BlockPos.containing(owner.getX(), owner.getY() - 0.05, owner.getZ());
+        if (isOwnerSafeBlock(owner, support)) {
+            result.put(support.immutable(), level.getBlockState(support));
+        }
+
+        return result;
+    }
+
+    private static void restoreOwnerSafeBlocks(ServerPlayer owner, Map<BlockPos, BlockState> safeStates) {
+        ServerLevel level = owner.serverLevel();
+
+        for (Map.Entry<BlockPos, BlockState> entry : safeStates.entrySet()) {
+            BlockPos pos = entry.getKey();
+            BlockState original = entry.getValue();
+
+            if (!level.getBlockState(pos).equals(original)) {
+                level.setBlock(pos, original, 2 | 16 | 32);
+            }
+        }
+    }
+
+
+    /**
      * Layered action-game VFX. These use only registered Forge particles,
      * so the effects remain multiplayer-safe and do not require shaders.
      */
@@ -623,7 +700,7 @@ public class JujutsuNeonMod {
                 .orElse(null);
     }
 
-    private static List<BlockPos> findBlueBlocks(ServerLevel level, BlockPos center) {
+    private static List<BlockPos> findBlueBlocks(ServerLevel level, ServerPlayer owner, BlockPos center) {
         List<BlockPos> candidates = new ArrayList<>();
 
         for (int dy = -2; dy <= 2; dy++) {
@@ -633,6 +710,7 @@ public class JujutsuNeonMod {
                     BlockState state = level.getBlockState(pos);
 
                     if (state.isAir()) continue;
+                    if (isOwnerSafeBlock(owner, pos)) continue;
                     if (state.hasBlockEntity()) continue;
                     if (!state.getFluidState().isEmpty()) continue;
                     if (state.getDestroySpeed(level, pos) < 0.0F) continue;
@@ -703,7 +781,7 @@ public class JujutsuNeonMod {
 
     private static boolean startBlueBlockHold(ServerPlayer player, BlockHitResult hit) {
         ServerLevel level = player.serverLevel();
-        List<BlockPos> blocks = findBlueBlocks(level, hit.getBlockPos());
+        List<BlockPos> blocks = findBlueBlocks(level, player, hit.getBlockPos());
 
         if (blocks.size() < 5) {
             player.displayClientMessage(
@@ -1299,8 +1377,7 @@ public class JujutsuNeonMod {
         if (state.getDestroySpeed(level, pos) < 0.0F) return false;
         if (state.is(Blocks.MOVING_PISTON) || state.is(Blocks.END_PORTAL) || state.is(Blocks.NETHER_PORTAL)) return false;
 
-        BlockPos ownerFloor = BlockPos.containing(owner.getX(), owner.getY() - 0.05, owner.getZ());
-        return !pos.equals(ownerFloor);
+        return !isOwnerSafeBlock(owner, pos);
     }
 
     private static void pullMaximumBlueBlocks(ServerPlayer owner, ServerLevel level, Vec3 center, long now) {
@@ -1992,6 +2069,8 @@ public class JujutsuNeonMod {
                 e -> e.isAlive() && e != owner
         );
 
+        Map<BlockPos, BlockState> redOwnerSafe = snapshotOwnerSafeBlocks(owner);
+
         owner.getPersistentData().putBoolean("jn_red_explosion_blocks_only", true);
         try {
             level.explode(
@@ -2003,6 +2082,7 @@ public class JujutsuNeonMod {
             );
         } finally {
             owner.getPersistentData().putBoolean("jn_red_explosion_blocks_only", false);
+            restoreOwnerSafeBlocks(owner, redOwnerSafe);
         }
 
         owner.getPersistentData().putBoolean("jn_red_custom_damage", true);
@@ -2079,11 +2159,13 @@ public class JujutsuNeonMod {
     }
 
     private static boolean canMaximumRedAnnihilate(
+            ServerPlayer owner,
             ServerLevel level,
             BlockPos pos,
             BlockState state
     ) {
         if (state.isAir() && state.getFluidState().isEmpty()) return false;
+        if (isOwnerSafeBlock(owner, pos)) return false;
 
         // Воду/лаву удаляем независимо от твёрдости их BlockState.
         if (!state.getFluidState().isEmpty()) return true;
@@ -2120,7 +2202,7 @@ public class JujutsuNeonMod {
                 if (!runtime.visitedBlocks.add(key)) continue;
 
                 BlockState state = level.getBlockState(pos);
-                if (!canMaximumRedAnnihilate(level, pos, state)) continue;
+                if (!canMaximumRedAnnihilate(owner, level, pos, state)) continue;
 
                 runtime.destructionQueue.addLast(pos.immutable());
             }
@@ -2234,7 +2316,7 @@ public class JujutsuNeonMod {
             if (pos == null || !level.hasChunkAt(pos)) continue;
 
             BlockState state = level.getBlockState(pos);
-            if (!canMaximumRedAnnihilate(level, pos, state)) continue;
+            if (!canMaximumRedAnnihilate(owner, level, pos, state)) continue;
 
             // UPDATE_CLIENTS + UPDATE_KNOWN_SHAPE + UPDATE_SUPPRESS_DROPS.
             // Без массового cascade neighbor-update на тысячи блоков.
