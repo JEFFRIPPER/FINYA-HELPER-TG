@@ -94,7 +94,8 @@ import java.util.function.Supplier;
 
 /**
  * Jujutsu Neon ULTIMATE — Forge 1.20.1.
- * Включает собственные 4K VFX-спрайты, HD-аудио и 4K-текстуры предметов.
+ * Blue / Maximum Blue / Red / Maximum Red / Hollow Purple используют нативные 4096x4096 VFX-спрайты.
+ * Поддерживающие частицы, HD-аудио и 4K-текстуры предметов работают отдельными слоями.
  * VFX-пайплайн усилен многослойными shockwave/star/slash/trail эффектами
  * в яркой action-RPG эстетике, без копирования чужих ассетов.
  *
@@ -129,7 +130,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "13";
+    private static final String PROTOCOL = "14";
 
     private static final double CE_MAX = 100.0;
 
@@ -149,6 +150,7 @@ public class JujutsuNeonMod {
     public static final RegistryObject<SimpleParticleType> VFX_BLUE = particle("vfx_blue");
     public static final RegistryObject<SimpleParticleType> VFX_MAX_BLUE = particle("vfx_max_blue");
     public static final RegistryObject<SimpleParticleType> VFX_RED = particle("vfx_red");
+    public static final RegistryObject<SimpleParticleType> VFX_MAX_RED = particle("vfx_max_red");
     public static final RegistryObject<SimpleParticleType> VFX_PURPLE = particle("vfx_hollow_purple");
     public static final RegistryObject<SimpleParticleType> VFX_BARRAGE = particle("vfx_cursed_barrage");
     public static final RegistryObject<SimpleParticleType> VFX_INFINITY = particle("vfx_infinity");
@@ -1040,6 +1042,9 @@ public class JujutsuNeonMod {
                         new Vector3f(0.18f, 0.72f, 1.0f),
                         0.62f);
             }
+            if (now % 4 == 0) {
+                spawnVfx(level, VFX_BLUE, center, 1);
+            }
             return;
         }
 
@@ -1070,12 +1075,15 @@ public class JujutsuNeonMod {
             target.fallDistance = 0.0F;
             target.hurtMarked = true;
 
+            Vec3 blueMid = player.getEyePosition().lerp(
+                    target.position().add(0.0, target.getBbHeight() * 0.55, 0.0),
+                    0.55
+            );
             if (now % 2 == 0) {
-                Vec3 mid = player.getEyePosition().lerp(
-                        target.position().add(0.0, target.getBbHeight() * 0.55, 0.0),
-                        0.55
-                );
-                sendDust(level, mid, new Vector3f(0.16f, 0.70f, 1.0f), 0.66f);
+                sendDust(level, blueMid, new Vector3f(0.16f, 0.70f, 1.0f), 0.66f);
+            }
+            if (now % 4 == 0) {
+                spawnVfx(level, VFX_BLUE, blueMid, 1);
             }
             return;
         }
@@ -1384,6 +1392,10 @@ public class JujutsuNeonMod {
             double r = radius * rnd(1.18, 1.58);
             Vec3 p = center.add(Math.cos(a) * r, h, Math.sin(a) * r);
             sendDust(level, p, new Vector3f(0.00f, 0.72f, 1.0f), 0.52f);
+        }
+
+        if (now % 3 == 0) {
+            spawnVfx(level, VFX_MAX_BLUE, center, 1);
         }
     }
 
@@ -1795,7 +1807,7 @@ public class JujutsuNeonMod {
     ) {
         if (radius <= 0.02) return;
 
-        int shellPoints = release ? 58 : 46;
+        int shellPoints = release ? 44 : 36;
         double golden = Math.PI * (3.0 - Math.sqrt(5.0));
 
         for (int i = 0; i < shellPoints; i++) {
@@ -2691,7 +2703,7 @@ public class JujutsuNeonMod {
         }
 
         if (now % 2 == 0) {
-            spawnVfx(level, VFX_RED, center, 1);
+            spawnVfx(level, VFX_MAX_RED, center, 1);
         }
     }
 
@@ -3247,6 +3259,9 @@ public class JujutsuNeonMod {
                 }
             } else {
                 spawnRedSphere(level, center, RED_BALL_RADIUS);
+                if (now % 3 == 0) {
+                    spawnVfx(level, VFX_RED, center, 1);
+                }
 
                 Vec3 eye = player.getEyePosition();
                 for (int i = 1; i <= 7; i++) {
@@ -3320,6 +3335,9 @@ public class JujutsuNeonMod {
             }
 
             spawnRedSphere(level, next, RED_BALL_RADIUS);
+            if (now % 3 == 0) {
+                spawnVfx(level, VFX_RED, next, 1);
+            }
 
             double travelled = player.getPersistentData().getDouble("jn_red_distance") + velocity.length();
             if (travelled >= RED_MAX_DISTANCE) {
@@ -5070,10 +5088,14 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void registerParticles(RegisterParticleProvidersEvent event) {
-            event.registerSpriteSet(VFX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 3.8f, 18, 0.015f));
-            event.registerSpriteSet(VFX_MAX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 6.5f, 30, 0.020f));
-            event.registerSpriteSet(VFX_RED.get(), sprites -> new UltraVfxProvider(sprites, 5.2f, 18, 0.035f));
-            event.registerSpriteSet(VFX_PURPLE.get(), sprites -> new UltraVfxProvider(sprites, 7.5f, 32, 0.018f));
+            // Native 4096x4096 primary technique sprites.
+            // One texture is shared by all instances of the same technique in the atlas,
+            // so visual fidelity rises without loading a new 4K image per particle.
+            event.registerSpriteSet(VFX_BLUE.get(), sprites -> new Technique4KProvider(sprites, 2.25f, 12, 0.010f, 0.030f));
+            event.registerSpriteSet(VFX_MAX_BLUE.get(), sprites -> new Technique4KProvider(sprites, 5.1f, 18, 0.014f, -0.018f));
+            event.registerSpriteSet(VFX_RED.get(), sprites -> new Technique4KProvider(sprites, 1.45f, 10, 0.018f, 0.038f));
+            event.registerSpriteSet(VFX_MAX_RED.get(), sprites -> new Technique4KProvider(sprites, 3.15f, 16, 0.015f, -0.026f));
+            event.registerSpriteSet(VFX_PURPLE.get(), sprites -> new Technique4KProvider(sprites, 4.9f, 20, 0.010f, 0.020f));
             event.registerSpriteSet(VFX_BARRAGE.get(), sprites -> new UltraVfxProvider(sprites, 4.4f, 18, 0.045f));
             event.registerSpriteSet(VFX_INFINITY.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 28, 0.008f));
             event.registerSpriteSet(VFX_DOMAIN.get(), sprites -> new UltraVfxProvider(sprites, 10.0f, 48, 0.010f));
@@ -5619,6 +5641,119 @@ public class JujutsuNeonMod {
                     pose.mulPose(Axis.ZP.rotationDegrees(side * 24.0f * wave));
                 }
             }
+        }
+    }
+
+    /**
+     * Full-bright particle renderer for the five primary native-4K techniques.
+     *
+     * The 4096 sprite carries micro-detail while the existing DustParticleOptions
+     * continue to provide true 3D volume. The billboard slowly rotates/pulses,
+     * which prevents the high-resolution art from looking like a static flat PNG.
+     */
+    private static class Technique4KParticle extends TextureSheetParticle {
+        private final SpriteSet sprites;
+        private final float baseSize;
+        private final float growth;
+        private final float spinSpeed;
+
+        protected Technique4KParticle(
+                ClientLevel level,
+                double x, double y, double z,
+                double xd, double yd, double zd,
+                SpriteSet sprites,
+                float size,
+                int lifetime,
+                float growth,
+                float spinSpeed
+        ) {
+            super(level, x, y, z, xd, yd, zd);
+            this.sprites = sprites;
+            this.baseSize = size;
+            this.growth = growth;
+            this.spinSpeed = spinSpeed;
+            this.lifetime = lifetime;
+            this.quadSize = size;
+            this.hasPhysics = false;
+            this.gravity = 0.0f;
+            this.friction = 1.0f;
+            this.alpha = 0.0f;
+            this.roll = this.random.nextFloat() * ((float) Math.PI * 2.0f);
+            this.oRoll = this.roll;
+            this.setSpriteFromAge(sprites);
+        }
+
+        @Override
+        public void tick() {
+            super.tick();
+            if (this.removed) return;
+
+            this.setSpriteFromAge(this.sprites);
+
+            float life = this.age / (float) Math.max(1, this.lifetime);
+            float fadeIn = Mth.clamp(life / 0.16f, 0.0f, 1.0f);
+            float fadeOut = Mth.clamp((1.0f - life) / 0.30f, 0.0f, 1.0f);
+            float envelope = Math.min(fadeIn, fadeOut);
+            float pulse = 1.0f + 0.045f * (float) Math.sin(life * Math.PI * 6.0);
+
+            this.alpha = Mth.clamp(envelope * 0.92f, 0.0f, 0.92f);
+            this.quadSize = this.baseSize *
+                    (1.0f + life * this.growth * 20.0f) *
+                    pulse;
+
+            this.oRoll = this.roll;
+            this.roll += this.spinSpeed;
+        }
+
+        @Override
+        public ParticleRenderType getRenderType() {
+            return ParticleRenderType.PARTICLE_SHEET_TRANSLUCENT;
+        }
+
+        @Override
+        public int getLightColor(float partialTick) {
+            return 0xF000F0;
+        }
+    }
+
+    private static class Technique4KProvider implements ParticleProvider<SimpleParticleType> {
+        private final SpriteSet sprites;
+        private final float size;
+        private final int lifetime;
+        private final float growth;
+        private final float spinSpeed;
+
+        Technique4KProvider(
+                SpriteSet sprites,
+                float size,
+                int lifetime,
+                float growth,
+                float spinSpeed
+        ) {
+            this.sprites = sprites;
+            this.size = size;
+            this.lifetime = lifetime;
+            this.growth = growth;
+            this.spinSpeed = spinSpeed;
+        }
+
+        @Override
+        public Particle createParticle(
+                SimpleParticleType type,
+                ClientLevel level,
+                double x, double y, double z,
+                double xd, double yd, double zd
+        ) {
+            return new Technique4KParticle(
+                    level,
+                    x, y, z,
+                    xd, yd, zd,
+                    sprites,
+                    size,
+                    lifetime,
+                    growth,
+                    spinSpeed
+            );
         }
     }
 
