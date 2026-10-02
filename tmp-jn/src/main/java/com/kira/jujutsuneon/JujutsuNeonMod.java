@@ -14,6 +14,8 @@ import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.particles.BlockParticleOption;
 import net.minecraft.core.particles.DustParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.particles.ParticleType;
@@ -33,6 +35,7 @@ import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MoverType;
 import net.minecraft.world.entity.item.FallingBlockEntity;
 import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ArmorMaterial;
@@ -58,6 +61,8 @@ import net.minecraftforge.client.event.RenderGuiEvent;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.living.LivingAttackEvent;
+import net.minecraftforge.event.entity.living.LivingEvent;
+import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
@@ -92,8 +97,10 @@ import java.util.function.Supplier;
  * Пока она надета в слот головы, доступны техники и усиленное движение.
  *
  * Клавиши по умолчанию:
- * Q — дэш. Q = вперёд, A+Q = влево, D+Q = вправо
- * Left Ctrl — суперскорость; во время режима доступны 10 воздушных прыжков
+ * Q — дэш. Q = длинный front dash, A+Q/D+Q = резкий side dash; в воздухе Q идёт по камере.
+ * Space — заряд прыжка: <1с = 2 блока, 1с = 7, 2с = 13, 3с = 18.
+ * Left Ctrl — суперскорость.
+ * R — мгновенный телепорт к загруженному блоку под прицелом, стан 2 сек.
  * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
  * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
  * C — Black Flash; C+ — Cursed Barrage
@@ -117,7 +124,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "8";
+    private static final String PROTOCOL = "9";
 
     private static final double CE_MAX = 100.0;
 
@@ -240,6 +247,22 @@ public class JujutsuNeonMod {
                 MaxBlueControlPacket::decode,
                 MaxBlueControlPacket::handle
         );
+
+        NETWORK.registerMessage(
+                packetId++,
+                JumpControlPacket.class,
+                JumpControlPacket::encode,
+                JumpControlPacket::decode,
+                JumpControlPacket::handle
+        );
+
+        NETWORK.registerMessage(
+                packetId++,
+                TeleportPacket.class,
+                TeleportPacket::encode,
+                TeleportPacket::decode,
+                TeleportPacket::handle
+        );
     }
 
     private void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
@@ -265,7 +288,6 @@ public class JujutsuNeonMod {
         FRONT_DASH,
         LEFT_DASH,
         RIGHT_DASH,
-        EXTRA_JUMP,
         SPEED_ON,
         SPEED_OFF
     }
@@ -2294,6 +2316,16 @@ public class JujutsuNeonMod {
     }
 
 
+    private static final int DASH_NONE = 0;
+    private static final int DASH_FRONT = 1;
+    private static final int DASH_SIDE = 2;
+    private static final int DASH_AIR = 3;
+
+    private static final long FRONT_DASH_TICKS = 14L;
+    private static final long SIDE_DASH_TICKS = 4L;
+    private static final long AIR_DASH_TICKS = 3L;
+    private static final float FRONT_DASH_DAMAGE = 16.0F; // 8 сердец
+
     private static void handleMovement(ServerPlayer player, MovementAction action) {
         if (player == null || !player.isAlive() || player.isSpectator()) return;
 
@@ -2304,144 +2336,472 @@ public class JujutsuNeonMod {
 
         if (!hasGojoBlindfold(player)) {
             player.getPersistentData().putBoolean("jn_super_speed", false);
-            if (action != MovementAction.SPEED_ON) {
-                requireBlindfoldMessage(player);
-            }
+            if (action != MovementAction.SPEED_ON) requireBlindfoldMessage(player);
             return;
         }
 
         switch (action) {
-            case FRONT_DASH -> dash(player, 0);
-            case LEFT_DASH -> dash(player, -1);
-            case RIGHT_DASH -> dash(player, 1);
-            case EXTRA_JUMP -> extraJump(player);
+            case FRONT_DASH -> startDash(player, 0);
+            case LEFT_DASH -> startDash(player, -1);
+            case RIGHT_DASH -> startDash(player, 1);
             case SPEED_ON -> player.getPersistentData().putBoolean("jn_super_speed", true);
             case SPEED_OFF -> player.getPersistentData().putBoolean("jn_super_speed", false);
         }
     }
 
-    /**
-     * side = 0  -> вперёд
-     * side = -1 -> влево
-     * side = 1  -> вправо
-     */
-    private static void dash(ServerPlayer player, int side) {
+    private static boolean isAirDashHeight(ServerPlayer player) {
+        Vec3 start = player.position().add(0.0, 0.05, 0.0);
+        Vec3 end = start.add(0.0, -4.15, 0.0);
+
+        BlockHitResult hit = player.level().clip(new ClipContext(
+                start,
+                end,
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                player
+        ));
+
+        if (hit.getType() == HitResult.Type.MISS) return true;
+        return start.y - hit.getLocation().y >= 4.0 - 1.0E-3;
+    }
+
+    private static void startDash(ServerPlayer player, int side) {
+        if (player.getPersistentData().getInt("jn_dash_mode") != DASH_NONE) return;
+
         ServerLevel level = player.serverLevel();
         long now = level.getGameTime();
-        long cooldown = player.getPersistentData().getLong("jn_dash_cd");
 
-        if (now < cooldown) return;
-        player.getPersistentData().putLong("jn_dash_cd", now + 10); // 0.5 сек
-        if (!consumeEnergy(player, side == 0 ? 3.0 : 4.0)) return;
-        playSfx(level, player, SFX_DASH, 1.0f, side == 0 ? 1.0f : 1.15f);
-        spawnVfx(level, VFX_DASH, player.position().add(0, 0.85, 0), 1);
-        spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.85, 0), 2);
+        // В воздухе выше 3 блоков любой Q-рывок становится свободным air dash по камере.
+        if (isAirDashHeight(player)) {
+            if (!consumeEnergy(player, 0.8)) return;
 
-        Vec3 look = player.getLookAngle();
-        Vec3 forward = new Vec3(look.x, 0, look.z);
+            Vec3 dir = player.getLookAngle().normalize();
+            player.getPersistentData().putInt("jn_dash_mode", DASH_AIR);
+            player.getPersistentData().putLong("jn_dash_started", now);
+            player.getPersistentData().putDouble("jn_dash_dx", dir.x);
+            player.getPersistentData().putDouble("jn_dash_dy", dir.y);
+            player.getPersistentData().putDouble("jn_dash_dz", dir.z);
 
-        if (forward.lengthSqr() < 0.001) {
-            forward = new Vec3(0, 0, 1);
+            playSfx(level, player, SFX_DASH, 0.82f, 1.22f);
+            spawnVfx(level, VFX_DASH, player.position().add(0, 0.85, 0), 1);
+            return;
         }
 
-        forward = forward.normalize();
-        Vec3 direction;
+        long cooldown = player.getPersistentData().getLong("jn_dash_cd");
+        if (now < cooldown) return;
+
+        if (!consumeEnergy(player, side == 0 ? 3.0 : 4.0)) return;
+
+        player.getPersistentData().putLong("jn_dash_cd", now + 10);
+        player.getPersistentData().putLong("jn_dash_started", now);
+        player.getPersistentData().putBoolean("jn_dash_hit", false);
+
+        Vec3 look = player.getLookAngle().normalize();
+        Vec3 dir;
 
         if (side == 0) {
-            direction = forward;
+            // Front Dash полностью следует камере, в том числе вверх/вниз.
+            dir = look;
+            player.getPersistentData().putInt("jn_dash_mode", DASH_FRONT);
         } else {
-            Vec3 right = new Vec3(-forward.z, 0, forward.x);
-            direction = side < 0 ? right.scale(-1) : right;
+            Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
+            if (horizontal.lengthSqr() < 1.0E-4) {
+                double yaw = Math.toRadians(player.getYRot());
+                horizontal = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
+            }
+            horizontal = horizontal.normalize();
+            Vec3 right = new Vec3(-horizontal.z, 0.0, horizontal.x);
+            dir = side < 0 ? right.scale(-1.0) : right;
+            player.getPersistentData().putInt("jn_dash_mode", DASH_SIDE);
         }
 
-        Vec3 old = player.getDeltaMovement();
-        double power = side == 0 ? 2.15 : 1.85;
+        player.getPersistentData().putDouble("jn_dash_dx", dir.x);
+        player.getPersistentData().putDouble("jn_dash_dy", dir.y);
+        player.getPersistentData().putDouble("jn_dash_dz", dir.z);
 
-        player.setDeltaMovement(
-                direction.x * power,
-                Math.max(old.y, 0.08),
-                direction.z * power
-        );
-        player.hurtMarked = true;
+        playSfx(level, player, SFX_DASH, 1.0f, side == 0 ? 0.92f : 1.18f);
+        spawnVfx(level, VFX_DASH, player.position().add(0, 0.85, 0), 1);
+        spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.85, 0), 1);
+    }
 
-        Vector3f color = side == 0
-                ? new Vector3f(0.05f, 0.85f, 1.0f)
-                : new Vector3f(0.75f, 0.05f, 1.0f);
+    private static boolean tryDashMove(ServerPlayer player, Vec3 delta, boolean allowStepUp) {
+        ServerLevel level = player.serverLevel();
+        AABB box = player.getBoundingBox();
 
-        Vec3 base = player.position().add(0, 0.85, 0);
+        if (level.noCollision(player, box.move(delta))) {
+            player.move(MoverType.SELF, delta);
+            return true;
+        }
 
-        for (int i = 0; i < 24; i++) {
-            Vec3 p = base.subtract(direction.scale(i * 0.16));
-            sendDust(
-                    level,
-                    p.add(rnd(-0.25, 0.25), rnd(-0.35, 0.35), rnd(-0.25, 0.25)),
-                    color,
-                    1.0f
+        if (allowStepUp) {
+            for (int h = 1; h <= 2; h++) {
+                Vec3 stepped = delta.add(0.0, h, 0.0);
+                if (level.noCollision(player, box.move(stepped))) {
+                    player.move(MoverType.SELF, stepped);
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static LivingEntity findDashVictim(ServerPlayer player, Vec3 from, Vec3 to) {
+        ServerLevel level = player.serverLevel();
+        AABB sweep = new AABB(from, to).inflate(0.85);
+
+        return level.getEntitiesOfClass(
+                        LivingEntity.class,
+                        sweep,
+                        e -> e.isAlive() && e != player && !e.isSpectator()
+                )
+                .stream()
+                .filter(e -> e.getBoundingBox().inflate(0.35).clip(from, to).isPresent())
+                .min(Comparator.comparingDouble(e -> from.distanceToSqr(e.getBoundingBox().getCenter())))
+                .orElse(null);
+    }
+
+    private static void spawnFrontDashImpact(ServerPlayer player) {
+        ServerLevel level = player.serverLevel();
+        Vec3 look = player.getLookAngle().normalize();
+        Vec3 origin = player.position().add(0.0, 0.35, 0.0);
+
+        BlockHitResult hit = level.clip(new ClipContext(
+                origin,
+                origin.add(look.scale(2.4)),
+                ClipContext.Block.COLLIDER,
+                ClipContext.Fluid.NONE,
+                player
+        ));
+
+        Vec3 center = hit.getType() == HitResult.Type.MISS
+                ? player.position().add(look.scale(0.9)).add(0.0, 0.1, 0.0)
+                : hit.getLocation();
+
+        BlockPos bp = hit.getType() == HitResult.Type.MISS
+                ? BlockPos.containing(center.x, player.getY() - 0.1, center.z)
+                : hit.getBlockPos();
+
+        BlockState state = level.getBlockState(bp);
+
+        // Визуальная "царапина/удар": блоки не ломаются.
+        for (int ring = 0; ring < 3; ring++) {
+            double radius = 0.45 + ring * 0.42;
+            int points = 18 + ring * 8;
+            for (int i = 0; i < points; i++) {
+                double a = Math.PI * 2.0 * i / points;
+                Vec3 p = center.add(
+                        Math.cos(a) * radius,
+                        rnd(-0.04, 0.10),
+                        Math.sin(a) * radius
+                );
+                sendDust(level, p, new Vector3f(0.72f, 0.88f, 1.0f), 0.50f);
+            }
+        }
+
+        if (!state.isAir()) {
+            level.sendParticles(
+                    new BlockParticleOption(ParticleTypes.BLOCK, state),
+                    center.x, center.y, center.z,
+                    36,
+                    0.55, 0.16, 0.55,
+                    0.12
             );
         }
 
-        level.sendParticles(
-                ParticleTypes.ELECTRIC_SPARK,
-                player.getX(),
-                player.getY() + 0.8,
-                player.getZ(),
-                22,
-                0.35, 0.35, 0.35,
-                0.18
+        level.playSound(
+                null,
+                center.x, center.y, center.z,
+                SoundEvents.GENERIC_EXPLODE,
+                SoundSource.PLAYERS,
+                0.55f,
+                1.55f
         );
     }
 
-    private static void extraJump(ServerPlayer player) {
-        if (!player.getPersistentData().getBoolean("jn_super_speed")) {
+    private static void finishDash(ServerPlayer player, boolean impactEffect) {
+        if (impactEffect) spawnFrontDashImpact(player);
+
+        player.getPersistentData().putInt("jn_dash_mode", DASH_NONE);
+        player.getPersistentData().remove("jn_dash_started");
+        player.getPersistentData().remove("jn_dash_dx");
+        player.getPersistentData().remove("jn_dash_dy");
+        player.getPersistentData().remove("jn_dash_dz");
+        player.getPersistentData().remove("jn_dash_hit");
+        player.setDeltaMovement(Vec3.ZERO);
+        player.hurtMarked = true;
+    }
+
+    private static void tickDashState(ServerPlayer player, ServerLevel level, long now) {
+        int mode = player.getPersistentData().getInt("jn_dash_mode");
+        if (mode == DASH_NONE) return;
+
+        if (!player.isAlive() || !hasGojoBlindfold(player)) {
+            finishDash(player, false);
             return;
         }
 
-        if (player.onGround()) {
-            player.getPersistentData().putInt("jn_air_jumps", 0);
+        long start = player.getPersistentData().getLong("jn_dash_started");
+        long elapsed = now - start;
+
+        Vec3 dir = new Vec3(
+                player.getPersistentData().getDouble("jn_dash_dx"),
+                player.getPersistentData().getDouble("jn_dash_dy"),
+                player.getPersistentData().getDouble("jn_dash_dz")
+        );
+        if (dir.lengthSqr() < 1.0E-5) {
+            finishDash(player, false);
+            return;
+        }
+        dir = dir.normalize();
+
+        if (mode == DASH_FRONT) {
+            if (elapsed >= FRONT_DASH_TICKS) {
+                finishDash(player, !player.getPersistentData().getBoolean("jn_dash_hit"));
+                return;
+            }
+
+            double t = elapsed / (double) FRONT_DASH_TICKS;
+            double speed = 1.32 - 1.02 * t; // длинный старт, заметное замедление к концу
+            Vec3 step = dir.scale(speed);
+
+            Vec3 before = player.position();
+            LivingEntity victim = findDashVictim(player, before, before.add(step));
+
+            if (victim != null) {
+                victim.hurt(level.damageSources().playerAttack(player), FRONT_DASH_DAMAGE);
+                Vec3 knock = dir.scale(1.35).add(0.0, 0.22, 0.0);
+                victim.setDeltaMovement(victim.getDeltaMovement().add(knock));
+                victim.hurtMarked = true;
+                player.getPersistentData().putBoolean("jn_dash_hit", true);
+
+                Vec3 hitPos = victim.position().add(0.0, victim.getBbHeight() * 0.5, 0.0);
+                spawnRadialStar(
+                        level,
+                        hitPos,
+                        new Vector3f(0.65f, 0.90f, 1.0f),
+                        new Vector3f(0.12f, 0.60f, 1.0f),
+                        10,
+                        2.2
+                );
+                finishDash(player, false);
+                return;
+            }
+
+            if (!tryDashMove(player, step, true)) {
+                // Стена выше 2 блоков: без урона владельцу и без застревания.
+                finishDash(player, true);
+                return;
+            }
+
+            if (now % 2 == 0) {
+                spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.9, 0), 1);
+            }
             return;
         }
 
-        int jumps = player.getPersistentData().getInt("jn_air_jumps");
+        if (mode == DASH_SIDE) {
+            if (elapsed >= SIDE_DASH_TICKS) {
+                finishDash(player, false);
+                return;
+            }
 
-        if (jumps >= 10) {
+            Vec3 step = dir.scale(1.28);
+            if (!tryDashMove(player, step, true)) {
+                finishDash(player, false);
+                return;
+            }
+
+            spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.85, 0), 1);
+            return;
+        }
+
+        if (mode == DASH_AIR) {
+            if (elapsed >= AIR_DASH_TICKS) {
+                finishDash(player, false);
+                return;
+            }
+
+            // ~5 блоков за один короткий воздушный рывок.
+            Vec3 step = dir.scale(1.68);
+            if (!tryDashMove(player, step, false)) {
+                finishDash(player, false);
+                return;
+            }
+
+            player.fallDistance = 0.0F;
+            spawnVfx(level, VFX_TRAIL, player.position().add(0, 0.85, 0), 1);
+        }
+    }
+
+    private static void performChargedJump(ServerPlayer player, int tier) {
+        if (player == null || !player.isAlive() || player.isSpectator()) return;
+        if (!hasGojoBlindfold(player)) {
+            requireBlindfoldMessage(player);
+            return;
+        }
+        if (!player.onGround()) return;
+
+        int clamped = Mth.clamp(tier, 0, 3);
+        double yVelocity = switch (clamped) {
+            case 1 -> 1.099; // ~7 блоков
+            case 2 -> 1.560; // ~13 блоков
+            case 3 -> 1.880; // ~18 блоков
+            default -> 0.545; // ~2 блока
+        };
+
+        player.setDeltaMovement(
+                player.getDeltaMovement().x,
+                yVelocity,
+                player.getDeltaMovement().z
+        );
+        player.hurtMarked = true;
+        player.fallDistance = 0.0F;
+
+        ServerLevel level = player.serverLevel();
+        spawnNeonRing(
+                level,
+                player.position().add(0.0, 0.08, 0.0),
+                clamped == 0 ? 0.65 : 0.90 + clamped * 0.25,
+                new Vector3f(0.10f, 0.78f, 1.0f)
+        );
+        level.playSound(
+                null,
+                player.blockPosition(),
+                SoundEvents.PLAYER_ATTACK_SWEEP,
+                SoundSource.PLAYERS,
+                0.45f,
+                1.25f - clamped * 0.08f
+        );
+    }
+
+    private static void executeLongRangeTeleport(ServerPlayer player, BlockPos targetBlock, Direction face) {
+        if (player == null || !player.isAlive() || player.isSpectator()) return;
+        if (!hasGojoBlindfold(player)) {
+            requireBlindfoldMessage(player);
+            return;
+        }
+
+        ServerLevel level = player.serverLevel();
+        long now = level.getGameTime();
+        long cooldown = player.getPersistentData().getLong("jn_r_tp_cd");
+
+        if (now < cooldown) {
+            long ticksLeft = cooldown - now;
+            double seconds = Math.ceil(ticksLeft / 2.0) / 10.0;
             player.displayClientMessage(
-                    Component.literal("Лимит воздушных прыжков: 10")
+                    Component.literal("Телепорт: " + seconds + " сек.")
                             .withStyle(ChatFormatting.GRAY),
                     true
             );
             return;
         }
 
-        if (!consumeEnergy(player, 2.0)) return;
+        if (!level.hasChunkAt(targetBlock)) return;
 
-        Vec3 velocity = player.getDeltaMovement();
+        BlockPos initial = targetBlock.relative(face);
+        BlockPos safe = findSafeTeleportPosition(level, initial);
+        if (safe == null) return;
 
-        player.setDeltaMovement(
-                velocity.x * 1.03,
-                0.58,
-                velocity.z * 1.03
+        Vec3 oldPos = player.position();
+        Vec3 destination = new Vec3(
+                safe.getX() + 0.5,
+                safe.getY(),
+                safe.getZ() + 0.5
         );
+
+        spawnTeleportBurst(level, oldPos.add(0.0, 0.9, 0.0));
+        player.teleportTo(destination.x, destination.y, destination.z);
+        player.setDeltaMovement(Vec3.ZERO);
+        player.fallDistance = 0.0F;
         player.hurtMarked = true;
-        player.fallDistance = 0;
-        player.getPersistentData().putInt("jn_air_jumps", jumps + 1);
+        player.getPersistentData().putLong("jn_r_tp_cd", now + 80); // 4 секунды
+        spawnTeleportBurst(level, destination.add(0.0, 0.9, 0.0));
 
-        ServerLevel level = player.serverLevel();
-        spawnNeonRing(
-                level,
-                player.position().add(0, 0.15, 0),
-                0.85,
-                new Vector3f(0.2f, 0.85f, 1.0f)
+        level.playSound(
+                null,
+                destination.x, destination.y, destination.z,
+                SoundEvents.ENDERMAN_TELEPORT,
+                SoundSource.PLAYERS,
+                1.0f,
+                1.05f
         );
 
-        level.sendParticles(
-                ParticleTypes.CLOUD,
-                player.getX(),
-                player.getY() + 0.15,
-                player.getZ(),
-                12,
-                0.28, 0.04, 0.28,
-                0.03
+        // Зона стана 4x4 вокруг точки приземления, владелец иммунен.
+        AABB stunZone = new AABB(
+                destination.x - 2.0, destination.y - 2.0, destination.z - 2.0,
+                destination.x + 2.0, destination.y + 2.0, destination.z + 2.0
         );
+
+        List<LivingEntity> targets = level.getEntitiesOfClass(
+                LivingEntity.class,
+                stunZone,
+                e -> e.isAlive() && e != player && !e.isSpectator()
+        );
+
+        for (LivingEntity target : targets) {
+            applyTeleportStun(target, now + 40); // 2 секунды
+        }
+    }
+
+    private static BlockPos findSafeTeleportPosition(ServerLevel level, BlockPos preferred) {
+        // Сначала точная клетка рядом с гранью попадания, затем небольшой безопасный поиск.
+        int[][] offsets = {
+                {0,0,0},
+                {0,1,0},
+                {1,0,0},{-1,0,0},{0,0,1},{0,0,-1},
+                {1,1,0},{-1,1,0},{0,1,1},{0,1,-1},
+                {1,0,1},{1,0,-1},{-1,0,1},{-1,0,-1}
+        };
+
+        for (int[] o : offsets) {
+            BlockPos feet = preferred.offset(o[0], o[1], o[2]);
+            BlockPos head = feet.above();
+
+            if (!level.hasChunkAt(feet) || !level.hasChunkAt(head)) continue;
+
+            boolean feetPassable = level.getBlockState(feet).getCollisionShape(level, feet).isEmpty();
+            boolean headPassable = level.getBlockState(head).getCollisionShape(level, head).isEmpty();
+
+            if (feetPassable && headPassable) return feet;
+        }
+
+        return null;
+    }
+
+    private static void spawnTeleportBurst(ServerLevel level, Vec3 center) {
+        for (int ring = 0; ring < 3; ring++) {
+            double radius = 0.75 + ring * 0.48;
+            int points = 30 + ring * 10;
+
+            for (int i = 0; i < points; i++) {
+                double a = Math.PI * 2.0 * i / points;
+                Vec3 p = center.add(
+                        Math.cos(a) * radius,
+                        Math.sin(a * 2.0) * 0.15,
+                        Math.sin(a) * radius
+                );
+                sendDust(
+                        level,
+                        p,
+                        ring == 1
+                                ? new Vector3f(0.52f, 0.08f, 1.0f)
+                                : new Vector3f(0.08f, 0.78f, 1.0f),
+                        0.72f
+                );
+            }
+        }
+
+        spawnVfx(level, VFX_TELEPORT, center, 1);
+    }
+
+    private static void applyTeleportStun(LivingEntity target, long until) {
+        target.getPersistentData().putLong("jn_stun_until", until);
+        target.getPersistentData().putDouble("jn_stun_x", target.getX());
+        target.getPersistentData().putDouble("jn_stun_y", target.getY());
+        target.getPersistentData().putDouble("jn_stun_z", target.getZ());
+        target.setDeltaMovement(Vec3.ZERO);
+        target.hurtMarked = true;
     }
 
     private static boolean isInFront(ServerPlayer player, LivingEntity target, double minDot) {
@@ -2462,6 +2822,12 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onLivingAttack(LivingAttackEvent event) {
+            if (event.getSource().getEntity() instanceof LivingEntity stunnedAttacker &&
+                    stunnedAttacker.getPersistentData().getLong("jn_stun_until") > stunnedAttacker.level().getGameTime()) {
+                event.setCanceled(true);
+                return;
+            }
+
             if (event.getSource().getEntity() instanceof ServerPlayer redOwner &&
                     redOwner.getPersistentData().getBoolean("jn_red_explosion_blocks_only")) {
                 event.setCanceled(true);
@@ -2495,6 +2861,42 @@ public class JujutsuNeonMod {
         }
 
         @SubscribeEvent
+        public static void onBlindfoldFall(LivingFallEvent event) {
+            if (event.getEntity() instanceof ServerPlayer player && hasGojoBlindfold(player)) {
+                event.setCanceled(true);
+                player.fallDistance = 0.0F;
+            }
+        }
+
+        @SubscribeEvent
+        public static void onLivingTick(LivingEvent.LivingTickEvent event) {
+            LivingEntity entity = event.getEntity();
+            if (entity.level().isClientSide()) return;
+
+            long until = entity.getPersistentData().getLong("jn_stun_until");
+            if (until <= 0) return;
+
+            long now = entity.level().getGameTime();
+            if (now >= until) {
+                entity.getPersistentData().remove("jn_stun_until");
+                entity.getPersistentData().remove("jn_stun_x");
+                entity.getPersistentData().remove("jn_stun_y");
+                entity.getPersistentData().remove("jn_stun_z");
+                return;
+            }
+
+            double x = entity.getPersistentData().getDouble("jn_stun_x");
+            double y = entity.getPersistentData().getDouble("jn_stun_y");
+            double z = entity.getPersistentData().getDouble("jn_stun_z");
+
+            entity.teleportTo(x, y, z);
+            entity.setDeltaMovement(Vec3.ZERO);
+            entity.setSprinting(false);
+            entity.fallDistance = 0.0F;
+            entity.hurtMarked = true;
+        }
+
+        @SubscribeEvent
         public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
             if (!(event.player instanceof ServerPlayer player)) return;
@@ -2506,6 +2908,7 @@ public class JujutsuNeonMod {
             tickBlueState(player, level, now);
             tickRedState(player, level, now);
             tickMaximumBlueState(player, level, now);
+            tickDashState(player, level, now);
 
             if (!equipped) {
                 player.getPersistentData().putBoolean("jn_super_speed", false);
@@ -2836,6 +3239,45 @@ public class JujutsuNeonMod {
         }
     }
 
+    private record JumpControlPacket(int tier) {
+        static void encode(JumpControlPacket msg, FriendlyByteBuf buf) {
+            buf.writeByte(msg.tier);
+        }
+
+        static JumpControlPacket decode(FriendlyByteBuf buf) {
+            return new JumpControlPacket(buf.readByte());
+        }
+
+        static void handle(JumpControlPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player != null) performChargedJump(player, msg.tier);
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
+    private record TeleportPacket(BlockPos target, Direction face) {
+        static void encode(TeleportPacket msg, FriendlyByteBuf buf) {
+            buf.writeBlockPos(msg.target);
+            buf.writeEnum(msg.face);
+        }
+
+        static TeleportPacket decode(FriendlyByteBuf buf) {
+            return new TeleportPacket(buf.readBlockPos(), buf.readEnum(Direction.class));
+        }
+
+        static void handle(TeleportPacket msg, Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context = contextSupplier.get();
+            context.enqueueWork(() -> {
+                ServerPlayer player = context.getSender();
+                if (player != null) executeLongRangeTeleport(player, msg.target, msg.face);
+            });
+            context.setPacketHandled(true);
+        }
+    }
+
     private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive, boolean maxBlueActive) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
@@ -2939,6 +3381,13 @@ public class JujutsuNeonMod {
                 CATEGORY
         );
 
+        public static final KeyMapping TELEPORT_KEY = new KeyMapping(
+                "R: Мгновенный телепорт к блоку",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_R,
+                CATEGORY
+        );
+
         @SubscribeEvent
         public static void registerParticles(RegisterParticleProvidersEvent event) {
             event.registerSpriteSet(VFX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 3.8f, 18, 0.015f));
@@ -2968,6 +3417,7 @@ public class JujutsuNeonMod {
             event.register(DOMAIN_KEY);
             event.register(UTILITY_KEY);
             event.register(HUD_KEY);
+            event.register(TELEPORT_KEY);
         }
     }
 
@@ -2980,7 +3430,8 @@ public class JujutsuNeonMod {
 
         private static final int HOLD_TICKS = 20; // 1 секунда
         private static boolean lastSpeedHeld = false;
-        private static boolean lastJumpHeld = false;
+        private static boolean jumpChargeWasDown = false;
+        private static int jumpChargeTicks = 0;
 
         private static final HoldKeyState BLUE_STATE = new HoldKeyState();
         private static final HoldKeyState RED_STATE = new HoldKeyState();
@@ -3171,10 +3622,18 @@ public class JujutsuNeonMod {
 
         @SubscribeEvent
         public static void onClientTick(TickEvent.ClientTickEvent event) {
-            if (event.phase != TickEvent.Phase.END) return;
-
             Minecraft mc = Minecraft.getInstance();
             if (mc.player == null) return;
+
+            if (event.phase == TickEvent.Phase.START) {
+                if (hudBlindfold && mc.screen == null) {
+                    // Подавляем ванильный прыжок: с повязкой прыжками управляет наша зарядка.
+                    mc.player.input.jumping = false;
+                }
+                return;
+            }
+
+            if (event.phase != TickEvent.Phase.END) return;
 
             if (activeAnimTicks > 0) activeAnimTicks--;
 
@@ -3183,7 +3642,8 @@ public class JujutsuNeonMod {
                     NETWORK.sendToServer(new MovementPacket(MovementAction.SPEED_OFF));
                     lastSpeedHeld = false;
                 }
-                lastJumpHeld = false;
+                jumpChargeWasDown = false;
+                jumpChargeTicks = 0;
                 chargingAnim = "NONE";
                 return;
             }
@@ -3192,15 +3652,65 @@ public class JujutsuNeonMod {
                 hudVisible = !hudVisible;
             }
 
+            while (ClientModEvents.TELEPORT_KEY.consumeClick()) {
+                if (hudBlindfold && mc.level != null) {
+                    double maxDistance = Math.max(16.0, mc.options.renderDistance().get() * 16.0);
+                    Vec3 start = mc.player.getEyePosition();
+                    Vec3 end = start.add(mc.player.getLookAngle().normalize().scale(maxDistance));
+
+                    BlockHitResult hit = mc.level.clip(new ClipContext(
+                            start,
+                            end,
+                            ClipContext.Block.COLLIDER,
+                            ClipContext.Fluid.ANY,
+                            mc.player
+                    ));
+
+                    if (hit.getType() != HitResult.Type.MISS) {
+                        NETWORK.sendToServer(new TeleportPacket(hit.getBlockPos(), hit.getDirection()));
+                        startAnim("TELEPORT", 8);
+                    }
+                }
+            }
+
+            boolean jumpHeldNow = mc.options.keyJump.isDown();
+            if (hudBlindfold) {
+                mc.player.input.jumping = false;
+
+                if (jumpHeldNow) {
+                    if (!jumpChargeWasDown) jumpChargeTicks = 0;
+                    jumpChargeTicks = Math.min(60, jumpChargeTicks + 1);
+                } else if (jumpChargeWasDown) {
+                    int tier;
+                    if (jumpChargeTicks >= 60) tier = 3;
+                    else if (jumpChargeTicks >= 40) tier = 2;
+                    else if (jumpChargeTicks >= 20) tier = 1;
+                    else tier = 0;
+
+                    NETWORK.sendToServer(new JumpControlPacket(tier));
+                    jumpChargeTicks = 0;
+                }
+
+                jumpChargeWasDown = jumpHeldNow;
+            } else {
+                jumpChargeWasDown = false;
+                jumpChargeTicks = 0;
+            }
+
             while (ClientModEvents.DASH_KEY.consumeClick()) {
-                if (mc.options.keyLeft.isDown() && !mc.options.keyRight.isDown()) {
+                boolean left = mc.options.keyLeft.isDown() && !mc.options.keyRight.isDown();
+                boolean right = mc.options.keyRight.isDown() && !mc.options.keyLeft.isDown();
+
+                if (left) {
                     NETWORK.sendToServer(new MovementPacket(MovementAction.LEFT_DASH));
-                } else if (mc.options.keyRight.isDown() && !mc.options.keyLeft.isDown()) {
+                    startAnim("SIDE_DASH_LEFT", 6);
+                } else if (right) {
                     NETWORK.sendToServer(new MovementPacket(MovementAction.RIGHT_DASH));
+                    startAnim("SIDE_DASH_RIGHT", 6);
                 } else {
                     NETWORK.sendToServer(new MovementPacket(MovementAction.FRONT_DASH));
+                    startAnim("FRONT_DASH", 14);
                 }
-                startAnim("DASH", 8);
             }
 
             boolean speedHeld = ClientModEvents.SUPER_SPEED_KEY.isDown();
@@ -3209,11 +3719,6 @@ public class JujutsuNeonMod {
                 lastSpeedHeld = speedHeld;
             }
 
-            boolean jumpHeld = mc.options.keyJump.isDown();
-            if (speedHeld && jumpHeld && !lastJumpHeld && !mc.player.onGround()) {
-                NETWORK.sendToServer(new MovementPacket(MovementAction.EXTRA_JUMP));
-            }
-            lastJumpHeld = jumpHeld;
 
             if (hudMaxBlueActive) {
                 if (mc.options.keyUp.isDown() && !mc.options.keyDown.isDown()) {
@@ -3250,7 +3755,7 @@ public class JujutsuNeonMod {
             int x = sw - 192;
             int y = 20;
             int w = 178;
-            int h = 176;
+            int h = 194;
 
             // Полупрозрачная карточка справа.
             g.fill(x, y, x + w, y + h, 0xB20A0D14);
@@ -3274,7 +3779,7 @@ public class JujutsuNeonMod {
             int sy = barY + 24;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DASH_KEY), "Dash", null);
             sy += 18;
-            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.SUPER_SPEED_KEY), "Six Eyes Run", "Jumps " + (10 - Math.min(10, hudAirJumps)) + "/10");
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.SUPER_SPEED_KEY), "Six Eyes Run", null);
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLUE_KEY), "Blue", "HOLD: Maximum Blue");
             sy += 18;
@@ -3285,6 +3790,8 @@ public class JujutsuNeonMod {
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.UTILITY_KEY), "RCT", "HOLD: Blink");
+            sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.TELEPORT_KEY), "Teleport", "STUN 2s");
 
             if (hudBlueActive) {
                 g.drawString(mc.font, "BLUE // ЛКМ: БРОСОК", x + 10, y + h - 30, 0xFF66DFFF, false);
@@ -3298,6 +3805,19 @@ public class JujutsuNeonMod {
             if (hudFlowTicks > 0) {
                 String flow = "FLOW // " + String.format(java.util.Locale.ROOT, "%.1fs", hudFlowTicks / 20.0);
                 g.drawString(mc.font, flow, x + 93, y + h - 18, 0xFFD78BFF, false);
+            }
+
+            if (hudBlindfold && jumpChargeTicks >= 20) {
+                int jw = 84;
+                int jx = sw / 2 - jw / 2;
+                int jy = event.getWindow().getGuiScaledHeight() - 55;
+                int tier = jumpChargeTicks >= 60 ? 3 : (jumpChargeTicks >= 40 ? 2 : 1);
+                int fill = tier == 1 ? jw / 3 : (tier == 2 ? jw * 2 / 3 : jw);
+
+                g.fill(jx - 2, jy - 2, jx + jw + 2, jy + 9, 0x99070A10);
+                g.fill(jx, jy, jx + jw, jy + 7, 0xFF151B26);
+                g.fill(jx, jy, jx + fill, jy + 7, 0xFF29D8FF);
+                g.drawCenteredString(mc.font, "JUMP 7 / 13 / 18", sw / 2, jy - 10, 0xFFBDEFFF);
             }
 
             if (!"NONE".equals(chargingAnim)) {
@@ -3368,7 +3888,18 @@ public class JujutsuNeonMod {
                     pose.mulPose(Axis.XP.rotationDegrees(-48.0f * wave));
                     pose.mulPose(Axis.YP.rotationDegrees(side * 55.0f * wave));
                 }
-                case "DASH" -> pose.mulPose(Axis.XP.rotationDegrees(-18.0f * wave));
+                case "FRONT_DASH" -> {
+                    pose.translate(0.0, -0.03 * wave, -0.38 * wave);
+                    pose.mulPose(Axis.XP.rotationDegrees(-28.0f * wave));
+                }
+                case "SIDE_DASH_LEFT" -> {
+                    pose.translate(0.22 * wave, -0.02 * wave, -0.10 * wave);
+                    pose.mulPose(Axis.ZP.rotationDegrees(-side * 24.0f * wave));
+                }
+                case "SIDE_DASH_RIGHT" -> {
+                    pose.translate(-0.22 * wave, -0.02 * wave, -0.10 * wave);
+                    pose.mulPose(Axis.ZP.rotationDegrees(side * 24.0f * wave));
+                }
             }
         }
     }
