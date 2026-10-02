@@ -103,7 +103,6 @@ import java.util.function.Supplier;
  * R — мгновенный телепорт к загруженному блоку под прицелом, стан 2 сек.
  * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
  * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
- * C — Black Flash; C+ — Cursed Barrage
  * V — Infinity ON/OFF; V+ — Domain Expansion
  * B — RCT/лечение; B+ — Limitless Blink
  *
@@ -124,7 +123,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "9";
+    private static final String PROTOCOL = "10";
 
     private static final double CE_MAX = 100.0;
 
@@ -145,7 +144,6 @@ public class JujutsuNeonMod {
     public static final RegistryObject<SimpleParticleType> VFX_MAX_BLUE = particle("vfx_max_blue");
     public static final RegistryObject<SimpleParticleType> VFX_RED = particle("vfx_red");
     public static final RegistryObject<SimpleParticleType> VFX_PURPLE = particle("vfx_hollow_purple");
-    public static final RegistryObject<SimpleParticleType> VFX_BLACK_FLASH = particle("vfx_black_flash");
     public static final RegistryObject<SimpleParticleType> VFX_BARRAGE = particle("vfx_cursed_barrage");
     public static final RegistryObject<SimpleParticleType> VFX_INFINITY = particle("vfx_infinity");
     public static final RegistryObject<SimpleParticleType> VFX_DOMAIN = particle("vfx_domain");
@@ -167,7 +165,6 @@ public class JujutsuNeonMod {
     public static final RegistryObject<SoundEvent> SFX_MAX_BLUE = sound("max_blue");
     public static final RegistryObject<SoundEvent> SFX_RED = sound("red");
     public static final RegistryObject<SoundEvent> SFX_PURPLE = sound("hollow_purple");
-    public static final RegistryObject<SoundEvent> SFX_BLACK_FLASH = sound("black_flash");
     public static final RegistryObject<SoundEvent> SFX_BARRAGE = sound("cursed_barrage");
     public static final RegistryObject<SoundEvent> SFX_DOMAIN = sound("domain");
     public static final RegistryObject<SoundEvent> SFX_INFINITY = sound("infinity");
@@ -276,7 +273,6 @@ public class JujutsuNeonMod {
         MAX_BLUE,
         RED,
         HOLLOW_PURPLE,
-        BLACK_FLASH,
         CURSED_BARRAGE,
         INFINITY_TOGGLE,
         DOMAIN,
@@ -348,7 +344,6 @@ public class JujutsuNeonMod {
             case MAX_BLUE -> 24.0;
             case RED -> 12.0;
             case HOLLOW_PURPLE -> 45.0;
-            case BLACK_FLASH -> 6.0;
             case CURSED_BARRAGE -> 22.0;
             case INFINITY_TOGGLE -> player.getPersistentData().getBoolean("jn_infinity") ? 0.0 : 10.0;
             case DOMAIN -> 68.0;
@@ -395,7 +390,6 @@ public class JujutsuNeonMod {
             case MAX_BLUE -> { castMaxBlue(player); setCooldown(player, ability, 220); }
             case RED -> { castRed(player); setCooldown(player, ability, 140); }
             case HOLLOW_PURPLE -> { castHollowPurple(player); setCooldown(player, ability, 420); }
-            case BLACK_FLASH -> { castBlackFlash(player); setCooldown(player, ability, 90); }
             case CURSED_BARRAGE -> { castCursedBarrage(player); setCooldown(player, ability, 180); }
             case INFINITY_TOGGLE -> { castInfinityToggle(player); setCooldown(player, ability, 20); }
             case DOMAIN -> { castDomain(player); setCooldown(player, ability, 600); }
@@ -2038,102 +2032,6 @@ public class JujutsuNeonMod {
         );
     }
 
-    private static void castBlackFlash(ServerPlayer player) {
-        ServerLevel level = player.serverLevel();
-        player.swing(InteractionHand.MAIN_HAND, true);
-        playSfx(level, player, SFX_BLACK_FLASH, 1.35f, 0.9f);
-        Vec3 look = player.getLookAngle().normalize();
-
-        player.setDeltaMovement(
-                player.getDeltaMovement().add(
-                        look.x * 1.25,
-                        0.10,
-                        look.z * 1.25
-                )
-        );
-        player.hurtMarked = true;
-
-        AABB box = player.getBoundingBox().inflate(4.5);
-        LivingEntity target = level.getEntitiesOfClass(
-                        LivingEntity.class,
-                        box,
-                        e -> e.isAlive() && e != player && isInFront(player, e, 0.58)
-                )
-                .stream()
-                .min(Comparator.comparingDouble(player::distanceToSqr))
-                .orElse(null);
-
-        Vec3 impact = player.getEyePosition().add(look.scale(2.1));
-
-        if (target != null) {
-            impact = target.position().add(0, target.getBbHeight() * 0.55, 0);
-            spawnVfx(level, VFX_BLACK_FLASH, impact, 2);
-            spawnStylizedShockwave(level, impact, 2.8, new Vector3f(0.70f, 0.00f, 1.0f));
-            spawnRadialStar(level, impact,
-                    new Vector3f(0.75f, 0.00f, 1.0f),
-                    new Vector3f(1.00f, 0.02f, 0.08f),
-                    14, 3.4);
-            spawnSlashFan(level, impact,
-                    new Vector3f(0.80f, 0.00f, 1.0f),
-                    new Vector3f(1.00f, 0.02f, 0.12f));
-            playImpactLayer(level, impact, 1.0f, 1.32f);
-            target.hurt(level.damageSources().playerAttack(player), 14.0F);
-
-            Vec3 knock = target.position().subtract(player.position()).normalize();
-            target.setDeltaMovement(
-                    target.getDeltaMovement().add(
-                            knock.x * 0.85,
-                            0.32,
-                            knock.z * 0.85
-                    )
-            );
-            target.hurtMarked = true;
-        }
-
-        for (int i = 0; i < 65; i++) {
-            double ox = rnd(-0.75, 0.75);
-            double oy = rnd(-0.75, 0.75);
-            double oz = rnd(-0.75, 0.75);
-
-            sendDust(
-                    level,
-                    impact.add(ox, oy, oz),
-                    i % 2 == 0
-                            ? new Vector3f(0.70f, 0.00f, 1.00f)
-                            : new Vector3f(1.00f, 0.02f, 0.12f),
-                    1.45f
-            );
-        }
-
-        level.sendParticles(
-                ParticleTypes.SMOKE,
-                impact.x, impact.y, impact.z,
-                35,
-                0.55, 0.55, 0.55,
-                0.09
-        );
-
-        level.sendParticles(
-                ParticleTypes.ELECTRIC_SPARK,
-                impact.x, impact.y, impact.z,
-                45,
-                0.45, 0.45, 0.45,
-                0.28
-        );
-
-        if (target != null) {
-            // FLOW: успешный Black Flash на 8 секунд усиливает реген энергии и мобильность.
-            player.getPersistentData().putLong("jn_flow_until", level.getGameTime() + 160);
-            setEnergy(player, getEnergy(player) + 12.0);
-        }
-
-        player.displayClientMessage(
-                Component.literal(target != null ? "BLACK FLASH // FLOW" : "BLACK FLASH")
-                        .withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD),
-                true
-        );
-    }
-
     private static void castCursedBarrage(ServerPlayer player) {
         ServerLevel level = player.serverLevel();
         player.swing(InteractionHand.MAIN_HAND, true);
@@ -2919,13 +2817,12 @@ public class JujutsuNeonMod {
                     player.getPersistentData().putInt("jn_air_jumps", 0);
                 }
 
-                boolean flow = player.getPersistentData().getLong("jn_flow_until") > now;
                 boolean speed = player.getPersistentData().getBoolean("jn_super_speed");
                 boolean infinity = player.getPersistentData().getBoolean("jn_infinity");
                 boolean domain = player.getPersistentData().getLong("jn_domain_until") > now;
 
-                // Проклятая энергия: обычная регенерация, FLOW ускоряет восстановление.
-                double regen = flow ? 0.55 : 0.28;
+                // Проклятая энергия: обычная регенерация.
+                double regen = 0.28;
                 if (speed || infinity || domain) regen *= 0.45;
                 setEnergy(player, getEnergy(player) + regen);
 
@@ -2936,7 +2833,7 @@ public class JujutsuNeonMod {
                     } else {
                         setEnergy(player, getEnergy(player) - 0.18);
                         player.addEffect(new MobEffectInstance(
-                                MobEffects.MOVEMENT_SPEED, 6, flow ? 6 : 5,
+                                MobEffects.MOVEMENT_SPEED, 6, 5,
                                 false, false, true
                         ));
 
@@ -2944,7 +2841,7 @@ public class JujutsuNeonMod {
                             Vec3 look = player.getLookAngle();
                             Vec3 horizontal = new Vec3(look.x, 0, look.z);
                             if (horizontal.lengthSqr() > 0.001) {
-                                horizontal = horizontal.normalize().scale(flow ? 0.075 : 0.055);
+                                horizontal = horizontal.normalize().scale(0.055);
                                 player.setDeltaMovement(player.getDeltaMovement().add(horizontal));
                                 player.hurtMarked = true;
                             }
@@ -2953,19 +2850,9 @@ public class JujutsuNeonMod {
                         if (now % 2 == 0) {
                             sendDust(level,
                                     player.position().add(rnd(-0.35, 0.35), rnd(0.05, 1.75), rnd(-0.35, 0.35)),
-                                    flow ? new Vector3f(0.72f, 0.05f, 1.0f) : new Vector3f(0.05f, 0.85f, 1.0f),
+                                    new Vector3f(0.05f, 0.85f, 1.0f),
                                     0.85f);
                         }
-                    }
-                }
-
-                // FLOW после удачного Black Flash.
-                if (flow) {
-                    player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 6, 0, false, false, true));
-                    if (now % 3 == 0) {
-                        sendDust(level,
-                                player.position().add(rnd(-0.55, 0.55), rnd(0.1, 1.8), rnd(-0.55, 0.55)),
-                                new Vector3f(0.72f, 0.03f, 1.0f), 0.75f);
                     }
                 }
 
@@ -3008,14 +2895,12 @@ public class JujutsuNeonMod {
 
             // Синхронизация HUD 4 раза в секунду.
             if (now % 5 == 0) {
-                long flowLeft = Math.max(0, player.getPersistentData().getLong("jn_flow_until") - now);
                 NETWORK.send(
                         PacketDistributor.PLAYER.with(() -> player),
                         new HudSyncPacket(
                                 getEnergy(player),
                                 player.getPersistentData().getInt("jn_air_jumps"),
                                 player.getPersistentData().getBoolean("jn_infinity"),
-                                (int) flowLeft,
                                 equipped,
                                 isBlueInteractionActive(player),
                                 isMaximumBlueActive(player)
@@ -3278,13 +3163,12 @@ public class JujutsuNeonMod {
         }
     }
 
-    private record HudSyncPacket(double energy, int airJumps, boolean infinity, int flowTicks, boolean blindfold, boolean blueActive, boolean maxBlueActive) {
+    private record HudSyncPacket(double energy, int airJumps, boolean infinity, boolean blindfold, boolean blueActive, boolean maxBlueActive) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
             buf.writeDouble(msg.energy);
             buf.writeVarInt(msg.airJumps);
             buf.writeBoolean(msg.infinity);
-            buf.writeVarInt(msg.flowTicks);
             buf.writeBoolean(msg.blindfold);
             buf.writeBoolean(msg.blueActive);
             buf.writeBoolean(msg.maxBlueActive);
@@ -3295,7 +3179,6 @@ public class JujutsuNeonMod {
                     buf.readDouble(),
                     buf.readVarInt(),
                     buf.readBoolean(),
-                    buf.readVarInt(),
                     buf.readBoolean(),
                     buf.readBoolean(),
                     buf.readBoolean()
@@ -3353,13 +3236,6 @@ public class JujutsuNeonMod {
                 CATEGORY
         );
 
-        public static final KeyMapping BLACK_FLASH_KEY = new KeyMapping(
-                "C: Black Flash / удержание: Cursed Barrage",
-                InputConstants.Type.KEYSYM,
-                GLFW.GLFW_KEY_C,
-                CATEGORY
-        );
-
         public static final KeyMapping DOMAIN_KEY = new KeyMapping(
                 "V: Infinity / удержание: Domain Expansion",
                 InputConstants.Type.KEYSYM,
@@ -3394,7 +3270,6 @@ public class JujutsuNeonMod {
             event.registerSpriteSet(VFX_MAX_BLUE.get(), sprites -> new UltraVfxProvider(sprites, 6.5f, 30, 0.020f));
             event.registerSpriteSet(VFX_RED.get(), sprites -> new UltraVfxProvider(sprites, 5.2f, 18, 0.035f));
             event.registerSpriteSet(VFX_PURPLE.get(), sprites -> new UltraVfxProvider(sprites, 7.5f, 32, 0.018f));
-            event.registerSpriteSet(VFX_BLACK_FLASH.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 14, 0.060f));
             event.registerSpriteSet(VFX_BARRAGE.get(), sprites -> new UltraVfxProvider(sprites, 4.4f, 18, 0.045f));
             event.registerSpriteSet(VFX_INFINITY.get(), sprites -> new UltraVfxProvider(sprites, 4.0f, 28, 0.008f));
             event.registerSpriteSet(VFX_DOMAIN.get(), sprites -> new UltraVfxProvider(sprites, 10.0f, 48, 0.010f));
@@ -3413,7 +3288,6 @@ public class JujutsuNeonMod {
             event.register(SUPER_SPEED_KEY);
             event.register(BLUE_KEY);
             event.register(RED_KEY);
-            event.register(BLACK_FLASH_KEY);
             event.register(DOMAIN_KEY);
             event.register(UTILITY_KEY);
             event.register(HUD_KEY);
@@ -3435,7 +3309,6 @@ public class JujutsuNeonMod {
 
         private static final HoldKeyState BLUE_STATE = new HoldKeyState();
         private static final HoldKeyState RED_STATE = new HoldKeyState();
-        private static final HoldKeyState BLACK_STATE = new HoldKeyState();
         private static final HoldKeyState DOMAIN_STATE = new HoldKeyState();
         private static final HoldKeyState UTILITY_STATE = new HoldKeyState();
 
@@ -3449,7 +3322,6 @@ public class JujutsuNeonMod {
         private static double hudEnergy = CE_MAX;
         private static int hudAirJumps = 0;
         private static boolean hudInfinity = false;
-        private static int hudFlowTicks = 0;
         private static boolean hudBlindfold = false;
         private static boolean hudBlueActive = false;
         private static boolean hudMaxBlueActive = false;
@@ -3458,7 +3330,6 @@ public class JujutsuNeonMod {
             hudEnergy = msg.energy();
             hudAirJumps = msg.airJumps();
             hudInfinity = msg.infinity();
-            hudFlowTicks = msg.flowTicks();
             hudBlindfold = msg.blindfold();
             hudBlueActive = msg.blueActive();
             hudMaxBlueActive = msg.maxBlueActive();
@@ -3737,7 +3608,6 @@ public class JujutsuNeonMod {
             // Все базовые кнопки переназначаются через меню управления Minecraft.
             processBlueKey(ClientModEvents.BLUE_KEY, BLUE_STATE);
             processRedKey(ClientModEvents.RED_KEY, RED_STATE);
-            processHoldKey(ClientModEvents.BLACK_FLASH_KEY, Ability.BLACK_FLASH, Ability.CURSED_BARRAGE, BLACK_STATE, "CHARGE_BARRAGE");
             processHoldKey(ClientModEvents.DOMAIN_KEY, Ability.INFINITY_TOGGLE, Ability.DOMAIN, DOMAIN_STATE, "CHARGE_DOMAIN");
             processHoldKey(ClientModEvents.UTILITY_KEY, Ability.RCT, Ability.TELEPORT, UTILITY_STATE, "CHARGE_TELEPORT");
         }
@@ -3755,7 +3625,7 @@ public class JujutsuNeonMod {
             int x = sw - 192;
             int y = 20;
             int w = 178;
-            int h = 194;
+            int h = 176;
 
             // Полупрозрачная карточка справа.
             g.fill(x, y, x + w, y + h, 0xB20A0D14);
@@ -3785,8 +3655,6 @@ public class JujutsuNeonMod {
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "RELEASE: FIRE / 1s: Purple");
             sy += 18;
-            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLACK_FLASH_KEY), "Black Flash", "HOLD: Barrage");
-            sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.UTILITY_KEY), "RCT", "HOLD: Blink");
@@ -3801,10 +3669,6 @@ public class JujutsuNeonMod {
 
             if (hudInfinity) {
                 g.drawString(mc.font, "INFINITY // ACTIVE", x + 10, y + h - 18, 0xFF6CEBFF, false);
-            }
-            if (hudFlowTicks > 0) {
-                String flow = "FLOW // " + String.format(java.util.Locale.ROOT, "%.1fs", hudFlowTicks / 20.0);
-                g.drawString(mc.font, flow, x + 93, y + h - 18, 0xFFD78BFF, false);
             }
 
             if (hudBlindfold && jumpChargeTicks >= 20) {
@@ -3878,7 +3742,7 @@ public class JujutsuNeonMod {
                     pose.mulPose(Axis.XP.rotationDegrees(-58.0f * wave));
                     pose.mulPose(Axis.ZP.rotationDegrees(side * 22.0f * wave));
                 }
-                case "BLACK_FLASH", "CURSED_BARRAGE" -> {
+                case "CURSED_BARRAGE" -> {
                     pose.translate(0, 0, -0.48 * wave);
                     pose.mulPose(Axis.XP.rotationDegrees(-22.0f * wave));
                     pose.mulPose(Axis.ZP.rotationDegrees(side * 10.0f * wave));
