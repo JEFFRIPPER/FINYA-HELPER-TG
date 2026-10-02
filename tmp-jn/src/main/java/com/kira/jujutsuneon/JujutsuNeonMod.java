@@ -80,11 +80,14 @@ import net.minecraftforge.network.simple.SimpleChannel;
 import org.joml.Vector3f;
 import org.lwjgl.glfw.GLFW;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
@@ -104,7 +107,7 @@ import java.util.function.Supplier;
  * Без Ctrl с повязкой: ходьба ~3x. Left Ctrl — сверхбег ~8x, 1% CE за 2 сек, бег по воде.
  * R — мгновенный телепорт к загруженному блоку под прицелом, стан 2 сек.
  * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
- * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
+ * X — Red: отпусти до 2с для обычного выстрела; удержание 2с превращает его в Maximum Red; авто-выстрел на 5с
  * V — Infinity ON/OFF; V+ — Domain Expansion
  * B — RCT/лечение; B+ — Limitless Blink
  *
@@ -125,7 +128,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "11";
+    private static final String PROTOCOL = "12";
 
     private static final double CE_MAX = 100.0;
 
@@ -1616,11 +1619,61 @@ public class JujutsuNeonMod {
     private static final int RED_MODE_NONE = 0;
     private static final int RED_MODE_CHARGING = 1;
     private static final int RED_MODE_PROJECTILE = 2;
+    private static final int RED_MODE_MAX_PROJECTILE = 3;
+
     private static final double RED_MAX_DISTANCE = 75.0;
     private static final double RED_SPEED = 3.75;
     private static final double RED_BALL_RADIUS = 0.22; // диаметр ~0.44 блока
     private static final float RED_DAMAGE = 50.0F; // 25 сердец
-    private static final float RED_EXPLOSION_POWER = 6.0F; // ≈ два обычных крипера
+    private static final float RED_EXPLOSION_POWER = 6.0F;
+
+    // Maximum Red.
+    private static final long MAX_RED_TRANSFORM_TICKS = 40L; // 2 сек
+    private static final long MAX_RED_AUTO_FIRE_TICKS = 100L; // 5 сек
+    private static final double MAX_RED_SPEED = 2.0; // чуть медленнее обычного Red
+    private static final double MAX_RED_BALL_RADIUS = 0.50; // сам шар ~1 блок
+    private static final double MAX_RED_SAFE_DISTANCE = 4.0;
+    private static final double MAX_RED_FULL_DISTANCE = 40.0;
+    private static final double MAX_RED_SHRINK_DISTANCE = 10.0;
+    private static final double MAX_RED_END_DISTANCE = MAX_RED_FULL_DISTANCE + MAX_RED_SHRINK_DISTANCE;
+    private static final double MAX_RED_TUNNEL_RADIUS = 7.0; // именно радиус
+    private static final double MAX_RED_END_RADIUS = 2.0;
+    private static final float MAX_RED_DAMAGE = 100.0F; // 50 сердец
+
+    // Ограничиваем количество world-updates за тик, чтобы вырезание тоннеля не роняло TPS.
+    private static final int MAX_RED_BLOCK_BUDGET_PER_TICK = 160;
+    private static final double MAX_RED_SLICE_STEP = 0.72;
+    private static final double MAX_RED_DISK_STEP = 0.78;
+    private static final int MAX_RED_BLOCK_UPDATE_FLAGS = 2 | 16 | 32;
+
+    private static final Map<UUID, MaximumRedRuntime> MAX_RED_RUNTIMES = new HashMap<>();
+
+    private static class MaximumRedRuntime {
+        final ArrayDeque<BlockPos> destructionQueue = new ArrayDeque<>();
+        final Set<Long> visitedBlocks = new HashSet<>();
+        final Set<UUID> damagedEntities = new HashSet<>();
+        final Vec3 direction;
+        final Vec3 right;
+        final Vec3 up;
+
+        double nextSliceDistance = MAX_RED_SAFE_DISTANCE;
+        int destroyedBlocks = 0;
+        boolean projectileActive = true;
+
+        MaximumRedRuntime(Vec3 direction) {
+            this.direction = direction.normalize();
+
+            Vec3 reference = Math.abs(this.direction.y) > 0.92
+                    ? new Vec3(1.0, 0.0, 0.0)
+                    : new Vec3(0.0, 1.0, 0.0);
+
+            Vec3 computedRight = this.direction.cross(reference);
+            if (computedRight.lengthSqr() < 1.0E-6) computedRight = new Vec3(1.0, 0.0, 0.0);
+
+            this.right = computedRight.normalize();
+            this.up = this.right.cross(this.direction).normalize();
+        }
+    }
 
     private static void spawnRedSphere(ServerLevel level, Vec3 center, double radius) {
         final int shellPoints = 74;
@@ -1647,7 +1700,6 @@ public class JujutsuNeonMod {
             );
         }
 
-        // Небольшое красное "дыхание" вокруг шара. Только красные оттенки.
         for (int i = 0; i < 12; i++) {
             double theta = rnd(0.0, Math.PI * 2.0);
             double phi = Math.acos(rnd(-1.0, 1.0));
@@ -1660,6 +1712,94 @@ public class JujutsuNeonMod {
             );
 
             sendDust(level, p, new Vector3f(0.95f, 0.00f, 0.04f), 0.48f);
+        }
+    }
+
+    private static void spawnMaximumRedVisual(
+            ServerLevel level,
+            Vec3 center,
+            Vec3 direction,
+            double ballRadius,
+            long now,
+            boolean charging
+    ) {
+        double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+
+        // Плотное красное ядро. Частиц меньше, чем у обычного Red,
+        // чтобы большой VFX оставался дешёвым для сети.
+        for (int i = 0; i < 34; i++) {
+            double y = 1.0 - (i / 33.0) * 2.0;
+            double ring = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+            double theta = golden * i + now * 0.08;
+
+            Vec3 p = center.add(
+                    Math.cos(theta) * ring * ballRadius,
+                    y * ballRadius,
+                    Math.sin(theta) * ring * ballRadius
+            );
+
+            sendDust(
+                    level,
+                    p,
+                    i % 4 == 0
+                            ? new Vector3f(1.0f, 0.02f, 0.06f)
+                            : new Vector3f(0.60f, 0.00f, 0.02f),
+                    i % 4 == 0 ? 0.90f : 0.68f
+            );
+        }
+
+        Vec3 reference = Math.abs(direction.y) > 0.92
+                ? new Vec3(1.0, 0.0, 0.0)
+                : new Vec3(0.0, 1.0, 0.0);
+
+        Vec3 right = direction.cross(reference);
+        if (right.lengthSqr() < 1.0E-6) right = new Vec3(1.0, 0.0, 0.0);
+        right = right.normalize();
+        Vec3 up = right.cross(direction).normalize();
+
+        // Несколько вращающихся колец/дуг вокруг шара.
+        for (int ringIndex = 0; ringIndex < 3; ringIndex++) {
+            double orbitRadius = ballRadius * (1.55 + ringIndex * 0.34);
+            double spin = now * (0.13 + ringIndex * 0.035) + ringIndex * 2.1;
+
+            for (int i = 0; i < 16; i++) {
+                double a = Math.PI * 2.0 * i / 16.0 + spin;
+                Vec3 ringRight = right.scale(Math.cos(a) * orbitRadius);
+                Vec3 ringUp = up.scale(Math.sin(a) * orbitRadius);
+
+                // Каждое кольцо слегка наклонено относительно предыдущего.
+                Vec3 p = center
+                        .add(ringRight)
+                        .add(ringUp)
+                        .add(direction.scale(Math.sin(a + ringIndex) * 0.18 * ringIndex));
+
+                sendDust(
+                        level,
+                        p,
+                        ringIndex == 1
+                                ? new Vector3f(1.0f, 0.02f, 0.08f)
+                                : new Vector3f(0.72f, 0.00f, 0.025f),
+                        0.62f
+                );
+            }
+        }
+
+        // Красные энергетические нити и вихрь позади ядра.
+        for (int i = 0; i < 9; i++) {
+            double angle = now * 0.18 + i * (Math.PI * 2.0 / 9.0);
+            double r = ballRadius * rnd(1.15, 2.15);
+            double back = charging ? rnd(-0.20, 0.20) : rnd(-1.30, -0.20);
+
+            Vec3 p = center
+                    .add(right.scale(Math.cos(angle) * r))
+                    .add(up.scale(Math.sin(angle) * r))
+                    .add(direction.scale(back));
+
+            sendDust(level, p, new Vector3f(0.92f, 0.00f, 0.035f), 0.54f);
+        }
+
+        if (now % 2 == 0) {
+            spawnVfx(level, VFX_RED, center, 1);
         }
     }
 
@@ -1700,6 +1840,7 @@ public class JujutsuNeonMod {
 
         player.getPersistentData().putInt("jn_red_mode", RED_MODE_CHARGING);
         player.getPersistentData().putBoolean("jn_red_energy_reserved", true);
+        player.getPersistentData().putBoolean("jn_red_max_ready", false);
         player.getPersistentData().putLong("jn_red_started", now);
 
         Vec3 center = redHeldPosition(player);
@@ -1720,10 +1861,11 @@ public class JujutsuNeonMod {
 
         player.getPersistentData().putInt("jn_red_mode", RED_MODE_NONE);
         player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_max_ready");
         player.getPersistentData().remove("jn_red_started");
     }
 
-    private static void launchRed(ServerPlayer player) {
+    private static void launchNormalRed(ServerPlayer player) {
         if (player.getPersistentData().getInt("jn_red_mode") != RED_MODE_CHARGING) return;
 
         Vec3 pos = redHeldPosition(player);
@@ -1738,13 +1880,74 @@ public class JujutsuNeonMod {
         player.getPersistentData().putDouble("jn_red_vz", velocity.z);
         player.getPersistentData().putDouble("jn_red_distance", 0.0);
         player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_max_ready");
         player.getPersistentData().remove("jn_red_started");
 
         setCooldown(player, Ability.RED, 140);
         playSfx(player.serverLevel(), player, SFX_RED, 1.15f, 0.92f);
     }
 
+    private static void launchMaximumRed(ServerPlayer player) {
+        if (player.getPersistentData().getInt("jn_red_mode") != RED_MODE_CHARGING) return;
+
+        ServerLevel level = player.serverLevel();
+        Vec3 pos = redHeldPosition(player);
+        Vec3 direction = player.getLookAngle().normalize();
+        Vec3 velocity = direction.scale(MAX_RED_SPEED);
+
+        player.getPersistentData().putInt("jn_red_mode", RED_MODE_MAX_PROJECTILE);
+        player.getPersistentData().putDouble("jn_red_x", pos.x);
+        player.getPersistentData().putDouble("jn_red_y", pos.y);
+        player.getPersistentData().putDouble("jn_red_z", pos.z);
+        player.getPersistentData().putDouble("jn_red_vx", velocity.x);
+        player.getPersistentData().putDouble("jn_red_vy", velocity.y);
+        player.getPersistentData().putDouble("jn_red_vz", velocity.z);
+
+        // Считаем расстояние от владельца, а не от стартовой позиции шара.
+        double initialDistance = player.getEyePosition().distanceTo(pos);
+        player.getPersistentData().putDouble("jn_red_distance", initialDistance);
+
+        player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_max_ready");
+        player.getPersistentData().remove("jn_red_started");
+
+        MAX_RED_RUNTIMES.put(player.getUUID(), new MaximumRedRuntime(direction));
+
+        setCooldown(player, Ability.RED, 140);
+
+        playSfx(level, player, SFX_RED, 1.48f, 0.62f);
+        spawnStylizedShockwave(level, pos, 2.8, new Vector3f(1.0f, 0.00f, 0.05f));
+
+        player.displayClientMessage(
+                Component.literal("MAXIMUM RED")
+                        .withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
+                true
+        );
+    }
+
+    private static void releaseRedCharge(ServerPlayer player) {
+        if (player.getPersistentData().getInt("jn_red_mode") != RED_MODE_CHARGING) return;
+
+        long now = player.level().getGameTime();
+        long started = player.getPersistentData().getLong("jn_red_started");
+        long heldTicks = Math.max(0L, now - started);
+
+        if (heldTicks >= MAX_RED_TRANSFORM_TICKS ||
+                player.getPersistentData().getBoolean("jn_red_max_ready")) {
+            launchMaximumRed(player);
+        } else {
+            launchNormalRed(player);
+        }
+    }
+
     private static void clearRedProjectile(ServerPlayer player) {
+        int previousMode = player.getPersistentData().getInt("jn_red_mode");
+
+        if (previousMode == RED_MODE_MAX_PROJECTILE) {
+            MaximumRedRuntime runtime = MAX_RED_RUNTIMES.get(player.getUUID());
+            if (runtime != null) runtime.projectileActive = false;
+        }
+
         player.getPersistentData().putInt("jn_red_mode", RED_MODE_NONE);
         player.getPersistentData().remove("jn_red_x");
         player.getPersistentData().remove("jn_red_y");
@@ -1754,6 +1957,7 @@ public class JujutsuNeonMod {
         player.getPersistentData().remove("jn_red_vz");
         player.getPersistentData().remove("jn_red_distance");
         player.getPersistentData().remove("jn_red_energy_reserved");
+        player.getPersistentData().remove("jn_red_max_ready");
         player.getPersistentData().remove("jn_red_started");
     }
 
@@ -1782,8 +1986,6 @@ public class JujutsuNeonMod {
     private static void explodeRed(ServerPlayer owner, Vec3 center) {
         ServerLevel level = owner.serverLevel();
 
-        // Собираем живые цели заранее. Ванильный урон самого взрыва ниже отменяется,
-        // чтобы Red всегда наносил ровно 25 сердец, а сила 6 отвечала за разрушение блоков.
         List<LivingEntity> victims = level.getEntitiesOfClass(
                 LivingEntity.class,
                 new AABB(center, center).inflate(6.25),
@@ -1813,7 +2015,6 @@ public class JujutsuNeonMod {
             owner.getPersistentData().putBoolean("jn_red_custom_damage", false);
         }
 
-        // Красный импульс поверх ванильного взрыва. Никаких оранжевых/жёлтых частиц.
         for (int ring = 0; ring < 4; ring++) {
             double radius = 1.4 + ring * 1.25;
             int points = 54 + ring * 10;
@@ -1865,7 +2066,242 @@ public class JujutsuNeonMod {
         clearRedProjectile(owner);
     }
 
+    private static double maximumRedTunnelRadius(double travelled) {
+        if (travelled < MAX_RED_SAFE_DISTANCE) return 0.0;
+        if (travelled <= MAX_RED_FULL_DISTANCE) return MAX_RED_TUNNEL_RADIUS;
+        if (travelled >= MAX_RED_END_DISTANCE) return MAX_RED_END_RADIUS;
+
+        double t = (travelled - MAX_RED_FULL_DISTANCE) / MAX_RED_SHRINK_DISTANCE;
+        t = Mth.clamp(t, 0.0, 1.0);
+
+        return MAX_RED_TUNNEL_RADIUS +
+                (MAX_RED_END_RADIUS - MAX_RED_TUNNEL_RADIUS) * t;
+    }
+
+    private static boolean canMaximumRedAnnihilate(
+            ServerLevel level,
+            BlockPos pos,
+            BlockState state
+    ) {
+        if (state.isAir() && state.getFluidState().isEmpty()) return false;
+
+        // Воду/лаву удаляем независимо от твёрдости их BlockState.
+        if (!state.getFluidState().isEmpty()) return true;
+
+        // Bedrock, barrier, portal frame и остальные технически неразрушимые блоки пропускаем.
+        return state.getDestroySpeed(level, pos) >= 0.0F;
+    }
+
+    private static void enqueueMaximumRedSlice(
+            ServerPlayer owner,
+            ServerLevel level,
+            MaximumRedRuntime runtime,
+            Vec3 center,
+            double radius
+    ) {
+        if (radius <= 0.0) return;
+
+        double paddedRadius = radius + 0.32;
+        double radiusSq = paddedRadius * paddedRadius;
+
+        for (double a = -paddedRadius; a <= paddedRadius + 1.0E-6; a += MAX_RED_DISK_STEP) {
+            for (double b = -paddedRadius; b <= paddedRadius + 1.0E-6; b += MAX_RED_DISK_STEP) {
+                if (a * a + b * b > radiusSq) continue;
+
+                Vec3 sample = center
+                        .add(runtime.right.scale(a))
+                        .add(runtime.up.scale(b));
+
+                BlockPos pos = BlockPos.containing(sample);
+
+                if (!level.hasChunkAt(pos)) continue;
+
+                long key = pos.asLong();
+                if (!runtime.visitedBlocks.add(key)) continue;
+
+                BlockState state = level.getBlockState(pos);
+                if (!canMaximumRedAnnihilate(level, pos, state)) continue;
+
+                runtime.destructionQueue.addLast(pos.immutable());
+            }
+        }
+    }
+
+    private static void scheduleMaximumRedTunnel(
+            ServerPlayer owner,
+            ServerLevel level,
+            MaximumRedRuntime runtime,
+            Vec3 segmentStart,
+            Vec3 segmentEnd,
+            double startDistance,
+            double endDistance
+    ) {
+        if (endDistance < MAX_RED_SAFE_DISTANCE) return;
+
+        double segmentLength = segmentStart.distanceTo(segmentEnd);
+        if (segmentLength < 1.0E-5) return;
+
+        while (runtime.nextSliceDistance <= endDistance + 1.0E-6 &&
+                runtime.nextSliceDistance <= MAX_RED_END_DISTANCE + 1.0E-6) {
+
+            if (runtime.nextSliceDistance + 1.0E-6 < startDistance) {
+                runtime.nextSliceDistance += MAX_RED_SLICE_STEP;
+                continue;
+            }
+
+            double local = (runtime.nextSliceDistance - startDistance) / segmentLength;
+            local = Mth.clamp(local, 0.0, 1.0);
+
+            Vec3 center = segmentStart.lerp(segmentEnd, local);
+            double radius = maximumRedTunnelRadius(runtime.nextSliceDistance);
+
+            enqueueMaximumRedSlice(owner, level, runtime, center, radius);
+            runtime.nextSliceDistance += MAX_RED_SLICE_STEP;
+        }
+    }
+
+    private static double pointSegmentDistanceSqr(Vec3 point, Vec3 a, Vec3 b) {
+        Vec3 ab = b.subtract(a);
+        double lenSq = ab.lengthSqr();
+
+        if (lenSq < 1.0E-8) return point.distanceToSqr(a);
+
+        double t = point.subtract(a).dot(ab) / lenSq;
+        t = Mth.clamp(t, 0.0, 1.0);
+
+        return point.distanceToSqr(a.add(ab.scale(t)));
+    }
+
+    private static void damageMaximumRedSegment(
+            ServerPlayer owner,
+            ServerLevel level,
+            MaximumRedRuntime runtime,
+            Vec3 from,
+            Vec3 to,
+            double radius
+    ) {
+        if (radius <= 0.0) return;
+
+        AABB search = new AABB(from, to).inflate(radius + 1.0);
+
+        List<LivingEntity> targets = level.getEntitiesOfClass(
+                LivingEntity.class,
+                search,
+                e -> e.isAlive() && e != owner && !e.isSpectator()
+        );
+
+        for (LivingEntity target : targets) {
+            if (runtime.damagedEntities.contains(target.getUUID())) continue;
+
+            Vec3 targetCenter = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+            double allowance = Math.max(0.25, target.getBbWidth() * 0.5);
+            double hitRadius = radius + allowance;
+
+            if (pointSegmentDistanceSqr(targetCenter, from, to) > hitRadius * hitRadius) continue;
+
+            runtime.damagedEntities.add(target.getUUID());
+
+            owner.getPersistentData().putBoolean("jn_red_custom_damage", true);
+            try {
+                target.hurt(level.damageSources().playerAttack(owner), MAX_RED_DAMAGE);
+            } finally {
+                owner.getPersistentData().putBoolean("jn_red_custom_damage", false);
+            }
+
+            Vec3 impact = targetCenter;
+            for (int i = 0; i < 16; i++) {
+                sendDust(
+                        level,
+                        impact.add(rnd(-0.55, 0.55), rnd(-0.55, 0.55), rnd(-0.55, 0.55)),
+                        new Vector3f(1.0f, 0.00f, 0.04f),
+                        0.82f
+                );
+            }
+        }
+    }
+
+    private static void processMaximumRedDestructionQueue(
+            ServerPlayer owner,
+            ServerLevel level
+    ) {
+        MaximumRedRuntime runtime = MAX_RED_RUNTIMES.get(owner.getUUID());
+        if (runtime == null) return;
+
+        int budget = MAX_RED_BLOCK_BUDGET_PER_TICK;
+
+        while (budget-- > 0 && !runtime.destructionQueue.isEmpty()) {
+            BlockPos pos = runtime.destructionQueue.pollFirst();
+            if (pos == null || !level.hasChunkAt(pos)) continue;
+
+            BlockState state = level.getBlockState(pos);
+            if (!canMaximumRedAnnihilate(level, pos, state)) continue;
+
+            // UPDATE_CLIENTS + UPDATE_KNOWN_SHAPE + UPDATE_SUPPRESS_DROPS.
+            // Без массового cascade neighbor-update на тысячи блоков.
+            level.setBlock(
+                    pos,
+                    Blocks.AIR.defaultBlockState(),
+                    MAX_RED_BLOCK_UPDATE_FLAGS
+            );
+
+            runtime.destroyedBlocks++;
+
+            // Редкий VFX на месте аннигиляции. Не шлём частицу на каждый блок.
+            if ((runtime.destroyedBlocks & 15) == 0) {
+                Vec3 p = Vec3.atCenterOf(pos);
+                for (int i = 0; i < 3; i++) {
+                    sendDust(
+                            level,
+                            p.add(rnd(-0.28, 0.28), rnd(-0.28, 0.28), rnd(-0.28, 0.28)),
+                            new Vector3f(0.78f, 0.00f, 0.025f),
+                            0.46f
+                    );
+                }
+            }
+        }
+
+        if (!runtime.projectileActive && runtime.destructionQueue.isEmpty()) {
+            MAX_RED_RUNTIMES.remove(owner.getUUID());
+        }
+    }
+
+    private static void dissolveMaximumRed(
+            ServerPlayer owner,
+            ServerLevel level,
+            Vec3 center
+    ) {
+        MaximumRedRuntime runtime = MAX_RED_RUNTIMES.get(owner.getUUID());
+        if (runtime != null) runtime.projectileActive = false;
+
+        for (int i = 0; i < 44; i++) {
+            double theta = rnd(0.0, Math.PI * 2.0);
+            double phi = Math.acos(rnd(-1.0, 1.0));
+            double r = rnd(0.25, 2.0);
+
+            Vec3 p = center.add(
+                    Math.sin(phi) * Math.cos(theta) * r,
+                    Math.cos(phi) * r,
+                    Math.sin(phi) * Math.sin(theta) * r
+            );
+
+            sendDust(
+                    level,
+                    p,
+                    i % 3 == 0
+                            ? new Vector3f(1.0f, 0.00f, 0.05f)
+                            : new Vector3f(0.55f, 0.00f, 0.015f),
+                    0.62f
+            );
+        }
+
+        spawnStylizedShockwave(level, center, 1.8, new Vector3f(0.85f, 0.00f, 0.03f));
+        clearRedProjectile(owner);
+    }
+
     private static void tickRedState(ServerPlayer player, ServerLevel level, long now) {
+        // Очередь продолжает безопасно очищать тоннель даже после исчезновения шара.
+        processMaximumRedDestructionQueue(player, level);
+
         int mode = player.getPersistentData().getInt("jn_red_mode");
         if (mode == RED_MODE_NONE) return;
 
@@ -1879,27 +2315,57 @@ public class JujutsuNeonMod {
         }
 
         if (mode == RED_MODE_CHARGING) {
+            long started = player.getPersistentData().getLong("jn_red_started");
+            long heldTicks = Math.max(0L, now - started);
             Vec3 center = redHeldPosition(player);
-            spawnRedSphere(level, center, RED_BALL_RADIUS);
+            Vec3 direction = player.getLookAngle().normalize();
 
-            // Тонкий красный след от руки/камеры к шару.
-            Vec3 eye = player.getEyePosition();
-            for (int i = 1; i <= 7; i++) {
-                double t = i / 8.0;
-                Vec3 p = eye.lerp(center, t);
-                sendDust(
-                        level,
-                        p,
-                        i % 2 == 0
-                                ? new Vector3f(1.0f, 0.00f, 0.04f)
-                                : new Vector3f(0.68f, 0.00f, 0.02f),
-                        0.58f
+            if (heldTicks >= MAX_RED_TRANSFORM_TICKS) {
+                if (!player.getPersistentData().getBoolean("jn_red_max_ready")) {
+                    player.getPersistentData().putBoolean("jn_red_max_ready", true);
+                    playSfx(level, player, SFX_RED, 1.20f, 0.70f);
+                    player.displayClientMessage(
+                            Component.literal("MAXIMUM RED // READY")
+                                    .withStyle(ChatFormatting.RED, ChatFormatting.BOLD),
+                            true
+                    );
+                }
+
+                // За первые полсекунды после превращения шар плавно вырастает до ~1 блока.
+                double grow = Mth.clamp(
+                        (heldTicks - MAX_RED_TRANSFORM_TICKS) / 10.0,
+                        0.0,
+                        1.0
                 );
+                grow = grow * grow * (3.0 - 2.0 * grow);
+                double radius = RED_BALL_RADIUS +
+                        (MAX_RED_BALL_RADIUS - RED_BALL_RADIUS) * grow;
+
+                spawnMaximumRedVisual(level, center, direction, radius, now, true);
+
+                // Максимум 5 секунд удержания — дальше автоматический выстрел.
+                if (heldTicks >= MAX_RED_AUTO_FIRE_TICKS) {
+                    launchMaximumRed(player);
+                }
+            } else {
+                spawnRedSphere(level, center, RED_BALL_RADIUS);
+
+                Vec3 eye = player.getEyePosition();
+                for (int i = 1; i <= 7; i++) {
+                    double t = i / 8.0;
+                    Vec3 p = eye.lerp(center, t);
+                    sendDust(
+                            level,
+                            p,
+                            i % 2 == 0
+                                    ? new Vector3f(1.0f, 0.00f, 0.04f)
+                                    : new Vector3f(0.68f, 0.00f, 0.02f),
+                            0.58f
+                    );
+                }
             }
             return;
         }
-
-        if (mode != RED_MODE_PROJECTILE) return;
 
         Vec3 pos = new Vec3(
                 player.getPersistentData().getDouble("jn_red_x"),
@@ -1915,67 +2381,143 @@ public class JujutsuNeonMod {
 
         Vec3 next = pos.add(velocity);
 
-        BlockHitResult blockHit = level.clip(new ClipContext(
-                pos,
-                next,
-                ClipContext.Block.COLLIDER,
-                ClipContext.Fluid.NONE,
-                player
-        ));
+        if (mode == RED_MODE_PROJECTILE) {
+            BlockHitResult blockHit = level.clip(new ClipContext(
+                    pos,
+                    next,
+                    ClipContext.Block.COLLIDER,
+                    ClipContext.Fluid.NONE,
+                    player
+            ));
 
-        LivingEntity entityHit = findRedEntityHit(level, player, pos, next);
+            LivingEntity entityHit = findRedEntityHit(level, player, pos, next);
 
-        double blockDist = blockHit.getType() == HitResult.Type.MISS
-                ? Double.POSITIVE_INFINITY
-                : pos.distanceToSqr(blockHit.getLocation());
+            double blockDist = blockHit.getType() == HitResult.Type.MISS
+                    ? Double.POSITIVE_INFINITY
+                    : pos.distanceToSqr(blockHit.getLocation());
 
-        double entityDist = entityHit == null
-                ? Double.POSITIVE_INFINITY
-                : pos.distanceToSqr(entityHit.getBoundingBox().getCenter());
+            double entityDist = entityHit == null
+                    ? Double.POSITIVE_INFINITY
+                    : pos.distanceToSqr(entityHit.getBoundingBox().getCenter());
 
-        if (blockDist != Double.POSITIVE_INFINITY || entityDist != Double.POSITIVE_INFINITY) {
-            Vec3 impact = entityDist < blockDist && entityHit != null
-                    ? entityHit.getBoundingBox().getCenter()
-                    : blockHit.getLocation();
+            if (blockDist != Double.POSITIVE_INFINITY || entityDist != Double.POSITIVE_INFINITY) {
+                Vec3 impact = entityDist < blockDist && entityHit != null
+                        ? entityHit.getBoundingBox().getCenter()
+                        : blockHit.getLocation();
 
-            explodeRed(player, impact);
-            return;
-        }
-
-        // Красный сферический projectile + красный след между тиками.
-        for (int i = 0; i <= 6; i++) {
-            Vec3 trail = pos.lerp(next, i / 6.0);
-            sendDust(
-                    level,
-                    trail,
-                    i % 2 == 0
-                            ? new Vector3f(1.0f, 0.00f, 0.04f)
-                            : new Vector3f(0.62f, 0.00f, 0.02f),
-                    0.66f
-            );
-        }
-
-        spawnRedSphere(level, next, RED_BALL_RADIUS);
-
-        double travelled = player.getPersistentData().getDouble("jn_red_distance") + velocity.length();
-        if (travelled >= RED_MAX_DISTANCE) {
-            // На 75 блоках шар просто растворяется — без взрыва.
-            for (int i = 0; i < 34; i++) {
-                Vec3 fade = next.add(
-                        rnd(-0.80, 0.80),
-                        rnd(-0.80, 0.80),
-                        rnd(-0.80, 0.80)
-                );
-                sendDust(level, fade, new Vector3f(0.75f, 0.00f, 0.025f), 0.55f);
+                explodeRed(player, impact);
+                return;
             }
-            clearRedProjectile(player);
+
+            for (int i = 0; i <= 6; i++) {
+                Vec3 trail = pos.lerp(next, i / 6.0);
+                sendDust(
+                        level,
+                        trail,
+                        i % 2 == 0
+                                ? new Vector3f(1.0f, 0.00f, 0.04f)
+                                : new Vector3f(0.62f, 0.00f, 0.02f),
+                        0.66f
+                );
+            }
+
+            spawnRedSphere(level, next, RED_BALL_RADIUS);
+
+            double travelled = player.getPersistentData().getDouble("jn_red_distance") + velocity.length();
+            if (travelled >= RED_MAX_DISTANCE) {
+                for (int i = 0; i < 34; i++) {
+                    Vec3 fade = next.add(
+                            rnd(-0.80, 0.80),
+                            rnd(-0.80, 0.80),
+                            rnd(-0.80, 0.80)
+                    );
+                    sendDust(level, fade, new Vector3f(0.75f, 0.00f, 0.025f), 0.55f);
+                }
+                clearRedProjectile(player);
+                return;
+            }
+
+            player.getPersistentData().putDouble("jn_red_x", next.x);
+            player.getPersistentData().putDouble("jn_red_y", next.y);
+            player.getPersistentData().putDouble("jn_red_z", next.z);
+            player.getPersistentData().putDouble("jn_red_distance", travelled);
             return;
         }
 
-        player.getPersistentData().putDouble("jn_red_x", next.x);
-        player.getPersistentData().putDouble("jn_red_y", next.y);
-        player.getPersistentData().putDouble("jn_red_z", next.z);
-        player.getPersistentData().putDouble("jn_red_distance", travelled);
+        if (mode == RED_MODE_MAX_PROJECTILE) {
+            MaximumRedRuntime runtime = MAX_RED_RUNTIMES.get(player.getUUID());
+            if (runtime == null) {
+                runtime = new MaximumRedRuntime(velocity);
+                MAX_RED_RUNTIMES.put(player.getUUID(), runtime);
+            }
+
+            double startDistance = player.getPersistentData().getDouble("jn_red_distance");
+            double endDistance = startDistance + velocity.length();
+
+            // Maximum Red НИКОГДА не делает block collision:
+            // bedrock/technical blocks просто остаются, шар проходит сквозь них.
+            scheduleMaximumRedTunnel(
+                    player,
+                    level,
+                    runtime,
+                    pos,
+                    next,
+                    startDistance,
+                    endDistance
+            );
+
+            double damageRadius = 0.0;
+            if (endDistance >= MAX_RED_SAFE_DISTANCE) {
+                double sampleDistance = Math.max(
+                        MAX_RED_SAFE_DISTANCE,
+                        (startDistance + endDistance) * 0.5
+                );
+                damageRadius = maximumRedTunnelRadius(sampleDistance);
+            }
+
+            if (damageRadius > 0.0) {
+                damageMaximumRedSegment(
+                        player,
+                        level,
+                        runtime,
+                        pos,
+                        next,
+                        damageRadius
+                );
+            }
+
+            spawnMaximumRedVisual(
+                    level,
+                    next,
+                    velocity.normalize(),
+                    MAX_RED_BALL_RADIUS,
+                    now,
+                    false
+            );
+
+            // Дополнительный красный след, но без тысяч частиц на тик.
+            for (int i = 1; i <= 5; i++) {
+                Vec3 trail = pos.lerp(next, i / 6.0);
+                sendDust(
+                        level,
+                        trail,
+                        i % 2 == 0
+                                ? new Vector3f(1.0f, 0.00f, 0.04f)
+                                : new Vector3f(0.52f, 0.00f, 0.015f),
+                        0.58f
+                );
+            }
+
+            if (endDistance >= MAX_RED_END_DISTANCE) {
+                dissolveMaximumRed(player, level, next);
+                return;
+            }
+
+            player.getPersistentData().putDouble("jn_red_x", next.x);
+            player.getPersistentData().putDouble("jn_red_y", next.y);
+            player.getPersistentData().putDouble("jn_red_z", next.z);
+            player.getPersistentData().putDouble("jn_red_distance", endDistance);
+        }
     }
 
     private static void castRed(ServerPlayer player) {
@@ -3426,7 +3968,7 @@ public class JujutsuNeonMod {
 
                 switch (msg.action) {
                     case START -> startRedCharge(player);
-                    case RELEASE -> launchRed(player);
+                    case RELEASE -> releaseRedCharge(player);
                     case CANCEL -> cancelRedCharge(player, true);
                 }
             });
@@ -3567,7 +4109,7 @@ public class JujutsuNeonMod {
         );
 
         public static final KeyMapping RED_KEY = new KeyMapping(
-                "X: Red (отпустить = выстрел) / 1с: Hollow Purple",
+                "X: Red / 2с: Maximum Red / авто-выстрел 5с",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_X,
                 CATEGORY
@@ -3701,30 +4243,34 @@ public class JujutsuNeonMod {
 
                 state.ticks++;
 
-                if (!state.holdTriggered) {
-                    chargingAnim = "CHARGE_PURPLE";
-                    chargingProgress = Mth.clamp(state.ticks / (float) HOLD_TICKS, 0.0f, 1.0f);
-                }
+                // До 2 секунд это обычный Red. После 2 секунд он превращается в Maximum Red.
+                if (state.ticks >= 40 && state.ticks < 100) {
+                    chargingAnim = "CHARGE_MAX_RED";
+                    chargingProgress = Mth.clamp((state.ticks - 40) / 60.0f, 0.0f, 1.0f);
 
-                if (!state.holdTriggered && state.ticks >= HOLD_TICKS) {
-                    state.holdTriggered = true;
+                    if (!state.holdTriggered) {
+                        state.holdTriggered = true;
+                        startAnim("MAX_RED", 18);
+                    }
+                } else if (state.ticks >= 100) {
+                    // Сервер сам выстрелит ровно на 5-й секунде.
                     chargingAnim = "NONE";
                     chargingProgress = 0.0f;
 
-                    // X+ остаётся Hollow Purple: обычный Red отменяется и возвращает свою CE.
-                    NETWORK.sendToServer(new RedControlPacket(RedControlAction.CANCEL));
-                    NETWORK.sendToServer(new AbilityPacket(Ability.HOLLOW_PURPLE));
-                    startAnim("HOLLOW_PURPLE", 18);
+                    if (state.ticks == 100) {
+                        startAnim("MAX_RED", 20);
+                    }
+                } else {
+                    chargingAnim = "NONE";
+                    chargingProgress = 0.0f;
                 }
             } else if (state.wasDown) {
                 chargingAnim = "NONE";
                 chargingProgress = 0.0f;
 
-                if (!state.holdTriggered) {
-                    // Направление берётся в момент отпускания клавиши.
-                    NETWORK.sendToServer(new RedControlPacket(RedControlAction.RELEASE));
-                    startAnim("RED", 12);
-                }
+                // Сервер по фактическому времени удержания сам выберет обычный или Maximum Red.
+                NETWORK.sendToServer(new RedControlPacket(RedControlAction.RELEASE));
+                startAnim(state.ticks >= 40 ? "MAX_RED" : "RED", state.ticks >= 40 ? 20 : 12);
 
                 state.ticks = 0;
                 state.holdTriggered = false;
@@ -3990,7 +4536,7 @@ public class JujutsuNeonMod {
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.BLUE_KEY), "Blue", "HOLD: Maximum Blue");
             sy += 18;
-            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "RELEASE: FIRE / 1s: Purple");
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "HOLD 2s: Maximum Red");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
             sy += 18;
@@ -4078,6 +4624,12 @@ public class JujutsuNeonMod {
                     pose.translate(side * 0.10 * wave, -0.06 * wave, -0.32 * wave);
                     pose.mulPose(Axis.XP.rotationDegrees(-58.0f * wave));
                     pose.mulPose(Axis.ZP.rotationDegrees(side * 22.0f * wave));
+                }
+                case "MAX_RED" -> {
+                    pose.translate(side * 0.14 * wave, -0.11 * wave, -0.46 * wave);
+                    pose.mulPose(Axis.XP.rotationDegrees(-68.0f * wave));
+                    pose.mulPose(Axis.YP.rotationDegrees(side * 16.0f * wave));
+                    pose.mulPose(Axis.ZP.rotationDegrees(side * 28.0f * wave));
                 }
                 case "CURSED_BARRAGE" -> {
                     pose.translate(0, 0, -0.48 * wave);
