@@ -1655,7 +1655,7 @@ public class JujutsuNeonMod {
     private static final int PURPLE_MODE_PROJECTILE = 2;
 
     private static final long PURPLE_CAST_TICKS = 100L; // 5 секунд
-    private static final double PURPLE_SPEED = 8.0; // 160 блоков/сек при 20 TPS
+    private static final double PURPLE_SPEED = 160.0 / 60.0; // 160 блоков за 3 секунды при 20 TPS
     private static final double PURPLE_FULL_DISTANCE = 150.0;
     private static final double PURPLE_FADE_DISTANCE = 10.0;
     private static final double PURPLE_END_DISTANCE = PURPLE_FULL_DISTANCE + PURPLE_FADE_DISTANCE;
