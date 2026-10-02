@@ -108,6 +108,7 @@ import java.util.function.Supplier;
  * R — мгновенный телепорт к загруженному блоку под прицелом, стан 2 сек.
  * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
  * X — Red: отпусти до 2с для обычного выстрела; удержание 2с превращает его в Maximum Red; авто-выстрел на 5с
+ * G — Hollow Purple: 5-секундный каст, затем автоматический дальнобойный выстрел
  * V — Infinity ON/OFF; V+ — Domain Expansion
  * B — RCT/лечение; B+ — Limitless Blink
  *
@@ -4696,7 +4697,8 @@ public class JujutsuNeonMod {
                                 player.getPersistentData().getBoolean("jn_infinity"),
                                 equipped,
                                 isBlueInteractionActive(player),
-                                isMaximumBlueActive(player)
+                                isMaximumBlueActive(player),
+                                isHollowPurpleCasting(player)
                         )
                 );
             }
@@ -4956,7 +4958,7 @@ public class JujutsuNeonMod {
         }
     }
 
-    private record HudSyncPacket(double energy, int airJumps, boolean infinity, boolean blindfold, boolean blueActive, boolean maxBlueActive) {
+    private record HudSyncPacket(double energy, int airJumps, boolean infinity, boolean blindfold, boolean blueActive, boolean maxBlueActive, boolean purpleCasting) {
 
         static void encode(HudSyncPacket msg, FriendlyByteBuf buf) {
             buf.writeDouble(msg.energy);
@@ -4965,12 +4967,14 @@ public class JujutsuNeonMod {
             buf.writeBoolean(msg.blindfold);
             buf.writeBoolean(msg.blueActive);
             buf.writeBoolean(msg.maxBlueActive);
+            buf.writeBoolean(msg.purpleCasting);
         }
 
         static HudSyncPacket decode(FriendlyByteBuf buf) {
             return new HudSyncPacket(
                     buf.readDouble(),
                     buf.readVarInt(),
+                    buf.readBoolean(),
                     buf.readBoolean(),
                     buf.readBoolean(),
                     buf.readBoolean(),
@@ -5029,6 +5033,13 @@ public class JujutsuNeonMod {
                 CATEGORY
         );
 
+        public static final KeyMapping PURPLE_KEY = new KeyMapping(
+                "G: Hollow Purple",
+                InputConstants.Type.KEYSYM,
+                GLFW.GLFW_KEY_G,
+                CATEGORY
+        );
+
         public static final KeyMapping DOMAIN_KEY = new KeyMapping(
                 "V: Infinity / удержание: Domain Expansion",
                 InputConstants.Type.KEYSYM,
@@ -5081,6 +5092,7 @@ public class JujutsuNeonMod {
             event.register(SUPER_SPEED_KEY);
             event.register(BLUE_KEY);
             event.register(RED_KEY);
+            event.register(PURPLE_KEY);
             event.register(DOMAIN_KEY);
             event.register(UTILITY_KEY);
             event.register(HUD_KEY);
@@ -5118,6 +5130,7 @@ public class JujutsuNeonMod {
         private static boolean hudBlindfold = false;
         private static boolean hudBlueActive = false;
         private static boolean hudMaxBlueActive = false;
+        private static boolean hudPurpleCasting = false;
 
         private static void applyHudSync(HudSyncPacket msg) {
             hudEnergy = msg.energy();
@@ -5126,6 +5139,7 @@ public class JujutsuNeonMod {
             hudBlindfold = msg.blindfold();
             hudBlueActive = msg.blueActive();
             hudMaxBlueActive = msg.maxBlueActive();
+            hudPurpleCasting = msg.purpleCasting();
         }
 
         private static String keyName(KeyMapping mapping) {
@@ -5341,6 +5355,14 @@ public class JujutsuNeonMod {
                 }
             }
 
+            while (ClientModEvents.PURPLE_KEY.consumeClick()) {
+                if (hudBlindfold && !hudPurpleCasting) {
+                    NETWORK.sendToServer(new AbilityPacket(Ability.HOLLOW_PURPLE));
+                    startAnim("PURPLE_CAST", 100);
+                }
+            }
+
+
             boolean jumpHeldNow = mc.options.keyJump.isDown();
             if (hudBlindfold) {
                 mc.player.input.jumping = false;
@@ -5401,6 +5423,13 @@ public class JujutsuNeonMod {
                 mc.player.setSprinting(false);
             }
 
+            if (hudPurpleCasting) {
+                mc.player.input.forwardImpulse = 0.0F;
+                mc.player.input.leftImpulse = 0.0F;
+                mc.player.input.jumping = false;
+                mc.player.setSprinting(false);
+            }
+
             // Короткое нажатие и удержание 1 сек — разные способности.
             // Все базовые кнопки переназначаются через меню управления Minecraft.
             processBlueKey(ClientModEvents.BLUE_KEY, BLUE_STATE);
@@ -5422,7 +5451,7 @@ public class JujutsuNeonMod {
             int x = sw - 192;
             int y = 20;
             int w = 178;
-            int h = 176;
+            int h = 194;
 
             // Полупрозрачная карточка справа.
             g.fill(x, y, x + w, y + h, 0xB20A0D14);
@@ -5452,13 +5481,17 @@ public class JujutsuNeonMod {
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.RED_KEY), "Red", "HOLD 2s: Maximum Red");
             sy += 18;
+            drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.PURPLE_KEY), "Hollow Purple", "CAST: 5s");
+            sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.DOMAIN_KEY), "Infinity", "HOLD: Domain");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.UTILITY_KEY), "RCT", "HOLD: Blink");
             sy += 18;
             drawSkillRow(g, mc, x + 8, sy, keyName(ClientModEvents.TELEPORT_KEY), "Teleport", "STUN 2s");
 
-            if (hudBlueActive) {
+            if (hudPurpleCasting) {
+                g.drawString(mc.font, "PURPLE // CASTING", x + 10, y + h - 30, 0xFFC67BFF, false);
+            } else if (hudBlueActive) {
                 g.drawString(mc.font, "BLUE // ЛКМ: БРОСОК", x + 10, y + h - 30, 0xFF66DFFF, false);
             } else if (hudMaxBlueActive) {
                 g.drawString(mc.font, "MAX BLUE // W/S: DISTANCE", x + 10, y + h - 30, 0xFF66DFFF, false);
@@ -5526,6 +5559,24 @@ public class JujutsuNeonMod {
             if (activeAnimTicks <= 0) return;
 
             float t = 1.0f - activeAnimTicks / (float) activeAnimLength;
+
+            if ("PURPLE_CAST".equals(activeAnim)) {
+                float gather = Mth.clamp(t / 0.70f, 0.0f, 1.0f);
+                float release = Mth.clamp((t - 0.70f) / 0.30f, 0.0f, 1.0f);
+                float pulse = 0.5f + 0.5f * (float) Math.sin(t * Math.PI * 10.0);
+
+                // Crossed-hands / finger-sign approximation for first person.
+                pose.translate(
+                        -side * (0.34f * gather - 0.14f * release),
+                        -0.18f * gather + 0.06f * release,
+                        -0.40f * gather - 0.18f * release
+                );
+                pose.mulPose(Axis.XP.rotationDegrees(-58.0f * gather - 18.0f * release));
+                pose.mulPose(Axis.YP.rotationDegrees(side * (68.0f * gather - 22.0f * release)));
+                pose.mulPose(Axis.ZP.rotationDegrees(-side * (34.0f * gather + 10.0f * pulse)));
+                return;
+            }
+
             float wave = (float) Math.sin(t * Math.PI);
 
             switch (activeAnim) {
