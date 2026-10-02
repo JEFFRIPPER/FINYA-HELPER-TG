@@ -31,7 +31,7 @@ RUNTIME_DIR = ROOT / "runtime"
 HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.5"
+BOT_VERSION = "2.6.1"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 
@@ -450,7 +450,7 @@ def admin_keyboard():
         [admin_button("Рассылка", "broadcast")],
         [admin_button(channel_mode, "channel")],
         [admin_button("Чёрный список", "blacklist")],
-        [admin_button("Активность / XP", "xp")],
+        [admin_button("Звания / XP", "xp")],
         [admin_button("Посты в чаты", "posts")],
         [admin_button(maintenance, "maintenance")],
         [admin_button("Логи", "logs"), admin_button("Перезапуск", "restart")],
@@ -683,11 +683,13 @@ def xp_keyboard():
 
 def xp_profile_text(user, context):
     profile = context.bot_data["activity_xp"].profile(user)
-    current, following = rank_for(profile["xp"], founder=user.id == OWNER_USER_ID)
-    progress = (
-        f"До {following[2]}: {following[0] - profile['xp']} XP"
-        if following else "Высшее звание достигнуто."
-    )
+    current, following = rank_for(profile["xp"], founder=user.id == OWNER_USER_ID,
+                                  manual_rank=profile.get("manual_rank"))
+    if profile.get("manual_rank") and user.id != OWNER_USER_ID:
+        progress = "Назначено владельцем. XP продолжает накапливаться."
+    else:
+        progress = (f"До {following[2]}: {following[0] - profile['xp']} XP"
+                    if following else "Высшее звание достигнуто.")
     return (
         f"Мой ранг · T.N.K.C SQUAD\n\n{html.escape(user.full_name[:100])}\n"
         f"{current[1]} · {current[2]}\n\n"
@@ -704,7 +706,8 @@ def xp_top_text(context, *, weekly=False):
     if not rows:
         return text + "\n\nПока никто не заработал XP. Начни с комментария под постом."
     for number, row in enumerate(rows, 1):
-        current, _ = rank_for(row["xp"], founder=row["user_id"] == OWNER_USER_ID)
+        current, _ = rank_for(row["xp"], founder=row["user_id"] == OWNER_USER_ID,
+                              manual_rank=row.get("manual_rank"))
         text += f"\n\n{number}. {html.escape(row['name'][:35])} — {row['score']} XP\n{current[1]} · {current[2]}"
     return text
 
@@ -719,6 +722,7 @@ def xp_rules_text():
         "Реакции на свои комментарии, пересланные сообщения, команды, стикеры и сообщения от имени канала не учитываются.\n"
         "Общий лимит: 100 XP в день, по Москве. Неделя начинается в понедельник.\n"
         "Анонимные реакции самого канала не учитываются. Учёт начинается после подключения Фини; прошлый актив не восстанавливается.\n"
+        "Владелец может закрепить звание отдельно от XP; после снятия оно снова определяется по XP.\n"
         "Звание видно в Фине и не выдаёт права администратора."
     )
 
@@ -1308,6 +1312,7 @@ def _run_bot():
     app.add_handler(CommandHandler("posts_retry", posts_retry_command))
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(ChatMemberHandler(CHANNEL_BLACKLIST.handle_update, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post))
