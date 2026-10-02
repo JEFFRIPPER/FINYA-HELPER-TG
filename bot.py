@@ -5,6 +5,7 @@ existing bot intact and adds manual XP/rank controls to /admin.
 """
 
 import html
+import sys
 
 import bot_core as core
 from bot_core import *  # noqa: F401,F403
@@ -376,12 +377,16 @@ async def text_message(update, context):
 core.handle_admin_callback = handle_admin_callback
 core.text_message = text_message
 
-# Re-export the patched callables for imports/tests that use `import bot`.
-globals()["handle_admin_callback"] = handle_admin_callback
-globals()["text_message"] = text_message
-globals()["_run_bot"] = core._run_bot
-globals()["main"] = core.main
+# Expose the extension on the original module.  When imported as `bot`, return
+# bot_core itself so existing tests/patches of bot.STATE, bot.save_state, etc.
+# still affect the globals used by the legacy implementation.
+core.admin_xp_keyboard = admin_xp_keyboard
+core.handle_admin_callback = handle_admin_callback
+core.text_message = text_message
+core.BOT_VERSION = BOT_VERSION
 
 
 if __name__ == "__main__":
     core.main()
+else:
+    sys.modules[__name__] = core
