@@ -1092,6 +1092,23 @@ public class JujutsuNeonMod {
             int[] ids = player.getPersistentData().getIntArray("jn_blue_block_ids");
             LivingEntity hit = null;
 
+            if (now % 4 == 0) {
+                Vec3 sum = Vec3.ZERO;
+                int aliveBlocks = 0;
+
+                for (int id : ids) {
+                    Entity visualEntity = level.getEntity(id);
+                    if (visualEntity instanceof FallingBlockEntity falling && falling.isAlive()) {
+                        sum = sum.add(falling.position().add(0.0, 0.45, 0.0));
+                        aliveBlocks++;
+                    }
+                }
+
+                if (aliveBlocks > 0) {
+                    spawnVfx(level, VFX_BLUE, sum.scale(1.0 / aliveBlocks), 1);
+                }
+            }
+
             for (int id : ids) {
                 Entity e = level.getEntity(id);
                 if (!(e instanceof FallingBlockEntity falling) || !falling.isAlive()) continue;
