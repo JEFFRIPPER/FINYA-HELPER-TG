@@ -28,6 +28,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -99,7 +101,7 @@ import java.util.function.Supplier;
  * Клавиши по умолчанию:
  * Q — дэш. Q = длинный front dash, A+Q/D+Q = резкий side dash; в воздухе Q идёт по камере.
  * Space — заряд прыжка: <1с = 2 блока, 1с = 7, 2с = 13, 3с = 18.
- * Left Ctrl — суперскорость.
+ * Без Ctrl с повязкой: ходьба ~3x. Left Ctrl — сверхбег ~8x, 1% CE за 2 сек, бег по воде.
  * R — мгновенный телепорт к загруженному блоку под прицелом, стан 2 сек.
  * Z — Blue; удержание 1 сек запускает Maximum Blue, отпускание начинает рассеивание
  * X — Red: удерживай для прицеливания, отпусти для выстрела; X+ (1 сек) — Hollow Purple
@@ -123,7 +125,7 @@ import java.util.function.Supplier;
 public class JujutsuNeonMod {
 
     public static final String MODID = "jujutsu_neon";
-    private static final String PROTOCOL = "10";
+    private static final String PROTOCOL = "11";
 
     private static final double CE_MAX = 100.0;
 
@@ -2229,6 +2231,10 @@ public class JujutsuNeonMod {
 
         if (action == MovementAction.SPEED_OFF) {
             player.getPersistentData().putBoolean("jn_super_speed", false);
+            player.getPersistentData().remove("jn_speed_next_cost");
+            player.getPersistentData().remove("jn_speed_last_x");
+            player.getPersistentData().remove("jn_speed_last_y");
+            player.getPersistentData().remove("jn_speed_last_z");
             return;
         }
 
@@ -2242,8 +2248,17 @@ public class JujutsuNeonMod {
             case FRONT_DASH -> startDash(player, 0);
             case LEFT_DASH -> startDash(player, -1);
             case RIGHT_DASH -> startDash(player, 1);
-            case SPEED_ON -> player.getPersistentData().putBoolean("jn_super_speed", true);
-            case SPEED_OFF -> player.getPersistentData().putBoolean("jn_super_speed", false);
+            case SPEED_ON -> {
+                player.getPersistentData().putBoolean("jn_super_speed", true);
+                player.getPersistentData().putLong("jn_speed_next_cost", player.level().getGameTime() + 40);
+                player.getPersistentData().putDouble("jn_speed_last_x", player.getX());
+                player.getPersistentData().putDouble("jn_speed_last_y", player.getY());
+                player.getPersistentData().putDouble("jn_speed_last_z", player.getZ());
+            }
+            case SPEED_OFF -> {
+                player.getPersistentData().putBoolean("jn_super_speed", false);
+                player.getPersistentData().remove("jn_speed_next_cost");
+            }
         }
     }
 
@@ -2702,6 +2717,352 @@ public class JujutsuNeonMod {
         target.hurtMarked = true;
     }
 
+    private static final int NORMAL_WALK_SPEED_AMPLIFIER = 9;  // 3x vanilla walk
+    private static final int SUPER_RUN_SPEED_AMPLIFIER = 34;   // 8x vanilla walk
+    private static final long SUPER_RUN_COST_INTERVAL = 40L;   // 2 секунды
+    private static final double SUPER_RUN_COST = 1.0;           // 1% CE
+
+    private static Vec3 runInputDirection(ServerPlayer player) {
+        float forwardInput = player.zza;
+        float strafeInput = player.xxa;
+
+        if (Math.abs(forwardInput) < 0.01F && Math.abs(strafeInput) < 0.01F) {
+            Vec3 velocity = player.getDeltaMovement();
+            Vec3 horizontal = new Vec3(velocity.x, 0.0, velocity.z);
+            return horizontal.lengthSqr() > 1.0E-4 ? horizontal.normalize() : Vec3.ZERO;
+        }
+
+        double yaw = Math.toRadians(player.getYRot());
+        Vec3 forward = new Vec3(-Math.sin(yaw), 0.0, Math.cos(yaw));
+        Vec3 right = new Vec3(forward.z, 0.0, -forward.x);
+
+        Vec3 dir = forward.scale(forwardInput).add(right.scale(strafeInput));
+        return dir.lengthSqr() > 1.0E-4 ? dir.normalize() : Vec3.ZERO;
+    }
+
+    private static void trySuperRunStepUp(ServerPlayer player) {
+        if (!player.horizontalCollision) return;
+
+        Vec3 dir = runInputDirection(player);
+        if (dir.lengthSqr() < 1.0E-4) return;
+
+        ServerLevel level = player.serverLevel();
+        AABB box = player.getBoundingBox();
+
+        // Перепады в 1-2 блока автоматически преодолеваются.
+        for (int h = 1; h <= 2; h++) {
+            Vec3 step = new Vec3(dir.x * 0.58, h, dir.z * 0.58);
+            if (level.noCollision(player, box.move(step))) {
+                player.move(MoverType.SELF, step);
+                player.setDeltaMovement(
+                        player.getDeltaMovement().x,
+                        Math.max(0.0, player.getDeltaMovement().y),
+                        player.getDeltaMovement().z
+                );
+                player.hurtMarked = true;
+                return;
+            }
+        }
+        // Стена 3+ блока просто останавливает движение; режим сверхбега остаётся включён.
+    }
+
+    private static boolean isNaturalTreeLog(ServerLevel level, BlockPos start) {
+        BlockState startState = level.getBlockState(start);
+        if (!startState.is(BlockTags.LOGS)) return false;
+
+        List<BlockPos> queue = new ArrayList<>();
+        List<BlockPos> visited = new ArrayList<>();
+        queue.add(start.immutable());
+
+        boolean grounded = false;
+        int leavesNearby = 0;
+        int minY = start.getY();
+        int maxY = start.getY();
+
+        for (int qi = 0; qi < queue.size() && visited.size() < 40; qi++) {
+            BlockPos pos = queue.get(qi);
+            if (visited.contains(pos)) continue;
+
+            BlockState state = level.getBlockState(pos);
+            if (!state.is(BlockTags.LOGS)) continue;
+
+            visited.add(pos);
+            minY = Math.min(minY, pos.getY());
+            maxY = Math.max(maxY, pos.getY());
+
+            BlockState below = level.getBlockState(pos.below());
+            if (below.is(Blocks.DIRT) ||
+                    below.is(Blocks.GRASS_BLOCK) ||
+                    below.is(Blocks.PODZOL) ||
+                    below.is(Blocks.COARSE_DIRT) ||
+                    below.is(Blocks.ROOTED_DIRT) ||
+                    below.is(Blocks.MUD) ||
+                    below.is(Blocks.MYCELIUM)) {
+                grounded = true;
+            }
+
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dy = -2; dy <= 3; dy++) {
+                    for (int dz = -2; dz <= 2; dz++) {
+                        if (Math.abs(dx) + Math.abs(dz) > 3) continue;
+                        if (level.getBlockState(pos.offset(dx, dy, dz)).is(BlockTags.LEAVES)) {
+                            leavesNearby++;
+                            if (leavesNearby >= 4) break;
+                        }
+                    }
+                    if (leavesNearby >= 4) break;
+                }
+                if (leavesNearby >= 4) break;
+            }
+
+            for (Direction direction : Direction.values()) {
+                BlockPos next = pos.relative(direction);
+                if (!visited.contains(next) && level.getBlockState(next).is(BlockTags.LOGS)) {
+                    queue.add(next.immutable());
+                }
+            }
+        }
+
+        // Дом из брёвен обычно не имеет одновременно настоящей кроны,
+        // связи с грунтом и вертикального ствола.
+        return grounded && leavesNearby >= 4 && (maxY - minY >= 2);
+    }
+
+    private static boolean isSuperRunPlant(ServerLevel level, BlockPos pos, BlockState state) {
+        if (state.isAir()) return false;
+
+        if (state.is(BlockTags.LEAVES) ||
+                state.is(BlockTags.FLOWERS) ||
+                state.is(BlockTags.SAPLINGS)) {
+            return true;
+        }
+
+        if (state.is(BlockTags.LOGS)) {
+            return isNaturalTreeLog(level, pos);
+        }
+
+        return state.is(Blocks.GRASS) ||
+                state.is(Blocks.TALL_GRASS) ||
+                state.is(Blocks.FERN) ||
+                state.is(Blocks.LARGE_FERN) ||
+                state.is(Blocks.VINE) ||
+                state.is(Blocks.DEAD_BUSH) ||
+                state.is(Blocks.SWEET_BERRY_BUSH) ||
+                state.is(Blocks.AZALEA) ||
+                state.is(Blocks.FLOWERING_AZALEA) ||
+                state.is(Blocks.BAMBOO) ||
+                state.is(Blocks.SUGAR_CANE);
+    }
+
+    private static void vaporizeSuperRunPlants(ServerPlayer player, ServerLevel level) {
+        Vec3 current = player.position();
+
+        boolean hasLast = player.getPersistentData().contains("jn_speed_last_x") &&
+                player.getPersistentData().contains("jn_speed_last_y") &&
+                player.getPersistentData().contains("jn_speed_last_z");
+
+        if (!hasLast) {
+            player.getPersistentData().putDouble("jn_speed_last_x", current.x);
+            player.getPersistentData().putDouble("jn_speed_last_y", current.y);
+            player.getPersistentData().putDouble("jn_speed_last_z", current.z);
+            return;
+        }
+
+        Vec3 previous = new Vec3(
+                player.getPersistentData().getDouble("jn_speed_last_x"),
+                player.getPersistentData().getDouble("jn_speed_last_y"),
+                player.getPersistentData().getDouble("jn_speed_last_z")
+        );
+
+        player.getPersistentData().putDouble("jn_speed_last_x", current.x);
+        player.getPersistentData().putDouble("jn_speed_last_y", current.y);
+        player.getPersistentData().putDouble("jn_speed_last_z", current.z);
+
+        // Не сносим мир после телепорта или иных резких перемещений.
+        if (previous.distanceToSqr(current) > 16.0) return;
+
+        double minX = Math.min(previous.x, current.x) - 0.55;
+        double maxX = Math.max(previous.x, current.x) + 0.55;
+        double minY = Math.min(previous.y, current.y);
+        double maxY = Math.max(previous.y, current.y) + player.getBbHeight() + 0.15;
+        double minZ = Math.min(previous.z, current.z) - 0.55;
+        double maxZ = Math.max(previous.z, current.z) + 0.55;
+
+        List<BlockPos> toRemove = new ArrayList<>();
+
+        for (int x = Mth.floor(minX); x <= Mth.floor(maxX); x++) {
+            for (int y = Mth.floor(minY); y <= Mth.floor(maxY); y++) {
+                for (int z = Mth.floor(minZ); z <= Mth.floor(maxZ); z++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    BlockState state = level.getBlockState(pos);
+                    if (isSuperRunPlant(level, pos, state)) {
+                        toRemove.add(pos.immutable());
+                    }
+                }
+            }
+        }
+
+        for (BlockPos pos : toRemove) {
+            BlockState state = level.getBlockState(pos);
+            if (state.isAir()) continue;
+
+            // Полное испарение без drop/item entities.
+            level.setBlock(pos, Blocks.AIR.defaultBlockState(), 3);
+
+            level.sendParticles(
+                    new BlockParticleOption(ParticleTypes.BLOCK, state),
+                    pos.getX() + 0.5,
+                    pos.getY() + 0.5,
+                    pos.getZ() + 0.5,
+                    7,
+                    0.32, 0.32, 0.32,
+                    0.08
+            );
+        }
+    }
+
+    private static void supportSuperRunOnWater(ServerPlayer player, ServerLevel level) {
+        BlockPos below = BlockPos.containing(
+                player.getX(),
+                player.getY() - 0.18,
+                player.getZ()
+        );
+
+        var fluid = level.getFluidState(below);
+        if (!fluid.is(FluidTags.WATER)) return;
+
+        double surfaceY = below.getY() + fluid.getHeight(level, below);
+
+        // Работает именно как бег по поверхности, а не как полёт из глубины воды.
+        if (player.getY() < surfaceY - 0.42 || player.getY() > surfaceY + 0.50) return;
+
+        player.setPos(player.getX(), surfaceY + 0.03, player.getZ());
+        player.setDeltaMovement(
+                player.getDeltaMovement().x,
+                0.015,
+                player.getDeltaMovement().z
+        );
+        player.fallDistance = 0.0F;
+        player.hurtMarked = true;
+
+        if (level.getGameTime() % 2 == 0) {
+            level.sendParticles(
+                    ParticleTypes.SPLASH,
+                    player.getX(),
+                    surfaceY + 0.07,
+                    player.getZ(),
+                    10,
+                    0.55, 0.04, 0.55,
+                    0.20
+            );
+
+            spawnNeonRing(
+                    level,
+                    new Vec3(player.getX(), surfaceY + 0.04, player.getZ()),
+                    0.75,
+                    new Vector3f(0.08f, 0.72f, 1.0f)
+            );
+        }
+    }
+
+    private static void spawnSuperRunEffects(ServerPlayer player, ServerLevel level, long now) {
+        if (now % 2 == 0) {
+            Vec3 base = player.position().add(0.0, 0.85, 0.0);
+
+            for (int i = 0; i < 5; i++) {
+                Vec3 trail = base.add(
+                        rnd(-0.42, 0.42),
+                        rnd(-0.70, 0.75),
+                        rnd(-0.42, 0.42)
+                );
+                sendDust(
+                        level,
+                        trail,
+                        i % 2 == 0
+                                ? new Vector3f(0.72f, 0.94f, 1.0f)
+                                : new Vector3f(0.06f, 0.68f, 1.0f),
+                        0.48f
+                );
+            }
+
+            spawnVfx(level, VFX_TRAIL, base, 1);
+        }
+
+        if (now % 4 == 0) {
+            BlockPos ground = BlockPos.containing(
+                    player.getX(),
+                    player.getY() - 0.10,
+                    player.getZ()
+            );
+            BlockState state = level.getBlockState(ground);
+            if (!state.isAir() && state.getFluidState().isEmpty()) {
+                level.sendParticles(
+                        new BlockParticleOption(ParticleTypes.BLOCK, state),
+                        player.getX(),
+                        player.getY() + 0.05,
+                        player.getZ(),
+                        7,
+                        0.38, 0.05, 0.38,
+                        0.07
+                );
+            }
+        }
+
+        if (now % 30 == 0) {
+            playSfx(level, player, SFX_DASH, 0.34f, 1.45f);
+        }
+    }
+
+    private static void tickBlindfoldRun(ServerPlayer player, ServerLevel level, long now) {
+        boolean speed = player.getPersistentData().getBoolean("jn_super_speed");
+
+        // Без CTRL: ровно усиленная ходьба около 3x. Ванильный sprint не суммируется.
+        player.setSprinting(false);
+
+        if (!speed) {
+            player.addEffect(new MobEffectInstance(
+                    MobEffects.MOVEMENT_SPEED,
+                    6,
+                    NORMAL_WALK_SPEED_AMPLIFIER,
+                    false, false, false
+            ));
+            player.getPersistentData().remove("jn_speed_last_x");
+            player.getPersistentData().remove("jn_speed_last_y");
+            player.getPersistentData().remove("jn_speed_last_z");
+            return;
+        }
+
+        // CTRL: отдельный режим сверхбега ~8x.
+        long nextCost = player.getPersistentData().getLong("jn_speed_next_cost");
+        if (nextCost <= 0) {
+            nextCost = now + SUPER_RUN_COST_INTERVAL;
+            player.getPersistentData().putLong("jn_speed_next_cost", nextCost);
+        }
+
+        if (now >= nextCost) {
+            if (getEnergy(player) + 1.0E-6 < SUPER_RUN_COST) {
+                player.getPersistentData().putBoolean("jn_super_speed", false);
+                player.getPersistentData().remove("jn_speed_next_cost");
+                return;
+            }
+
+            setEnergy(player, getEnergy(player) - SUPER_RUN_COST);
+            player.getPersistentData().putLong("jn_speed_next_cost", now + SUPER_RUN_COST_INTERVAL);
+        }
+
+        player.addEffect(new MobEffectInstance(
+                MobEffects.MOVEMENT_SPEED,
+                6,
+                SUPER_RUN_SPEED_AMPLIFIER,
+                false, false, false
+        ));
+
+        trySuperRunStepUp(player);
+        supportSuperRunOnWater(player, level);
+        vaporizeSuperRunPlants(player, level);
+        spawnSuperRunEffects(player, level, now);
+    }
+
     private static boolean isInFront(ServerPlayer player, LivingEntity target, double minDot) {
         Vec3 look = player.getLookAngle().normalize();
         Vec3 toTarget = target.position()
@@ -2810,6 +3171,10 @@ public class JujutsuNeonMod {
 
             if (!equipped) {
                 player.getPersistentData().putBoolean("jn_super_speed", false);
+                player.getPersistentData().remove("jn_speed_next_cost");
+                player.getPersistentData().remove("jn_speed_last_x");
+                player.getPersistentData().remove("jn_speed_last_y");
+                player.getPersistentData().remove("jn_speed_last_z");
                 player.getPersistentData().putBoolean("jn_infinity", false);
                 player.getPersistentData().putInt("jn_air_jumps", 0);
             } else {
@@ -2821,40 +3186,12 @@ public class JujutsuNeonMod {
                 boolean infinity = player.getPersistentData().getBoolean("jn_infinity");
                 boolean domain = player.getPersistentData().getLong("jn_domain_until") > now;
 
-                // Проклятая энергия: обычная регенерация.
-                double regen = 0.28;
-                if (speed || infinity || domain) regen *= 0.45;
+                // В режиме сверхбега энергия не регенерирует: расход строго 1% за 2 секунды.
+                double regen = speed ? 0.0 : 0.28;
+                if (infinity || domain) regen *= 0.45;
                 setEnergy(player, getEnergy(player) + regen);
 
-                // CTRL: суперскорость, но теперь она реально расходует ресурс.
-                if (speed) {
-                    if (getEnergy(player) <= 0.2) {
-                        player.getPersistentData().putBoolean("jn_super_speed", false);
-                    } else {
-                        setEnergy(player, getEnergy(player) - 0.18);
-                        player.addEffect(new MobEffectInstance(
-                                MobEffects.MOVEMENT_SPEED, 6, 5,
-                                false, false, true
-                        ));
-
-                        if (player.zza > 0.0F) {
-                            Vec3 look = player.getLookAngle();
-                            Vec3 horizontal = new Vec3(look.x, 0, look.z);
-                            if (horizontal.lengthSqr() > 0.001) {
-                                horizontal = horizontal.normalize().scale(0.055);
-                                player.setDeltaMovement(player.getDeltaMovement().add(horizontal));
-                                player.hurtMarked = true;
-                            }
-                        }
-
-                        if (now % 2 == 0) {
-                            sendDust(level,
-                                    player.position().add(rnd(-0.35, 0.35), rnd(0.05, 1.75), rnd(-0.35, 0.35)),
-                                    new Vector3f(0.05f, 0.85f, 1.0f),
-                                    0.85f);
-                        }
-                    }
-                }
+                tickBlindfoldRun(player, level, now);
 
                 if (infinity && now % 3 == 0) {
                     double a = now * 0.25;
@@ -3216,7 +3553,7 @@ public class JujutsuNeonMod {
         );
 
         public static final KeyMapping SUPER_SPEED_KEY = new KeyMapping(
-                "Суперскорость + мультипрыжок",
+                "Сверхбег 8x",
                 InputConstants.Type.KEYSYM,
                 GLFW.GLFW_KEY_LEFT_CONTROL,
                 CATEGORY
