@@ -365,6 +365,15 @@ public class JujutsuNeonMod {
             return;
         }
 
+        if (isHollowPurpleCasting(player) && ability != Ability.HOLLOW_PURPLE) {
+            player.displayClientMessage(
+                    Component.literal("HOLLOW PURPLE // CAST IN PROGRESS")
+                            .withStyle(ChatFormatting.DARK_PURPLE),
+                    true
+            );
+            return;
+        }
+
         ServerLevel level = player.serverLevel();
         long now = level.getGameTime();
         String cooldownKey = "jn_cd_" + ability.name().toLowerCase();
@@ -394,7 +403,13 @@ public class JujutsuNeonMod {
             }
             case MAX_BLUE -> { castMaxBlue(player); setCooldown(player, ability, 220); }
             case RED -> { castRed(player); setCooldown(player, ability, 140); }
-            case HOLLOW_PURPLE -> { castHollowPurple(player); setCooldown(player, ability, 420); }
+            case HOLLOW_PURPLE -> {
+                if (startHollowPurpleCast(player)) {
+                    setCooldown(player, ability, 420);
+                } else {
+                    setEnergy(player, getEnergy(player) + cost);
+                }
+            }
             case CURSED_BARRAGE -> { castCursedBarrage(player); setCooldown(player, ability, 180); }
             case INFINITY_TOGGLE -> { castInfinityToggle(player); setCooldown(player, ability, 20); }
             case DOMAIN -> { castDomain(player); setCooldown(player, ability, 600); }
@@ -818,6 +833,7 @@ public class JujutsuNeonMod {
     }
 
     private static boolean castBlue(ServerPlayer player) {
+        if (isHollowPurpleCasting(player)) return false;
         if (isBlueInteractionActive(player) ||
                 player.getPersistentData().getInt("jn_blue_mode") == BLUE_MODE_PROJECTILE) {
             player.displayClientMessage(
@@ -1228,6 +1244,7 @@ public class JujutsuNeonMod {
 
     private static boolean startMaximumBlue(ServerPlayer player) {
         if (player == null || !player.isAlive() || player.isSpectator()) return false;
+        if (isHollowPurpleCasting(player)) return false;
         if (!hasGojoBlindfold(player)) {
             requireBlindfoldMessage(player);
             return false;
@@ -1632,64 +1649,861 @@ public class JujutsuNeonMod {
         );
     }
 
-    private static void castHollowPurple(ServerPlayer player) {
-        ServerLevel level = player.serverLevel();
-        handSign(player);
-        playSfx(level, player, SFX_PURPLE, 1.5f, 0.78f);
+    private static final int PURPLE_MODE_NONE = 0;
+    private static final int PURPLE_MODE_CASTING = 1;
+    private static final int PURPLE_MODE_PROJECTILE = 2;
 
-        Vec3 origin = player.getEyePosition();
-        Vec3 dir = player.getLookAngle().normalize();
-        double range = 28.0;
-        spawnEnergySpiral(level, origin, dir, range, 1.25, 7.5,
-                new Vector3f(0.60f, 0.00f, 1.0f),
-                new Vector3f(1.00f, 0.04f, 0.52f));
+    private static final long PURPLE_CAST_TICKS = 100L; // 5 секунд
+    private static final double PURPLE_SPEED = 8.0; // 160 блоков/сек при 20 TPS
+    private static final double PURPLE_FULL_DISTANCE = 150.0;
+    private static final double PURPLE_FADE_DISTANCE = 10.0;
+    private static final double PURPLE_END_DISTANCE = PURPLE_FULL_DISTANCE + PURPLE_FADE_DISTANCE;
+    private static final double PURPLE_TUNNEL_RADIUS = 6.0;
+    private static final double PURPLE_PROJECTILE_RADIUS = 2.0; // 4x4x4
+    private static final float PURPLE_DAMAGE = 400.0F; // 200 сердец
 
-        for (int step = 0; step < 84; step++) {
-            double d = step * (range / 84.0);
-            Vec3 p = origin.add(dir.scale(d));
-            double pulse = 0.22 + 0.32 * Math.sin(step * 0.6);
+    // High speed creates many candidate blocks. Updates are intentionally budgeted.
+    private static final int PURPLE_BLOCK_BUDGET_PER_TICK = 480;
+    private static final double PURPLE_SLICE_STEP = 0.82;
+    private static final double PURPLE_DISK_STEP = 0.82;
+    private static final double PURPLE_TRAIL_NODE_STEP = 4.0;
+    private static final long PURPLE_TRAIL_LIFETIME = 100L; // 5 секунд
+    private static final int PURPLE_BLOCK_UPDATE_FLAGS = 2 | 16 | 32;
 
-            sendDust(level, p.add(rnd(-pulse, pulse), rnd(-pulse, pulse), rnd(-pulse, pulse)),
-                    new Vector3f(0.58f, 0.0f, 1.0f), 1.7f);
-            sendDust(level, p.add(rnd(-pulse, pulse), rnd(-pulse, pulse), rnd(-pulse, pulse)),
-                    new Vector3f(1.0f, 0.05f, 0.58f), 1.4f);
+    private static final Map<UUID, HollowPurpleRuntime> PURPLE_RUNTIMES = new HashMap<>();
 
-            if (step % 4 == 0) {
-                level.sendParticles(ParticleTypes.END_ROD, p.x, p.y, p.z, 2, 0.18, 0.18, 0.18, 0.02);
-                level.sendParticles(ParticleTypes.ELECTRIC_SPARK, p.x, p.y, p.z, 3, 0.25, 0.25, 0.25, 0.12);
+    private static class PurpleTrailNode {
+        final Vec3 center;
+        final double radius;
+        final long bornTick;
+
+        PurpleTrailNode(Vec3 center, double radius, long bornTick) {
+            this.center = center;
+            this.radius = radius;
+            this.bornTick = bornTick;
+        }
+    }
+
+    private static class HollowPurpleRuntime {
+        final ArrayDeque<BlockPos> destructionQueue = new ArrayDeque<>();
+        final Set<Long> visitedBlocks = new HashSet<>();
+        final Set<UUID> damagedEntities = new HashSet<>();
+        final List<PurpleTrailNode> trailNodes = new ArrayList<>();
+
+        final Vec3 direction;
+        final Vec3 right;
+        final Vec3 up;
+
+        double nextSliceDistance = 0.0;
+        double nextTrailDistance = 0.0;
+        int destroyedBlocks = 0;
+        boolean projectileActive = true;
+
+        HollowPurpleRuntime(Vec3 direction) {
+            this.direction = direction.normalize();
+
+            Vec3 reference = Math.abs(this.direction.y) > 0.92
+                    ? new Vec3(1.0, 0.0, 0.0)
+                    : new Vec3(0.0, 1.0, 0.0);
+
+            Vec3 computedRight = this.direction.cross(reference);
+            if (computedRight.lengthSqr() < 1.0E-6) {
+                computedRight = new Vec3(1.0, 0.0, 0.0);
+            }
+
+            this.right = computedRight.normalize();
+            this.up = this.right.cross(this.direction).normalize();
+        }
+    }
+
+    private static boolean isHollowPurpleCasting(ServerPlayer player) {
+        return player.getPersistentData().getInt("jn_purple_mode") == PURPLE_MODE_CASTING;
+    }
+
+    private static double purpleTunnelRadius(double travelled) {
+        if (travelled <= PURPLE_FULL_DISTANCE) return PURPLE_TUNNEL_RADIUS;
+        if (travelled >= PURPLE_END_DISTANCE) return 0.0;
+
+        double t = Mth.clamp(
+                (travelled - PURPLE_FULL_DISTANCE) / PURPLE_FADE_DISTANCE,
+                0.0,
+                1.0
+        );
+
+        t = t * t * (3.0 - 2.0 * t);
+        return PURPLE_TUNNEL_RADIUS * (1.0 - t);
+    }
+
+    private static double purpleBallRadius(double travelled) {
+        if (travelled <= PURPLE_FULL_DISTANCE) return PURPLE_PROJECTILE_RADIUS;
+        if (travelled >= PURPLE_END_DISTANCE) return 0.08;
+
+        double t = Mth.clamp(
+                (travelled - PURPLE_FULL_DISTANCE) / PURPLE_FADE_DISTANCE,
+                0.0,
+                1.0
+        );
+
+        t = t * t * (3.0 - 2.0 * t);
+        return Math.max(0.08, PURPLE_PROJECTILE_RADIUS * (1.0 - t));
+    }
+
+    private static Vec3 purpleViewRight(ServerPlayer player) {
+        Vec3 forward = player.getLookAngle().normalize();
+        Vec3 reference = Math.abs(forward.y) > 0.92
+                ? new Vec3(1.0, 0.0, 0.0)
+                : new Vec3(0.0, 1.0, 0.0);
+
+        Vec3 right = forward.cross(reference);
+        if (right.lengthSqr() < 1.0E-6) right = new Vec3(1.0, 0.0, 0.0);
+        return right.normalize();
+    }
+
+    private static void spawnPurpleCastOrb(
+            ServerLevel level,
+            Vec3 center,
+            double radius,
+            Vector3f color,
+            long now
+    ) {
+        int points = Math.max(18, (int) (26 + radius * 12.0));
+        double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+
+        for (int i = 0; i < points; i++) {
+            double y = 1.0 - (i / (double) Math.max(1, points - 1)) * 2.0;
+            double ring = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+            double theta = golden * i + now * 0.055;
+
+            Vec3 p = center.add(
+                    Math.cos(theta) * ring * radius,
+                    y * radius,
+                    Math.sin(theta) * ring * radius
+            );
+
+            sendDust(level, p, color, (float) Mth.clamp(0.42 + radius * 0.20, 0.42, 1.10));
+        }
+    }
+
+    private static void spawnPurpleMergedSphere(
+            ServerLevel level,
+            Vec3 center,
+            Vec3 direction,
+            double radius,
+            long now,
+            boolean release
+    ) {
+        if (radius <= 0.02) return;
+
+        int shellPoints = release ? 58 : 46;
+        double golden = Math.PI * (3.0 - Math.sqrt(5.0));
+
+        for (int i = 0; i < shellPoints; i++) {
+            double y = 1.0 - (i / (double) (shellPoints - 1)) * 2.0;
+            double ring = Math.sqrt(Math.max(0.0, 1.0 - y * y));
+            double theta = golden * i + now * 0.085;
+
+            Vec3 p = center.add(
+                    Math.cos(theta) * ring * radius,
+                    y * radius,
+                    Math.sin(theta) * ring * radius
+            );
+
+            Vector3f color;
+            if (i % 7 == 0) color = new Vector3f(0.96f, 0.84f, 1.0f); // бело-фиолетовое ядро
+            else if (i % 2 == 0) color = new Vector3f(0.64f, 0.02f, 1.0f);
+            else color = new Vector3f(1.0f, 0.03f, 0.55f);
+
+            sendDust(level, p, color, i % 7 == 0 ? 1.05f : 0.78f);
+        }
+
+        Vec3 reference = Math.abs(direction.y) > 0.92
+                ? new Vec3(1.0, 0.0, 0.0)
+                : new Vec3(0.0, 1.0, 0.0);
+        Vec3 right = direction.cross(reference);
+        if (right.lengthSqr() < 1.0E-6) right = new Vec3(1.0, 0.0, 0.0);
+        right = right.normalize();
+        Vec3 up = right.cross(direction).normalize();
+
+        // Distortion-like orbit rings around the sphere.
+        for (int ringIndex = 0; ringIndex < 3; ringIndex++) {
+            double orbit = radius * (1.12 + ringIndex * 0.16);
+            int points = release ? 18 : 14;
+
+            for (int i = 0; i < points; i++) {
+                double a = Math.PI * 2.0 * i / points +
+                        now * (0.12 + ringIndex * 0.035) +
+                        ringIndex * 1.75;
+
+                Vec3 p = center
+                        .add(right.scale(Math.cos(a) * orbit))
+                        .add(up.scale(Math.sin(a) * orbit))
+                        .add(direction.scale(Math.sin(a * 2.0 + ringIndex) * radius * 0.13));
+
+                sendDust(
+                        level,
+                        p,
+                        ringIndex == 1
+                                ? new Vector3f(1.0f, 0.04f, 0.62f)
+                                : new Vector3f(0.58f, 0.04f, 1.0f),
+                        0.60f
+                );
             }
         }
 
-        Vec3 end = origin.add(dir.scale(range * 0.55));
-        spawnStylizedShockwave(level, end, 5.0, new Vector3f(0.80f, 0.02f, 1.0f));
-        spawnRadialStar(level, end,
-                new Vector3f(0.72f, 0.00f, 1.0f),
-                new Vector3f(1.00f, 0.03f, 0.42f),
-                22, 6.0);
-        playImpactLayer(level, end, 1.35f, 0.72f);
-        spawnVfx(level, VFX_PURPLE, end, 2);
-        AABB corridor = new AABB(origin, origin.add(dir.scale(range))).inflate(2.25);
+        if (now % 2 == 0) {
+            spawnVfx(level, VFX_PURPLE, center, 1);
+        }
+    }
+
+    private static boolean startHollowPurpleCast(ServerPlayer player) {
+        if (player == null || !player.isAlive() || player.isSpectator()) return false;
+        if (!hasGojoBlindfold(player)) return false;
+        if (player.getPersistentData().getInt("jn_purple_mode") != PURPLE_MODE_NONE) return false;
+
+        // Long stationary casts cannot overlap other player-locking techniques.
+        if (isMaximumBlueActive(player) || isBlueInteractionActive(player) ||
+                player.getPersistentData().getInt("jn_red_mode") != RED_MODE_NONE) {
+            player.displayClientMessage(
+                    Component.literal("HOLLOW PURPLE // сначала заверши текущую технику")
+                            .withStyle(ChatFormatting.GRAY),
+                    true
+            );
+            return false;
+        }
+
+        long now = player.level().getGameTime();
+
+        // Stop movement immediately, even if Purple is started during an aerial dash.
+        if (player.getPersistentData().getInt("jn_dash_mode") != DASH_NONE) {
+            finishDash(player, false);
+        }
+        player.getPersistentData().putBoolean("jn_super_speed", false);
+
+        player.getPersistentData().putInt("jn_purple_mode", PURPLE_MODE_CASTING);
+        player.getPersistentData().putLong("jn_purple_started", now);
+        player.getPersistentData().putBoolean("jn_purple_energy_reserved", true);
+
+        player.getPersistentData().putDouble("jn_purple_lock_x", player.getX());
+        player.getPersistentData().putDouble("jn_purple_lock_y", player.getY());
+        player.getPersistentData().putDouble("jn_purple_lock_z", player.getZ());
+
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setSprinting(false);
+        player.fallDistance = 0.0F;
+
+        handSign(player);
+        playSfx(player.serverLevel(), player, SFX_PURPLE, 1.10f, 0.72f);
+        playEnergyLayer(player.serverLevel(), player.getEyePosition(), 0.90f, 0.78f);
+
+        player.displayClientMessage(
+                Component.literal("HOLLOW PURPLE // CAST")
+                        .withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD),
+                true
+        );
+
+        return true;
+    }
+
+    private static void cancelHollowPurpleCast(ServerPlayer player, boolean refundEnergy) {
+        if (player.getPersistentData().getInt("jn_purple_mode") != PURPLE_MODE_CASTING) return;
+
+        if (refundEnergy && player.getPersistentData().getBoolean("jn_purple_energy_reserved")) {
+            setEnergy(player, getEnergy(player) + abilityCost(player, Ability.HOLLOW_PURPLE));
+        }
+
+        player.getPersistentData().putInt("jn_purple_mode", PURPLE_MODE_NONE);
+        player.getPersistentData().remove("jn_purple_started");
+        player.getPersistentData().remove("jn_purple_energy_reserved");
+        player.getPersistentData().remove("jn_purple_lock_x");
+        player.getPersistentData().remove("jn_purple_lock_y");
+        player.getPersistentData().remove("jn_purple_lock_z");
+    }
+
+    private static void freezeHollowPurpleOwner(ServerPlayer player) {
+        double x = player.getPersistentData().getDouble("jn_purple_lock_x");
+        double y = player.getPersistentData().getDouble("jn_purple_lock_y");
+        double z = player.getPersistentData().getDouble("jn_purple_lock_z");
+
+        player.teleportTo(x, y, z);
+        player.setDeltaMovement(Vec3.ZERO);
+        player.setSprinting(false);
+        player.fallDistance = 0.0F;
+        player.hurtMarked = true;
+    }
+
+    private static void spawnHollowPurpleCastScene(
+            ServerPlayer player,
+            ServerLevel level,
+            long now,
+            long elapsed
+    ) {
+        Vec3 eye = player.getEyePosition();
+        Vec3 forward = player.getLookAngle().normalize();
+        Vec3 right = purpleViewRight(player);
+        Vec3 up = right.cross(forward).normalize();
+
+        Vec3 backCenter = eye.subtract(forward.scale(1.30)).add(0.0, -0.18, 0.0);
+        Vec3 redBack = backCenter.add(right.scale(-2.10));
+        Vec3 blueBack = backCenter.add(right.scale(2.10));
+        Vec3 mergePoint = eye.add(forward.scale(2.35)).add(0.0, -0.12, 0.0);
+
+        if (elapsed < 38) {
+            double grow = maxBlueSmooth(elapsed / 38.0);
+            double orbRadius = 0.18 + grow * 1.05;
+
+            spawnPurpleCastOrb(level, redBack, orbRadius, new Vector3f(1.0f, 0.01f, 0.05f), now);
+            spawnPurpleCastOrb(level, blueBack, orbRadius, new Vector3f(0.02f, 0.72f, 1.0f), now);
+
+            // Purple arcs between the two Limitless poles and the hands.
+            for (int i = 0; i < 10; i++) {
+                double t = rnd(0.0, 1.0);
+                Vec3 p = redBack.lerp(blueBack, t)
+                        .add(up.scale(rnd(-0.18, 0.18)))
+                        .add(forward.scale(rnd(-0.12, 0.12)));
+                sendDust(level, p, new Vector3f(0.72f, 0.02f, 1.0f), 0.52f);
+            }
+            return;
+        }
+
+        if (elapsed < 72) {
+            double merge = maxBlueSmooth((elapsed - 38.0) / 34.0);
+
+            Vec3 red = redBack.lerp(mergePoint, merge);
+            Vec3 blue = blueBack.lerp(mergePoint, merge);
+            double orbRadius = 1.22 - merge * 0.62;
+
+            spawnPurpleCastOrb(level, red, orbRadius, new Vector3f(1.0f, 0.01f, 0.05f), now);
+            spawnPurpleCastOrb(level, blue, orbRadius, new Vector3f(0.02f, 0.72f, 1.0f), now);
+
+            Vec3 midpoint = red.lerp(blue, 0.5);
+            double purpleRadius = 0.18 + merge * 0.70;
+            spawnPurpleMergedSphere(level, midpoint, forward, purpleRadius, now, false);
+
+            for (int i = 0; i < 12; i++) {
+                Vec3 p = red.lerp(blue, rnd(0.0, 1.0))
+                        .add(rnd(-0.16, 0.16), rnd(-0.16, 0.16), rnd(-0.16, 0.16));
+                sendDust(level, p, new Vector3f(0.78f, 0.03f, 1.0f), 0.58f);
+            }
+            return;
+        }
+
+        double growth = maxBlueSmooth((elapsed - 72.0) / 28.0);
+        double radius = 0.82 + growth * (PURPLE_PROJECTILE_RADIUS - 0.82);
+
+        spawnPurpleMergedSphere(level, mergePoint, forward, radius, now, true);
+
+        // Strong central white-purple glow as the sphere reaches 4x4x4.
+        for (int i = 0; i < 8; i++) {
+            Vec3 p = mergePoint.add(
+                    rnd(-0.32, 0.32),
+                    rnd(-0.32, 0.32),
+                    rnd(-0.32, 0.32)
+            );
+            sendDust(level, p, new Vector3f(0.95f, 0.82f, 1.0f), 0.82f);
+        }
+    }
+
+    private static void launchHollowPurple(ServerPlayer player) {
+        if (player.getPersistentData().getInt("jn_purple_mode") != PURPLE_MODE_CASTING) return;
+
+        ServerLevel level = player.serverLevel();
+        Vec3 direction = player.getLookAngle().normalize();
+        Vec3 origin = player.getEyePosition().add(direction.scale(2.35));
+        Vec3 velocity = direction.scale(PURPLE_SPEED);
+
+        player.getPersistentData().putInt("jn_purple_mode", PURPLE_MODE_PROJECTILE);
+        player.getPersistentData().putDouble("jn_purple_x", origin.x);
+        player.getPersistentData().putDouble("jn_purple_y", origin.y);
+        player.getPersistentData().putDouble("jn_purple_z", origin.z);
+        player.getPersistentData().putDouble("jn_purple_vx", velocity.x);
+        player.getPersistentData().putDouble("jn_purple_vy", velocity.y);
+        player.getPersistentData().putDouble("jn_purple_vz", velocity.z);
+        player.getPersistentData().putDouble("jn_purple_distance", 0.0);
+
+        player.getPersistentData().remove("jn_purple_started");
+        player.getPersistentData().remove("jn_purple_energy_reserved");
+        player.getPersistentData().remove("jn_purple_lock_x");
+        player.getPersistentData().remove("jn_purple_lock_y");
+        player.getPersistentData().remove("jn_purple_lock_z");
+
+        PURPLE_RUNTIMES.put(player.getUUID(), new HollowPurpleRuntime(direction));
+
+        // Unlock instantly on release. Air movement/dashes can be used again immediately.
+        player.setDeltaMovement(Vec3.ZERO);
+        player.fallDistance = 0.0F;
+        player.hurtMarked = true;
+
+        playSfx(level, player, SFX_PURPLE, 1.75f, 0.60f);
+        spawnStylizedShockwave(level, origin, 4.2, new Vector3f(0.72f, 0.02f, 1.0f));
+        spawnRadialStar(
+                level,
+                origin,
+                new Vector3f(0.58f, 0.00f, 1.0f),
+                new Vector3f(1.0f, 0.04f, 0.55f),
+                24,
+                6.0
+        );
+        playImpactLayer(level, origin, 1.20f, 0.72f);
+
+        player.displayClientMessage(
+                Component.literal("HOLLOW PURPLE // RELEASE")
+                        .withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD),
+                true
+        );
+    }
+
+    private static void clearHollowPurpleProjectile(ServerPlayer player) {
+        HollowPurpleRuntime runtime = PURPLE_RUNTIMES.get(player.getUUID());
+        if (runtime != null) runtime.projectileActive = false;
+
+        player.getPersistentData().putInt("jn_purple_mode", PURPLE_MODE_NONE);
+        player.getPersistentData().remove("jn_purple_x");
+        player.getPersistentData().remove("jn_purple_y");
+        player.getPersistentData().remove("jn_purple_z");
+        player.getPersistentData().remove("jn_purple_vx");
+        player.getPersistentData().remove("jn_purple_vy");
+        player.getPersistentData().remove("jn_purple_vz");
+        player.getPersistentData().remove("jn_purple_distance");
+    }
+
+    private static boolean isPurpleProtectedTechnicalBlock(BlockState state) {
+        return state.is(Blocks.END_PORTAL) ||
+                state.is(Blocks.END_PORTAL_FRAME) ||
+                state.is(Blocks.NETHER_PORTAL) ||
+                state.is(Blocks.END_GATEWAY) ||
+                state.is(Blocks.COMMAND_BLOCK) ||
+                state.is(Blocks.CHAIN_COMMAND_BLOCK) ||
+                state.is(Blocks.REPEATING_COMMAND_BLOCK) ||
+                state.is(Blocks.STRUCTURE_BLOCK) ||
+                state.is(Blocks.STRUCTURE_VOID) ||
+                state.is(Blocks.JIGSAW) ||
+                state.is(Blocks.BARRIER) ||
+                state.is(Blocks.LIGHT) ||
+                state.is(Blocks.MOVING_PISTON);
+    }
+
+    private static boolean canPurpleAnnihilate(
+            ServerPlayer owner,
+            ServerLevel level,
+            BlockPos pos,
+            BlockState state
+    ) {
+        if (state.isAir() && state.getFluidState().isEmpty()) return false;
+        if (isOwnerSafeBlock(owner, pos)) return false;
+        if (isPurpleProtectedTechnicalBlock(state)) return false;
+
+        // Purple explicitly erases bedrock, fluids, containers and all ordinary world blocks.
+        if (state.is(Blocks.BEDROCK)) return true;
+        if (!state.getFluidState().isEmpty()) return true;
+
+        return true;
+    }
+
+    private static void enqueuePurpleSlice(
+            ServerPlayer owner,
+            ServerLevel level,
+            HollowPurpleRuntime runtime,
+            Vec3 center,
+            double radius
+    ) {
+        if (radius <= 0.05) return;
+
+        double padded = radius + 0.28;
+        double radiusSq = padded * padded;
+
+        for (double a = -padded; a <= padded + 1.0E-6; a += PURPLE_DISK_STEP) {
+            for (double b = -padded; b <= padded + 1.0E-6; b += PURPLE_DISK_STEP) {
+                if (a * a + b * b > radiusSq) continue;
+
+                Vec3 sample = center
+                        .add(runtime.right.scale(a))
+                        .add(runtime.up.scale(b));
+
+                BlockPos pos = BlockPos.containing(sample);
+                if (!level.hasChunkAt(pos)) continue;
+
+                long key = pos.asLong();
+                if (!runtime.visitedBlocks.add(key)) continue;
+
+                BlockState state = level.getBlockState(pos);
+                if (!canPurpleAnnihilate(owner, level, pos, state)) continue;
+
+                runtime.destructionQueue.addLast(pos.immutable());
+            }
+        }
+    }
+
+    private static void schedulePurpleTunnel(
+            ServerPlayer owner,
+            ServerLevel level,
+            HollowPurpleRuntime runtime,
+            Vec3 segmentStart,
+            Vec3 segmentEnd,
+            double startDistance,
+            double endDistance
+    ) {
+        double segmentLength = segmentStart.distanceTo(segmentEnd);
+        if (segmentLength < 1.0E-5) return;
+
+        while (runtime.nextSliceDistance <= endDistance + 1.0E-6 &&
+                runtime.nextSliceDistance <= PURPLE_END_DISTANCE + 1.0E-6) {
+
+            if (runtime.nextSliceDistance + 1.0E-6 < startDistance) {
+                runtime.nextSliceDistance += PURPLE_SLICE_STEP;
+                continue;
+            }
+
+            double local = (runtime.nextSliceDistance - startDistance) / segmentLength;
+            local = Mth.clamp(local, 0.0, 1.0);
+
+            Vec3 center = segmentStart.lerp(segmentEnd, local);
+            double radius = purpleTunnelRadius(runtime.nextSliceDistance);
+
+            enqueuePurpleSlice(owner, level, runtime, center, radius);
+            runtime.nextSliceDistance += PURPLE_SLICE_STEP;
+        }
+    }
+
+    private static void schedulePurpleTrail(
+            HollowPurpleRuntime runtime,
+            Vec3 segmentStart,
+            Vec3 segmentEnd,
+            double startDistance,
+            double endDistance,
+            long now
+    ) {
+        double segmentLength = segmentStart.distanceTo(segmentEnd);
+        if (segmentLength < 1.0E-5) return;
+
+        while (runtime.nextTrailDistance <= endDistance + 1.0E-6 &&
+                runtime.nextTrailDistance <= PURPLE_END_DISTANCE + 1.0E-6) {
+
+            if (runtime.nextTrailDistance + 1.0E-6 < startDistance) {
+                runtime.nextTrailDistance += PURPLE_TRAIL_NODE_STEP;
+                continue;
+            }
+
+            double local = (runtime.nextTrailDistance - startDistance) / segmentLength;
+            local = Mth.clamp(local, 0.0, 1.0);
+
+            Vec3 center = segmentStart.lerp(segmentEnd, local);
+            double radius = Math.max(0.35, purpleTunnelRadius(runtime.nextTrailDistance));
+
+            runtime.trailNodes.add(new PurpleTrailNode(center, radius, now));
+            runtime.nextTrailDistance += PURPLE_TRAIL_NODE_STEP;
+        }
+    }
+
+    private static void damagePurpleSegment(
+            ServerPlayer owner,
+            ServerLevel level,
+            HollowPurpleRuntime runtime,
+            Vec3 from,
+            Vec3 to,
+            double radius
+    ) {
+        if (radius <= 0.0) return;
+
+        AABB search = new AABB(from, to).inflate(radius + 1.0);
         List<LivingEntity> targets = level.getEntitiesOfClass(
                 LivingEntity.class,
-                corridor,
-                e -> e.isAlive() && e != player && isInFront(player, e, 0.72)
+                search,
+                e -> e.isAlive() && e != owner && !e.isSpectator()
         );
 
         for (LivingEntity target : targets) {
-            target.hurt(level.damageSources().playerAttack(player), 24.0F);
-            Vec3 knock = dir.scale(2.4);
-            target.setDeltaMovement(target.getDeltaMovement().add(knock.x, 0.35, knock.z));
-            target.hurtMarked = true;
+            if (runtime.damagedEntities.contains(target.getUUID())) continue;
+
+            Vec3 targetCenter = target.position().add(0.0, target.getBbHeight() * 0.5, 0.0);
+            double hitRadius = radius + Math.max(0.25, target.getBbWidth() * 0.5);
+
+            if (pointSegmentDistanceSqr(targetCenter, from, to) > hitRadius * hitRadius) continue;
+
+            runtime.damagedEntities.add(target.getUUID());
+
+            owner.getPersistentData().putBoolean("jn_purple_custom_damage", true);
+            try {
+                target.hurt(level.damageSources().playerAttack(owner), PURPLE_DAMAGE);
+            } finally {
+                owner.getPersistentData().putBoolean("jn_purple_custom_damage", false);
+            }
+
+            for (int i = 0; i < 22; i++) {
+                Vec3 p = targetCenter.add(
+                        rnd(-0.65, 0.65),
+                        rnd(-0.65, 0.65),
+                        rnd(-0.65, 0.65)
+                );
+                sendDust(
+                        level,
+                        p,
+                        i % 2 == 0
+                                ? new Vector3f(0.66f, 0.02f, 1.0f)
+                                : new Vector3f(1.0f, 0.03f, 0.58f),
+                        0.82f
+                );
+            }
+        }
+    }
+
+    private static void processPurpleDestructionQueue(
+            ServerPlayer owner,
+            ServerLevel level
+    ) {
+        HollowPurpleRuntime runtime = PURPLE_RUNTIMES.get(owner.getUUID());
+        if (runtime == null) return;
+
+        int budget = PURPLE_BLOCK_BUDGET_PER_TICK;
+
+        while (budget-- > 0 && !runtime.destructionQueue.isEmpty()) {
+            BlockPos pos = runtime.destructionQueue.pollFirst();
+            if (pos == null || !level.hasChunkAt(pos)) continue;
+
+            BlockState state = level.getBlockState(pos);
+            if (!canPurpleAnnihilate(owner, level, pos, state)) continue;
+
+            // Direct replacement = no item drops, no XP, container contents disappear too.
+            level.setBlock(
+                    pos,
+                    Blocks.AIR.defaultBlockState(),
+                    PURPLE_BLOCK_UPDATE_FLAGS
+            );
+
+            runtime.destroyedBlocks++;
+
+            if ((runtime.destroyedBlocks & 31) == 0) {
+                Vec3 p = Vec3.atCenterOf(pos);
+                sendDust(
+                        level,
+                        p.add(rnd(-0.25, 0.25), rnd(-0.25, 0.25), rnd(-0.25, 0.25)),
+                        new Vector3f(0.68f, 0.02f, 1.0f),
+                        0.50f
+                );
+            }
+        }
+    }
+
+    private static void tickPurpleResidualTrail(
+            ServerPlayer owner,
+            ServerLevel level,
+            HollowPurpleRuntime runtime,
+            long now
+    ) {
+        int index = 0;
+
+        for (PurpleTrailNode node : runtime.trailNodes) {
+            long age = now - node.bornTick;
+            if (age < 0 || age >= PURPLE_TRAIL_LIFETIME) {
+                index++;
+                continue;
+            }
+
+            // Spread the rendering across four ticks instead of redrawing every trail node every tick.
+            if (((now + index) & 3L) == 0L) {
+                double fade = 1.0 - age / (double) PURPLE_TRAIL_LIFETIME;
+                double edgeRadius = Math.max(0.25, node.radius * (0.88 + 0.10 * fade));
+
+                for (int i = 0; i < 3; i++) {
+                    double a = rnd(0.0, Math.PI * 2.0);
+                    Vec3 p = node.center
+                            .add(runtime.right.scale(Math.cos(a) * edgeRadius))
+                            .add(runtime.up.scale(Math.sin(a) * edgeRadius))
+                            .add(runtime.direction.scale(rnd(-0.35, 0.35)));
+
+                    sendDust(
+                            level,
+                            p,
+                            i % 2 == 0
+                                    ? new Vector3f(0.56f, 0.02f, 1.0f)
+                                    : new Vector3f(0.95f, 0.03f, 0.66f),
+                            (float) (0.30 + fade * 0.42)
+                    );
+                }
+
+                if ((now + index) % 20 == 0) {
+                    level.sendParticles(
+                            ParticleTypes.ELECTRIC_SPARK,
+                            node.center.x, node.center.y, node.center.z,
+                            1,
+                            edgeRadius * 0.20, edgeRadius * 0.20, edgeRadius * 0.20,
+                            0.03
+                    );
+                }
+            }
+            index++;
         }
 
-        spawnNeonSphere(level, end, 2.2,
-                new Vector3f(0.65f, 0.0f, 1.0f),
-                new Vector3f(1.0f, 0.0f, 0.55f));
+        runtime.trailNodes.removeIf(node -> now - node.bornTick >= PURPLE_TRAIL_LIFETIME);
+    }
 
-        player.displayClientMessage(
-                Component.literal("HOLLOW PURPLE").withStyle(ChatFormatting.DARK_PURPLE, ChatFormatting.BOLD),
+    private static void dissolveHollowPurple(
+            ServerPlayer owner,
+            ServerLevel level,
+            Vec3 center
+    ) {
+        HollowPurpleRuntime runtime = PURPLE_RUNTIMES.get(owner.getUUID());
+        if (runtime != null) runtime.projectileActive = false;
+
+        for (int i = 0; i < 62; i++) {
+            double theta = rnd(0.0, Math.PI * 2.0);
+            double phi = Math.acos(rnd(-1.0, 1.0));
+            double radius = rnd(0.15, 2.3);
+
+            Vec3 p = center.add(
+                    Math.sin(phi) * Math.cos(theta) * radius,
+                    Math.cos(phi) * radius,
+                    Math.sin(phi) * Math.sin(theta) * radius
+            );
+
+            sendDust(
+                    level,
+                    p,
+                    i % 2 == 0
+                            ? new Vector3f(0.60f, 0.02f, 1.0f)
+                            : new Vector3f(1.0f, 0.03f, 0.58f),
+                    0.65f
+            );
+        }
+
+        spawnStylizedShockwave(level, center, 2.6, new Vector3f(0.72f, 0.02f, 1.0f));
+        clearHollowPurpleProjectile(owner);
+    }
+
+    private static void tickHollowPurpleState(
+            ServerPlayer player,
+            ServerLevel level,
+            long now
+    ) {
+        HollowPurpleRuntime runtime = PURPLE_RUNTIMES.get(player.getUUID());
+
+        if (runtime != null) {
+            processPurpleDestructionQueue(player, level);
+            tickPurpleResidualTrail(player, level, runtime, now);
+
+            if (!runtime.projectileActive &&
+                    runtime.destructionQueue.isEmpty() &&
+                    runtime.trailNodes.isEmpty()) {
+                PURPLE_RUNTIMES.remove(player.getUUID());
+                runtime = null;
+            }
+        }
+
+        int mode = player.getPersistentData().getInt("jn_purple_mode");
+        if (mode == PURPLE_MODE_NONE) return;
+
+        if (mode == PURPLE_MODE_CASTING) {
+            if (!player.isAlive() || !hasGojoBlindfold(player)) {
+                cancelHollowPurpleCast(player, true);
+                return;
+            }
+
+            freezeHollowPurpleOwner(player);
+
+            long started = player.getPersistentData().getLong("jn_purple_started");
+            long elapsed = Math.max(0L, now - started);
+
+            spawnHollowPurpleCastScene(player, level, now, elapsed);
+
+            if (elapsed >= PURPLE_CAST_TICKS) {
+                launchHollowPurple(player);
+            }
+            return;
+        }
+
+        if (mode != PURPLE_MODE_PROJECTILE) return;
+
+        Vec3 pos = new Vec3(
+                player.getPersistentData().getDouble("jn_purple_x"),
+                player.getPersistentData().getDouble("jn_purple_y"),
+                player.getPersistentData().getDouble("jn_purple_z")
+        );
+
+        Vec3 velocity = new Vec3(
+                player.getPersistentData().getDouble("jn_purple_vx"),
+                player.getPersistentData().getDouble("jn_purple_vy"),
+                player.getPersistentData().getDouble("jn_purple_vz")
+        );
+
+        Vec3 next = pos.add(velocity);
+
+        runtime = PURPLE_RUNTIMES.get(player.getUUID());
+        if (runtime == null) {
+            runtime = new HollowPurpleRuntime(velocity);
+            PURPLE_RUNTIMES.put(player.getUUID(), runtime);
+        }
+
+        double startDistance = player.getPersistentData().getDouble("jn_purple_distance");
+        double endDistance = startDistance + velocity.length();
+
+        // Swept circular tunnel: high projectile speed cannot skip blocks between ticks.
+        schedulePurpleTunnel(
+                player,
+                level,
+                runtime,
+                pos,
+                next,
+                startDistance,
+                endDistance
+        );
+
+        schedulePurpleTrail(
+                runtime,
+                pos,
+                next,
+                startDistance,
+                endDistance,
+                now
+        );
+
+        double sampleDistance = Math.min(
+                PURPLE_END_DISTANCE,
+                Math.max(0.0, (startDistance + endDistance) * 0.5)
+        );
+        double damageRadius = purpleTunnelRadius(sampleDistance);
+
+        if (damageRadius > 0.0) {
+            damagePurpleSegment(
+                    player,
+                    level,
+                    runtime,
+                    pos,
+                    next,
+                    damageRadius
+            );
+        }
+
+        double visualRadius = purpleBallRadius(endDistance);
+        spawnPurpleMergedSphere(
+                level,
+                next,
+                velocity.normalize(),
+                visualRadius,
+                now,
                 true
         );
+
+        // High-speed core wake; kept deliberately sparse for client/network performance.
+        for (int i = 1; i <= 5; i++) {
+            Vec3 trail = pos.lerp(next, i / 6.0);
+            sendDust(
+                    level,
+                    trail,
+                    i % 2 == 0
+                            ? new Vector3f(0.62f, 0.02f, 1.0f)
+                            : new Vector3f(1.0f, 0.04f, 0.58f),
+                    0.72f
+            );
+        }
+
+        if (endDistance >= PURPLE_END_DISTANCE) {
+            dissolveHollowPurple(player, level, next);
+            return;
+        }
+
+        player.getPersistentData().putDouble("jn_purple_x", next.x);
+        player.getPersistentData().putDouble("jn_purple_y", next.y);
+        player.getPersistentData().putDouble("jn_purple_z", next.z);
+        player.getPersistentData().putDouble("jn_purple_distance", endDistance);
     }
 
 
@@ -1888,6 +2702,7 @@ public class JujutsuNeonMod {
 
     private static boolean startRedCharge(ServerPlayer player) {
         if (player == null || !player.isAlive() || player.isSpectator()) return false;
+        if (isHollowPurpleCasting(player)) return false;
 
         if (!hasGojoBlindfold(player)) {
             requireBlindfoldMessage(player);
@@ -2853,6 +3668,13 @@ public class JujutsuNeonMod {
     private static void handleMovement(ServerPlayer player, MovementAction action) {
         if (player == null || !player.isAlive() || player.isSpectator()) return;
 
+        if (isHollowPurpleCasting(player)) {
+            if (action == MovementAction.SPEED_OFF) {
+                player.getPersistentData().putBoolean("jn_super_speed", false);
+            }
+            return;
+        }
+
         if (action == MovementAction.SPEED_OFF) {
             player.getPersistentData().putBoolean("jn_super_speed", false);
             player.getPersistentData().remove("jn_speed_next_cost");
@@ -3214,6 +4036,7 @@ public class JujutsuNeonMod {
 
     private static void executeLongRangeTeleport(ServerPlayer player, BlockPos targetBlock, Direction face) {
         if (player == null || !player.isAlive() || player.isSpectator()) return;
+        if (isHollowPurpleCasting(player)) return;
         if (!hasGojoBlindfold(player)) {
             requireBlindfoldMessage(player);
             return;
@@ -3638,6 +4461,13 @@ public class JujutsuNeonMod {
     }
 
     private static void tickBlindfoldRun(ServerPlayer player, ServerLevel level, long now) {
+        if (isHollowPurpleCasting(player)) {
+            player.getPersistentData().putBoolean("jn_super_speed", false);
+            player.setSprinting(false);
+            player.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
         boolean speed = player.getPersistentData().getBoolean("jn_super_speed");
 
         // Без CTRL: ровно усиленная ходьба около 3x. Ванильный sprint не суммируется.
@@ -3720,7 +4550,8 @@ public class JujutsuNeonMod {
             if (event.getSource().getEntity() instanceof ServerPlayer attacker &&
                     isBlueInteractionActive(attacker) &&
                     !attacker.getPersistentData().getBoolean("jn_blue_custom_damage") &&
-                    !attacker.getPersistentData().getBoolean("jn_red_custom_damage")) {
+                    !attacker.getPersistentData().getBoolean("jn_red_custom_damage") &&
+                    !attacker.getPersistentData().getBoolean("jn_purple_custom_damage")) {
                 event.setCanceled(true);
                 return;
             }
@@ -3791,6 +4622,7 @@ public class JujutsuNeonMod {
             tickBlueState(player, level, now);
             tickRedState(player, level, now);
             tickMaximumBlueState(player, level, now);
+            tickHollowPurpleState(player, level, now);
             tickDashState(player, level, now);
 
             if (!equipped) {
