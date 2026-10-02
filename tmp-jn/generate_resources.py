@@ -14,12 +14,12 @@ for p in [TEX, SOUNDS, PART, ITEM, ARMOR, MODEL, LANG]:
     p.mkdir(parents=True, exist_ok=True)
 
 names = [
-    "blue","max_blue","red","hollow_purple","black_flash","cursed_barrage",
+    "blue","max_blue","red","hollow_purple","cursed_barrage",
     "infinity","domain","rct","teleport","dash","shockwave","star","slash","trail"
 ]
 colors = {
     "blue":(30,210,255),"max_blue":(25,140,255),"red":(255,30,55),
-    "hollow_purple":(185,40,255),"black_flash":(255,25,75),
+    "hollow_purple":(185,40,255),
     "cursed_barrage":(225,40,125),"infinity":(85,210,255),
     "domain":(130,45,255),"rct":(55,255,175),"teleport":(80,175,255),
     "dash":(60,220,255),"shockwave":(100,225,255),"star":(225,90,255),
@@ -43,10 +43,10 @@ def make_vfx(name, rgb):
     d=ImageDraw.Draw(im)
     d.ellipse((170,170,s-170,s-170), outline=(245,250,255,235), width=10)
     d.ellipse((225,225,s-225,s-225), outline=(*rgb,220), width=12)
-    if name in {"slash","trail","cursed_barrage","black_flash"}:
+    if name in {"slash","trail","cursed_barrage"}:
         d.arc((90,230,s-90,s-130), 205, 345, fill=(255,255,255,245), width=22)
         d.arc((130,270,s-130,s-90), 195, 330, fill=(*rgb,225), width=16)
-    if name in {"star","black_flash","red","hollow_purple"}:
+    if name in {"star","red","hollow_purple"}:
         for i in range(12):
             a=2*math.pi*i/12
             rr=455 if i%2==0 else 340
@@ -84,14 +84,14 @@ LANG.joinpath("ru_ru.json").write_text(json.dumps({
     "item.jujutsu_neon.gojo_blindfold":"Повязка Годжо"
 }, ensure_ascii=False, indent=2))
 
-sound_names=["blue","max_blue","red","hollow_purple","black_flash","cursed_barrage","domain","infinity","rct","teleport","dash"]
+sound_names=["blue","max_blue","red","hollow_purple","cursed_barrage","domain","infinity","rct","teleport","dash"]
 sound_json={n:{"sounds":[f"jujutsu_neon:{n}"]} for n in sound_names}
 ROOT.joinpath("sounds.json").write_text(json.dumps(sound_json,indent=2))
 
 # Original synthesized sound design, 48 kHz stereo. Convert WAV -> OGG using ffmpeg.
 sr=48000
 freqs={
- "blue":190,"max_blue":120,"red":95,"hollow_purple":72,"black_flash":58,
+ "blue":190,"max_blue":120,"red":95,"hollow_purple":72,
  "cursed_barrage":155,"domain":48,"infinity":310,"rct":440,"teleport":260,"dash":520
 }
 for idx,n in enumerate(sound_names):
