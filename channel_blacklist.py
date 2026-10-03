@@ -138,7 +138,13 @@ class ChannelBlacklist:
         record["retry_at"] = 0
 
     @staticmethod
-    def _fail(record, error, *, status="failed", delay=300):
+    def _fail(record, error, *, status="failed", delay=None):
+        if delay is None:
+            # Back off from 5 minutes to about 5 hours so a lasting failure (for
+            # example missing admin rights) does not hit Telegram and rewrite
+            # the state file every five minutes forever.
+            attempts = max(1, record.get("attempts", 1))
+            delay = 300 * 2 ** min(attempts - 1, 6)
         record["status"] = status
         record["last_error"] = error[:500]
         record["retry_at"] = time.time() + delay

@@ -76,25 +76,7 @@ def run_forever():
 
     # Do not rewrite state.json on every button press. Disk I/O before every
     # Telegram API response adds visible latency, especially on slow hosts.
-    original_track_user = bot.track_user
-
-    async def fast_track_user(user):
-        if user is None:
-            return
-        key = str(user.id)
-        now = int(time.time())
-        previous = bot.STATE.get("users", {}).get(key, {})
-        previous_seen = int(previous.get("last_seen", 0) or 0)
-        bot.STATE["users"][key] = {
-            "username": user.username,
-            "first_name": user.first_name,
-            "last_seen": now,
-        }
-        # Persist immediately for a new user, otherwise at most once/minute.
-        if not previous or now - previous_seen >= 60:
-            await bot.save_state()
-
-    bot.track_user = fast_track_user
+    bot.track_user = bot.track_user_throttled
     main = bot.main
 
     delay = 3
@@ -104,7 +86,11 @@ def run_forever():
             try:
                 logging.info("Starting FINYA HELPER bot")
                 main()
-                logging.warning("Bot stopped without an exception; restart in %s s", delay)
+                # run_polling returns normally only after a stop signal
+                # (SIGINT/SIGTERM/Ctrl+C). Crashes raise and are restarted below.
+                # Restarting here would ignore the request to stop the launcher.
+                logging.info("Bot stopped by a stop signal; launcher is exiting")
+                break
             except KeyboardInterrupt:
                 logging.info("Bot stopped by user")
                 break

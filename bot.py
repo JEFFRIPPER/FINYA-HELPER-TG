@@ -4,7 +4,7 @@ import sys
 import bot_core as core
 from admin_ranks import RankAdmin
 
-core.BOT_VERSION = "2.6.1"
+core.BOT_VERSION = "2.6.2"
 core.RANK_ADMIN = RankAdmin(core)
 core.admin_xp_keyboard = core.RANK_ADMIN.keyboard
 _original_admin_callback = core.handle_admin_callback

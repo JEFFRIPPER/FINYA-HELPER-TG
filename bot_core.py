@@ -31,7 +31,7 @@ RUNTIME_DIR = ROOT / "runtime"
 HEARTBEAT_PATH = RUNTIME_DIR / "heartbeat.txt"
 LOGS_DIR = ROOT / "logs"
 BOT_STARTED_AT = time.time()
-BOT_VERSION = "2.6.1"
+BOT_VERSION = "2.6.2"
 SQUAD_CHANNEL_USERNAME = "THKC_SQUAD"
 SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 
@@ -39,8 +39,10 @@ SQUAD_CHANNEL_URL = f"https://t.me/{SQUAD_CHANNEL_USERNAME}"
 def load_local_env(path):
     """Load simple KEY=VALUE pairs without overriding real environment variables."""
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
+        # utf-8-sig: Windows editors may save .env with a BOM, which would
+        # otherwise turn the first key into "﻿TELEGRAM_BOT_TOKEN".
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+    except (OSError, UnicodeDecodeError):
         return
 
     for raw_line in lines:
@@ -154,16 +156,35 @@ def default_state():
     }
 
 
+def _quarantine_state_file(reason):
+    """Keep an unreadable state file instead of letting the next save overwrite it."""
+    backup = STATE_PATH.with_name(f"{STATE_PATH.name}.corrupt-{int(time.time())}")
+    log = logging.getLogger(__name__)
+    try:
+        os.replace(STATE_PATH, backup)
+        log.error("State file %s (%s) was moved to %s; starting with empty state",
+                  STATE_PATH, reason, backup)
+    except OSError as exc:
+        log.error("State file %s (%s) could not be moved aside: %s", STATE_PATH, reason, exc)
+
+
 def load_state():
     RUNTIME_DIR.mkdir(exist_ok=True)
     STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
     state = default_state()
+    loaded = None
     try:
         loaded = json.loads(STATE_PATH.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            state.update(loaded)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
+    except FileNotFoundError:
         pass
+    except ValueError:  # JSONDecodeError and UnicodeDecodeError
+        _quarantine_state_file("invalid JSON")
+    except OSError as exc:
+        logging.getLogger(__name__).error("Could not read state file %s: %s", STATE_PATH, exc)
+    if isinstance(loaded, dict):
+        state.update(loaded)
+    elif loaded is not None:
+        _quarantine_state_file("unexpected content")
     state.setdefault("users", {})
     state.setdefault("feedback", [])
     state.setdefault("channel_subscribers", {})
@@ -217,6 +238,35 @@ async def track_user(user):
     await save_state()
 
 
+async def track_user_throttled(user):
+    """Like track_user, but writes state.json at most once a minute per user.
+
+    Saving before every Telegram answer adds visible latency on slow hosts.
+    The record keeps the same shape as track_user (including first_seen).
+    """
+    if user is None:
+        return
+    user_id = str(user.id)
+    now = int(time.time())
+    previous = STATE["users"].get(user_id, {})
+    previous_seen = int(previous.get("last_seen", 0) or 0)
+    first_seen = previous.get("first_seen") or previous.get("last_seen") or now
+    was_blocked = bool(previous.get("blocked"))
+    record = {
+        **previous,
+        "username": user.username,
+        "first_name": user.first_name,
+        "first_seen": int(first_seen),
+        "last_seen": now,
+        "blocked": False,
+    }
+    record.pop("blocked_at", None)
+    STATE["users"][user_id] = record
+    # Persist immediately for a new or returning user, otherwise once a minute.
+    if not previous or was_blocked or now - previous_seen >= 60:
+        await save_state()
+
+
 def mark_user_unreachable(user_id):
     user_id = str(user_id)
     record = STATE["users"].setdefault(user_id, {})
@@ -266,20 +316,26 @@ def heartbeat_age():
         return None
 
 
-def status_text(user_id=None):
+def status_text(user_id=None, *, admin=False):
     age = heartbeat_age()
     hb = "нет данных" if age is None else f"{age} сек назад"
     personal = ""
     if user_id is not None:
         personal = f"🔔 Рассылка ТГК: {'ВКЛ' if channel_is_subscribed(user_id) else 'ВЫКЛ'}\n"
+    # Host name and Python version describe the server; only the owner needs them.
+    server = ""
+    if admin:
+        server = (
+            f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
+            f"🐍 Python: <code>{platform.python_version()}</code>\n"
+        )
     return (
         "<b>🟢 Статус FINYA HELPER</b>\n\n"
         "✅ Бот: работает\n"
         + personal
         + f"⏱ Аптайм: {fmt_uptime(time.time() - BOT_STARTED_AT)}\n"
         + f"💓 Heartbeat: {hb}\n"
-        + f"🖥 Сервер: <code>{html.escape(socket.gethostname())}</code>\n"
-        + f"🐍 Python: <code>{platform.python_version()}</code>\n"
+        + server
         + f"📦 Версия бота: <code>{BOT_VERSION}</code>"
     )
 
@@ -557,7 +613,11 @@ async def post_init(application: Application):
 
 
 async def post_stop(application: Application):
-    tasks = application.bot_data.pop("background_tasks", [])
+    tasks = list(application.bot_data.pop("background_tasks", []))
+    tasks += list(application.bot_data.pop("distribution_tasks", ()))
+    broadcast = application.bot_data.pop("broadcast_task", None)
+    if broadcast is not None:
+        tasks.append(broadcast)
     for task in tasks:
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
@@ -797,7 +857,11 @@ async def xp_chat_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.args or update.effective_chat.type not in {"group", "supergroup"}:
         await message.reply_text("Отправь /xpchat в группе обсуждений, где Финя назначена администратором.")
         return
-    member = await context.bot.get_chat_member(update.effective_chat.id, context.bot.id)
+    try:
+        member = await context.bot.get_chat_member(update.effective_chat.id, context.bot.id)
+    except TelegramError:
+        await message.reply_text("Не удалось проверить права Фини в этой группе. Повтори /xpchat чуть позже.")
+        return
     if member.status not in {"administrator", "creator"}:
         await message.reply_text("Сначала назначь Финю администратором этой группы, затем повтори /xpchat.")
         return
@@ -917,11 +981,17 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
+    # Telegram accepts only the first answer to a callback query, so the button
+    # that reports its result as an alert must not be answered up front.
+    answers_itself = query.data == "channel:last"
+    if not answers_itself:
+        await query.answer()
     if update.effective_chat.type == "private":
         await track_user(update.effective_user)
 
     if STATE.get("maintenance") and not is_admin_user(update.effective_user) and query.data != "home":
+        if answers_itself:
+            await query.answer()
         await edit_or_send(query, "🛠 <b>Бот временно на техработах.</b>", back_home_keyboard())
         return
 
@@ -938,7 +1008,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "news":
         text, keyboard = await channel_news_view(context)
     elif query.data == "status":
-        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+        text, keyboard = status_text(update.effective_user.id, admin=is_admin_user(update.effective_user)), status_keyboard(update.effective_user.id)
     elif query.data == "xp:profile":
         text, keyboard = xp_profile_text(update.effective_user, context), xp_keyboard()
     elif query.data in {"xp:top", "xp:week"}:
@@ -949,11 +1019,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "status:subscribe":
         STATE["channel_subscribers"][str(update.effective_user.id)] = True
         await save_state()
-        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+        text, keyboard = status_text(update.effective_user.id, admin=is_admin_user(update.effective_user)), status_keyboard(update.effective_user.id)
     elif query.data == "status:unsubscribe":
         STATE["channel_subscribers"].pop(str(update.effective_user.id), None)
         await save_state()
-        text, keyboard = status_text(update.effective_user.id), status_keyboard(update.effective_user.id)
+        text, keyboard = status_text(update.effective_user.id, admin=is_admin_user(update.effective_user)), status_keyboard(update.effective_user.id)
     elif query.data == "channel_notify":
         text = channel_subscription_text(update.effective_user.id)
         keyboard = channel_subscription_keyboard(update.effective_user.id)
@@ -981,6 +1051,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as exc:
             logging.getLogger(__name__).warning("Could not send last channel post: %s", exc)
             await query.answer("Не получилось получить последний пост.", show_alert=True)
+        else:
+            await query.answer()
         return
     elif query.data == "feedback":
         context.user_data["awaiting_feedback"] = True
@@ -1006,6 +1078,95 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await edit_or_send(query, text, keyboard)
+
+
+BROADCAST_CONFIRM_SECONDS = 600
+
+
+def retry_after_seconds(exc):
+    value = exc.retry_after
+    return value.total_seconds() if hasattr(value, "total_seconds") else float(value)
+
+
+async def send_with_flood_wait(send, *, attempts=3):
+    """Call send(); wait out Telegram flood limits instead of dropping the message."""
+    for attempt in range(attempts):
+        try:
+            return await send()
+        except RetryAfter as exc:
+            if attempt + 1 == attempts:
+                raise
+            await asyncio.sleep(retry_after_seconds(exc) + 0.2)
+
+
+def log_tail_html(name, budget=1900):
+    """Last log lines as HTML whose tags stay intact and whose size fits `budget`."""
+    try:
+        lines = (LOGS_DIR / name).read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
+    except OSError:
+        return f"<b>{name}</b>\nнет данных"
+    body = "\n".join(lines)
+    overhead = len(f"<b>{name}</b>\n<pre></pre>")
+    escaped = html.escape(body, quote=False)
+    while escaped and len(escaped) > budget - overhead:
+        body = body[max(1, len(body) // 5):]
+        escaped = html.escape(body, quote=False)
+    return f"<b>{name}</b>\n<pre>{escaped}</pre>"
+
+
+async def run_broadcast(bot, report_chat_id, text, user_ids):
+    """Send the owner's broadcast in the background and report the result."""
+    log = logging.getLogger(__name__)
+    payload = bold_html(html.escape(text))
+    ok = failed = 0
+    state_changed = False
+    try:
+        for user_id in user_ids:
+            try:
+                await send_with_flood_wait(
+                    lambda uid=user_id: bot.send_message(chat_id=int(uid), text=payload, parse_mode="HTML")
+                )
+                ok += 1
+            except Forbidden:
+                mark_user_unreachable(user_id)
+                state_changed = True
+                failed += 1
+            except BadRequest as exc:
+                if "chat not found" in str(exc).lower() or "user is deactivated" in str(exc).lower():
+                    mark_user_unreachable(user_id)
+                    state_changed = True
+                failed += 1
+            except Exception:
+                failed += 1
+            await asyncio.sleep(0.04)
+        if state_changed:
+            await save_state()
+            state_changed = False
+        await bot.send_message(
+            chat_id=report_chat_id,
+            text=bold_html(f"✅ Рассылка завершена.\nДоставлено: {ok}\nОшибок: {failed}"),
+            parse_mode="HTML",
+            reply_markup=admin_keyboard(),
+        )
+    except asyncio.CancelledError:
+        if state_changed:
+            await save_state()
+        raise
+    except Exception:
+        log.exception("Broadcast failed")
+
+
+def start_broadcast(context, report_chat_id, text):
+    """Start a background broadcast; returns the recipient count or None if one is running."""
+    bot_data = context.application.bot_data
+    running = bot_data.get("broadcast_task")
+    if running is not None and not running.done():
+        return None
+    user_ids = list(STATE.get("users", {}).keys())
+    bot_data["broadcast_task"] = asyncio.create_task(
+        run_broadcast(context.bot, report_chat_id, text, user_ids), name="broadcast"
+    )
+    return len(user_ids)
 
 
 async def handle_admin_callback(query, context, action):
@@ -1053,7 +1214,7 @@ async def handle_admin_callback(query, context, action):
             f"⏱ Аптайм: <b>{fmt_uptime(time.time() - BOT_STARTED_AT)}</b>"
         )
     elif action == "status":
-        text = status_text(query.from_user.id)
+        text = status_text(query.from_user.id, admin=True)
     elif action == "feedback":
         items = STATE.get("feedback", [])[-5:]
         if not items:
@@ -1072,6 +1233,20 @@ async def handle_admin_callback(query, context, action):
     elif action == "broadcast":
         context.user_data["admin_action"] = "broadcast"
         text = "<b>📣 Рассылка</b>\n\nОтправь следующим сообщением текст для всех пользователей бота."
+    elif action == "broadcast_cancel":
+        context.user_data.pop("broadcast_pending", None)
+        text = "<b>Рассылка отменена. Ничего не отправлено.</b>"
+    elif action == "broadcast_send":
+        pending = context.user_data.pop("broadcast_pending", None)
+        if not pending or time.time() - pending["time"] > BROADCAST_CONFIRM_SECONDS:
+            text = "<b>Подтверждение устарело. Нажми «Рассылка» и отправь текст заново.</b>"
+        else:
+            count = start_broadcast(context, query.from_user.id, pending["text"])
+            if count is None:
+                context.user_data["broadcast_pending"] = pending
+                text = "<b>Предыдущая рассылка ещё идёт. Дождись сообщения об итогах и повтори.</b>"
+            else:
+                text = f"<b>📣 Рассылка запущена. Получателей: {count}.\nИтог пришлю отдельным сообщением.</b>"
     elif action == "channel":
         STATE["channel_broadcast_enabled"] = not bool(STATE.get("channel_broadcast_enabled", True))
         await save_state()
@@ -1082,17 +1257,7 @@ async def handle_admin_callback(query, context, action):
         await save_state()
         text = "<b>🛠 Режим техработ изменён.</b>"
     elif action == "logs":
-        parts = []
-        for name in ("error.log", "bot.log"):
-            path = LOGS_DIR / name
-            try:
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-12:]
-                parts.append(f"<b>{name}</b>\n<pre>{html.escape(chr(10).join(lines))}</pre>")
-            except OSError:
-                parts.append(f"<b>{name}</b>\nнет данных")
-        text = "\n\n".join(parts)
-        if len(text) > 3900:
-            text = text[-3900:]
+        text = "\n\n".join(log_tail_html(name) for name in ("error.log", "bot.log"))
     elif action == "restart":
         await query.edit_message_text("♻️ <b>Перезапускаюсь...</b>", parse_mode="HTML")
         await asyncio.sleep(1)
@@ -1142,6 +1307,35 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not subscribers:
         return
 
+    application = getattr(context, "application", None)
+    if application is None:
+        await deliver_to_subscribers(context.bot, message, post_url, subscribers)
+        return
+
+    # Sending to every subscriber takes minutes and updates are handled one at a
+    # time, so deliver in the background to keep buttons and XP responsive.
+    bot_data = application.bot_data
+    tasks = bot_data.setdefault("distribution_tasks", set())
+    lock = bot_data.setdefault("distribution_lock", asyncio.Lock())
+    task = asyncio.create_task(
+        distribute_in_background(lock, context.bot, message, post_url, subscribers),
+        name=f"channel-post-{message.message_id}",
+    )
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+
+async def distribute_in_background(lock, bot, message, post_url, subscribers):
+    try:
+        async with lock:  # keep posts in order
+            await deliver_to_subscribers(bot, message, post_url, subscribers)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logging.getLogger(__name__).exception("Channel post distribution failed")
+
+
+async def deliver_to_subscribers(bot, message, post_url, subscribers):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("Открыть пост в канале", url=post_url, icon_custom_emoji_id="5411527152212411235")]
     ])
@@ -1151,27 +1345,16 @@ async def channel_post(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stale = []
     for user_id in subscribers:
         try:
-            await context.bot.copy_message(
-                chat_id=int(user_id),
-                from_chat_id=message.chat_id,
-                message_id=message.message_id,
-                reply_markup=keyboard,
-            )
-            delivered += 1
-        except RetryAfter as exc:
-            retry_after = exc.retry_after
-            delay = retry_after.total_seconds() if hasattr(retry_after, "total_seconds") else float(retry_after)
-            await asyncio.sleep(delay + 0.2)
-            try:
-                await context.bot.copy_message(
-                    chat_id=int(user_id),
+            await send_with_flood_wait(
+                lambda uid=user_id: bot.copy_message(
+                    chat_id=int(uid),
                     from_chat_id=message.chat_id,
                     message_id=message.message_id,
                     reply_markup=keyboard,
-                )
-                delivered += 1
-            except Exception:
-                failed += 1
+                ),
+                attempts=2,
+            )
+            delivered += 1
         except Forbidden:
             stale.append(user_id)
             failed += 1
@@ -1214,31 +1397,24 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(bold_html("✅ Новость обновлена."), parse_mode="HTML", reply_markup=admin_keyboard())
             return
         if action == "broadcast":
-            ok = 0
-            failed = 0
-            state_changed = False
-            for user_id in list(STATE.get("users", {}).keys()):
-                try:
-                    await context.bot.send_message(chat_id=int(user_id), text=bold_html(html.escape(text)), parse_mode="HTML")
-                    ok += 1
-                except Forbidden:
-                    mark_user_unreachable(user_id)
-                    state_changed = True
-                    failed += 1
-                except BadRequest as exc:
-                    if "chat not found" in str(exc).lower() or "user is deactivated" in str(exc).lower():
-                        mark_user_unreachable(user_id)
-                        state_changed = True
-                    failed += 1
-                except Exception:
-                    failed += 1
-                await asyncio.sleep(0.04)
-            if state_changed:
-                await save_state()
+            if len(bold_html(html.escape(text))) > 4096:
+                context.user_data["admin_action"] = "broadcast"
+                await update.message.reply_text(
+                    bold_html("Текст слишком длинный для одного сообщения Telegram. Сократи его и отправь снова."),
+                    parse_mode="HTML",
+                )
+                return
+            # Nothing goes out until the owner confirms: one stray message must not
+            # reach every user.
+            context.user_data["broadcast_pending"] = {"text": text, "time": time.time()}
+            preview = html.escape(text[:600]) + ("…" if len(text) > 600 else "")
             await update.message.reply_text(
-                bold_html(f"✅ Рассылка завершена.\nДоставлено: {ok}\nОшибок: {failed}"),
+                bold_html(f"📣 Подтверди рассылку\n\nПолучателей: {len(STATE.get('users', {}))}\n\n{preview}"),
                 parse_mode="HTML",
-                reply_markup=admin_keyboard(),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("Отправить всем", callback_data="admin:broadcast_send"),
+                    InlineKeyboardButton("Отмена", callback_data="admin:broadcast_cancel"),
+                ]]),
             )
             return
 
@@ -1330,4 +1506,5 @@ def _run_bot():
 
 
 if __name__ == "__main__":
-    main()
+    # /cancel and the owner rank controls are wired up in bot.py.
+    raise SystemExit("Запускай бота через bot.py (или watchdog.py / run_background.py), а не bot_core.py.")
