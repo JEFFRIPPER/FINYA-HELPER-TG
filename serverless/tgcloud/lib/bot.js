@@ -2,7 +2,7 @@
 import { api, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import {
-  HOME_TEXT, INFO_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT,
+  HOME_TEXT, INFO_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT, WEBAPP_URL,
 } from './config.js';
 import {
   answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, keyboard, reply, replyBold,
@@ -13,8 +13,8 @@ import {
 } from './store.js';
 import {
   adminKeyboard, backHomeKeyboard, channelNewsView, channelSubscriptionKeyboard, channelSubscriptionText,
-  homeKeyboard, infoKeyboard, partnerKeyboard, squadKeyboard, statusKeyboard, statusText, xpKeyboard,
-  xpProfileText, xpRulesText, xpTopText,
+  homeKeyboard, infoKeyboard, partnerKeyboard, profileAppKeyboard, profileRow, squadKeyboard, statusKeyboard,
+  statusText, xpKeyboard, xpProfileText, xpRulesText, xpTopText,
 } from './ui.js';
 import { base64ToBytes, boldHtml, escapeHtml, now, truncate } from './util.js';
 import { INFO_JPG_BASE64 } from './photo_data.js';
@@ -51,7 +51,7 @@ async function sendStartPhoto(chatId, caption, replyMarkup) {
 
 // ---- commands --------------------------------------------------------------
 
-async function start(message, s) {
+async function start(message, s, args = []) {
   rankAdmin.clear(s, { allActions: true });
   const returning = Boolean(await getUser(message.from.id));
   await trackUser(message.from);
@@ -59,8 +59,14 @@ async function start(message, s) {
     await replyBold(message, '🛠 Бот временно на техработах.\nПопробуй чуть позже.');
     return;
   }
+  // "Открыть профиль" in a group leads here: t.me/<bot>?start=profile.
+  if (args[0] === 'profile' && message.chat.type === 'private') {
+    await replyBold(message, '👤 Профиль Фини\n\nРанг, прогресс до следующего звания, топ Сквада и история XP.',
+      profileAppKeyboard());
+    return;
+  }
   const caption = returning ? '<b>С возвращением. FINYA HELPER на месте. Выбирай раздел:</b>' : HOME_TEXT;
-  await sendStartPhoto(message.chat.id, caption, homeKeyboard());
+  await sendStartPhoto(message.chat.id, caption, homeKeyboard(message.chat.type));
 }
 
 async function adminCommand(message, s) {
@@ -79,13 +85,13 @@ async function cancelCommand(message, s) {
 
 async function rankCommand(message) {
   if (message.chat.type === 'private') await trackUser(message.from);
-  await replyBold(message, await xpProfileText(message.from), xpKeyboard());
+  await replyBold(message, await xpProfileText(message.from), xpKeyboard(await profileRow(message.chat)));
 }
 
 async function topCommand(message, args) {
   if (message.chat.type === 'private') await trackUser(message.from);
   const weekly = Boolean(args.length && ['week', 'неделя'].includes(args[0].toLowerCase()));
-  await replyBold(message, await xpTopText(weekly), xpKeyboard());
+  await replyBold(message, await xpTopText(weekly), xpKeyboard(await profileRow(message.chat)));
 }
 
 async function xpChatCommand(message, args) {
@@ -247,7 +253,7 @@ async function notifyPromotion(user, award) {
       chat_id: user.id,
       text: boldHtml(`Новое звание Сквада!\n\n${award.newRank[1]} · ${award.newRank[2]}\nВсего: ${award.total} XP`),
       parse_mode: 'HTML',
-      reply_markup: xpKeyboard(),
+      reply_markup: xpKeyboard(await profileRow(null)),
     });
   } catch {
     console.info(`Could not deliver rank promotion to ${user.id}`);
@@ -295,7 +301,7 @@ function parseCommand(message) {
 }
 
 const COMMANDS = {
-  start: (m, s) => start(m, s),
+  start: (m, s, a) => start(m, s, a),
   admin: (m, s) => adminCommand(m, s),
   cancel: (m, s) => cancelCommand(m, s),
   rank: (m) => rankCommand(m),
@@ -370,17 +376,17 @@ async function button_(query, s) {
   } else if (data === 'squad') {
     [text, kb] = [SQUAD_TEXT, squadKeyboard()];
   } else if (data === 'home') {
-    [text, kb] = [HOME_TEXT, homeKeyboard()];
+    [text, kb] = [HOME_TEXT, homeKeyboard(chat.type)];
   } else if (data === 'news') {
     [text, kb] = await channelNewsView();
   } else if (data === 'status') {
     [text, kb] = [await statusText(user.id), await statusKeyboard(user.id)];
   } else if (data === 'xp:profile') {
-    [text, kb] = [await xpProfileText(user), xpKeyboard()];
+    [text, kb] = [await xpProfileText(user), xpKeyboard(await profileRow(chat))];
   } else if (data === 'xp:top' || data === 'xp:week') {
-    [text, kb] = [await xpTopText(data === 'xp:week'), xpKeyboard()];
+    [text, kb] = [await xpTopText(data === 'xp:week'), xpKeyboard(await profileRow(chat))];
   } else if (data === 'xp:rules') {
-    [text, kb] = [xpRulesText(), xpKeyboard()];
+    [text, kb] = [xpRulesText(), xpKeyboard(await profileRow(chat))];
   } else if (data === 'status:subscribe' || data === 'status:unsubscribe') {
     await setSubscribed(user, data === 'status:subscribe');
     [text, kb] = [await statusText(user.id), await statusKeyboard(user.id)];
@@ -514,10 +520,18 @@ async function acquirePump() {
   return r.rowsAffected === 1;
 }
 
+// The menu button next to the message field opens the Mini App in every private chat.
+async function ensureMenuButton() {
+  if ((await getSetting('menu_button_url')) === WEBAPP_URL) return;
+  await api.setChatMenuButton({ menu_button: { type: 'web_app', text: 'Профиль', web_app: { url: WEBAPP_URL } } });
+  await setSetting('menu_button_url', WEBAPP_URL);
+}
+
 // Retries and unfinished sends: what asyncio loops did on the old server.
 export async function pump({ force = false } = {}) {
   try {
     if (!force && !(await acquirePump())) return;
+    await ensureMenuButton();
     await relay.sweepStale();
     if (!(await isMaintenance())) await relay.deliverDue(5000, 10);
     await blacklist.retryPending(5);

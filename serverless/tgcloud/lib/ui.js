@@ -2,9 +2,9 @@
 import { api } from 'sdk';
 import {
   ADMIN_BUTTON_ICONS, BOT_VERSION, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_URL,
-  SQUAD_CHANNEL_USERNAME, SQUAD_ICON_ID,
+  SQUAD_CHANNEL_USERNAME, SQUAD_ICON_ID, WEBAPP_URL,
 } from './config.js';
-import { button, keyboard, menuButton } from './tg.js';
+import { button, getMe, keyboard, menuButton } from './tg.js';
 import { getSetting, isSubscribed } from './store.js';
 import { escapeHtml, fullName, truncate } from './util.js';
 import * as xp from './xp.js';
@@ -16,13 +16,31 @@ export function partnerKeyboard(partner) {
   ]);
 }
 
-export function homeKeyboard() {
-  return keyboard([
+// Telegram allows web_app buttons only in private chats.
+export function profileAppButton(text = '👤 Профиль Фини') {
+  return menuButton(text, { web_app: { url: WEBAPP_URL } });
+}
+
+// Private chats open the Mini App directly; groups link to the bot's private chat.
+export async function profileRow(chat) {
+  if (!chat || chat.type === 'private') return [profileAppButton('👤 Открыть профиль')];
+  const me = await getMe();
+  return [menuButton('👤 Открыть профиль', { url: `https://t.me/${me.username}?start=profile` })];
+}
+
+export function homeKeyboard(chatType = 'private') {
+  const rows = [
     [menuButton('ℹ️ Инфо', { callback_data: 'info' }), button('📢 Новости', { callback_data: 'news' })],
     [button('🟢 Статус', { callback_data: 'status' }), button('💬 Обратная связь', { callback_data: 'feedback' })],
     [button('Мой ранг', { callback_data: 'xp:profile' }), button('Топ участников', { callback_data: 'xp:top' })],
-    [menuButton('👤 ЛС Владельца', { url: 'https://t.me/THKC_SQUAD_CREATOR' })],
-  ]);
+  ];
+  if (chatType === 'private') rows.push([profileAppButton()]);
+  rows.push([menuButton('👤 ЛС Владельца', { url: 'https://t.me/THKC_SQUAD_CREATOR' })]);
+  return keyboard(rows);
+}
+
+export function profileAppKeyboard() {
+  return keyboard([[profileAppButton()], [menuButton('⬅️ Главное меню', { callback_data: 'home' })]]);
 }
 
 export function backHomeKeyboard() {
@@ -158,9 +176,10 @@ export async function adminKeyboard() {
 
 // ---- XP views ------------------------------------------------------------
 
-export function xpKeyboard() {
+export function xpKeyboard(profile = null) {
   return keyboard([
     [button('Мой ранг', { callback_data: 'xp:profile' })],
+    ...(profile ? [profile] : []),
     [button('За всё время', { callback_data: 'xp:top' }), button('За неделю', { callback_data: 'xp:week' })],
     [button('Звания и правила XP', { callback_data: 'xp:rules' })],
     [menuButton('⬅️ Главное меню', { callback_data: 'home' })],

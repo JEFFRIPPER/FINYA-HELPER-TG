@@ -1,6 +1,6 @@
 // Constants carried over from bot_core.py (2.6.2).
 
-export const BOT_VERSION = '3.0.0-serverless';
+export const BOT_VERSION = '3.1.0-serverless';
 export const SQUAD_CHANNEL_USERNAME = 'THKC_SQUAD';
 export const SQUAD_CHANNEL_URL = `https://t.me/${SQUAD_CHANNEL_USERNAME}`;
 // Verified @THKC_SQUAD ID; usernames can change or be reassigned.
@@ -10,6 +10,9 @@ export const BLACKLIST_CHANNEL_ID = -1001192817776;
 export const OWNER_USER_ID = 7221285861;
 
 export const BROADCAST_CONFIRM_SECONDS = 600;
+
+// The Mini App (webapp/), hosted by the platform next to the bot.
+export const WEBAPP_URL = 'https://app8906365781.tgcloud.ai/';
 
 // Custom emoji from https://t.me/addemoji/sfsymbols.
 export const BUTTON_ICONS = {

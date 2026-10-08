@@ -13,7 +13,13 @@ export class BotApiError extends Error {
   }
 }
 
-export class EndpointError extends Error {}
+export class EndpointError extends Error {
+  constructor(description, parameters) {
+    super(description);
+    this.description = description;
+    this.parameters = parameters;
+  }
+}
 
 export class InputFile {
   constructor(bytes, filename, opts = {}) {
