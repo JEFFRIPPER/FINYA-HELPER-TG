@@ -47,7 +47,9 @@ npm test
 1. Влить ветку в `main`: Railway пересоберёт старого бота с командой `/export`.
 2. Владелец пишет старому боту `/export` и получает `finya-export-….json`.
 3. Остановить сервис на Railway (не удалять: это путь отката).
-4. Задеплоить: `TGCLOUD_TOKEN=app…:… npx tgcloud push`, затем `npx tgcloud migrate --safe`.
+4. Задеплоить: GitHub → Actions → «Deploy to Telegram Serverless» → Run workflow, ввести `ПЕРЕЕЗД`
+   (нужен секрет репозитория `TGCLOUD_TOKEN`). Вручную то же самое:
+   `TGCLOUD_TOKEN=app…:… npx tgcloud push`, затем `npx tgcloud migrate --safe`.
    `push` сам переключает вебхук бота на платформу.
 5. Переслать боту файл выгрузки из шага 2: он импортирует всё и пришлёт итог.
 6. Проверить: `/start`, админка, «Мой ранг», пост в канале.
