@@ -125,14 +125,3 @@ export function base64ToBytes(b64) {
   return out;
 }
 
-// Splits "/cmd@bot arg1 arg2" → { command, botName, args } or null.
-export function parseCommand(message) {
-  const text = message?.text;
-  if (!text || !text.startsWith('/')) return null;
-  const first = (message.entities || [])[0];
-  if (!first || first.type !== 'bot_command' || first.offset !== 0) return null;
-  const head = text.slice(1, first.length);
-  const [command, botName] = head.split('@');
-  const args = text.slice(first.length).trim().split(/\s+/).filter(Boolean);
-  return { command: command.toLowerCase(), botName: botName || null, args };
-}
