@@ -58,5 +58,5 @@ test('status shows the subscription toggle', async () => {
   const mock = await setup();
   await onCallbackQuery(callback(user(6), 'status:subscribe'));
   assert.match(lastText(mock), /Рассылка ТГК: ВКЛ/);
-  assert.match(JSON.stringify(mock.calls.at(-1).params.reply_markup), /Выключить рассылку/);
+  assert.match(JSON.stringify(mock.called('editMessageText').at(-1).params.reply_markup), /Выключить рассылку/);
 });
