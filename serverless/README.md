@@ -1,0 +1,58 @@
+# FINYA HELPER на Telegram Serverless
+
+Порт бота 2.6.2 с Python и Railway на [Telegram Serverless](https://core.telegram.org/bots/serverless).
+Код запускается у Telegram, база — встроенная SQLite, сервер не нужен.
+
+## Что где
+
+| Было (Python) | Стало (`tgcloud/`) |
+|---|---|
+| `bot_core.py`, `bot.py` | `lib/bot.js` (маршрутизация, меню, команды), `lib/admin.js`, `lib/ui.js` |
+| `activity_xp.py` | `lib/xp.js` |
+| `admin_ranks.py` | `lib/rank_admin.js` |
+| `channel_relay.py` | `lib/relay.js` |
+| `channel_blacklist.py` | `lib/blacklist.js` |
+| `state.json`, `xp.sqlite3` | таблицы в `schema.js` |
+| `context.user_data` | таблица `sessions` |
+| фоновые циклы asyncio | `pump()` в `lib/bot.js` + таблица `jobs` |
+| `logs/*.log` | таблица `error_log`, кнопка «Логи» в админке |
+| `watchdog.py`, heartbeat, «Перезапуск» | не нужны |
+
+## Отличия от Python-версии
+
+- **Фоновой работы нет.** Повторы постов в чаты, повторы автобана и хвосты рассылок
+  выполняются при входящих апдейтах (не чаще раза в 30 секунд). В тихие часы
+  досылка ждёт первого сообщения или нажатия. Рассылка владельца и рассылка поста
+  подписчикам идут порциями; если порция не уложилась, владелец получает кнопку
+  «Продолжить рассылку».
+- **Статус** показывает хостинг и версию вместо аптайма, heartbeat и имени сервера.
+- **Логи** — последние ошибки из базы.
+- `XP_DISCUSSION_CHAT_ID`, `SQUAD_CHANNEL_ID`, `BLACKLIST_CHANNEL_ID` больше не переменные
+  окружения (их на платформе нет), а константы в `lib/config.js`; группу XP по-прежнему
+  можно привязать командой `/xpchat`.
+- Картинка стартового экрана встроена в `lib/photo_data.js` (на платформе нет файловой системы).
+  После первой отправки бот запоминает её `file_id`. Пересобрать: `python tools/embed_photo.py`.
+
+## Тесты
+
+```
+cd serverless
+npm test
+```
+
+Тесты запускают модули с локальной заменой `sdk` (`test/shim/`, node:sqlite в памяти).
+
+## Переезд
+
+1. Влить ветку в `main`: Railway пересоберёт старого бота с командой `/export`.
+2. Владелец пишет старому боту `/export` и получает `finya-export-….json`.
+3. Остановить сервис на Railway (не удалять: это путь отката).
+4. Задеплоить: GitHub → Actions → «Deploy to Telegram Serverless» → Run workflow, ввести `ПЕРЕЕЗД`
+   (нужен секрет репозитория `TGCLOUD_TOKEN`). Вручную то же самое:
+   `TGCLOUD_TOKEN=app…:… npx tgcloud push`, затем `npx tgcloud migrate --safe`.
+   `push` сам переключает вебхук бота на платформу.
+5. Переслать боту файл выгрузки из шага 2: он импортирует всё и пришлёт итог.
+6. Проверить: `/start`, админка, «Мой ранг», пост в канале.
+
+Откат: снова запустить сервис на Railway. python-telegram-bot при старте polling сам
+снимает вебхук. Данные, накопленные после переезда, останутся в Serverless.

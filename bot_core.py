@@ -12,7 +12,7 @@ from pathlib import Path
 from activity_xp import ActivityXP, DAILY_XP_LIMIT, RANKS, rank_for
 from channel_blacklist import ChannelBlacklist
 from channel_relay import ChannelRelay
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import BadRequest, Forbidden, RetryAfter, TelegramError
 from telegram.ext import (
     Application,
@@ -1445,6 +1445,37 @@ async def text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
+EXPORT_TABLES = ("profiles", "events", "messages", "admin_changes", "relay_targets", "relay_outbox")
+
+
+def export_payload(activity_db):
+    """state.json plus every xp.sqlite3 table, for the Telegram Serverless import."""
+    tables = {}
+    for name in EXPORT_TABLES:
+        cursor = activity_db.execute(f"SELECT * FROM {name}")
+        columns = [column[0] for column in cursor.description]
+        tables[name] = [dict(zip(columns, row)) for row in cursor.fetchall()]
+    return {"format": "finya-export", "version": 1, "exported_at": int(time.time()),
+            "bot_version": BOT_VERSION, "state": STATE, "tables": tables}
+
+
+async def export_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Owner-only: send all bot data as one JSON file for the move to Serverless."""
+    if not is_admin_user(update.effective_user) or update.effective_chat.type != "private":
+        return
+    activity = context.bot_data.get("activity_xp")
+    if activity is None:
+        await update.message.reply_text("Учёт XP ещё запускается. Повтори /export чуть позже.")
+        return
+    payload = json.dumps(export_payload(activity.db), ensure_ascii=False).encode("utf-8")
+    name = f"finya-export-{datetime.now(timezone(timedelta(hours=3))):%Y%m%d-%H%M}.json"
+    await update.message.reply_document(
+        document=InputFile(payload, filename=name),
+        caption=bold_html("Выгрузка данных FINYA. Перешли этот файл боту после переезда на Telegram Serverless."),
+        parse_mode="HTML",
+    )
+
+
 def main():
     # Each launch needs its own loop: run_polling closes it on shutdown.
     # Python 3.14 also requires an explicitly configured event loop.
@@ -1489,6 +1520,7 @@ def _run_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
+    app.add_handler(CommandHandler("export", export_command))
     app.add_handler(CallbackQueryHandler(button))
     app.add_handler(ChatMemberHandler(CHANNEL_BLACKLIST.handle_update, ChatMemberHandler.CHAT_MEMBER))
     app.add_handler(MessageHandler(filters.ChatType.CHANNEL, channel_post))

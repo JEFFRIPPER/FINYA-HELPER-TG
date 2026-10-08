@@ -1,0 +1,36 @@
+name: Deploy to Telegram Serverless
+
+# Manual only: the first push switches the bot's webhook to the platform,
+# which stops the Railway (polling) bot from receiving updates.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Напиши ПЕРЕЕЗД, чтобы задеплоить (Railway должен быть остановлен)'
+        required: true
+
+jobs:
+  deploy:
+    if: ${{ inputs.confirm == 'ПЕРЕЕЗД' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test
+      - run: mkdir -p .tgcloud
+      - name: Sync with the cloud
+        run: npx tgcloud fetch
+      - name: Deploy modules
+        run: npx tgcloud push
+      - name: Apply database schema
+        run: npx tgcloud migrate --safe
+      - name: Webhook state
+        run: npx tgcloud webhook
