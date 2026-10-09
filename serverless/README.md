@@ -35,9 +35,11 @@
 
 ## Mini App «Профиль Фини»
 
-- `webapp/` — сам Mini App: обычные HTML, CSS и JS без сборки, Material 3 в красно-алой
-  схеме Сквада (токены из `@material/material-color-utilities`, seed `#D7192D`; светлая и
-  тёмная по `Telegram.WebApp.colorScheme`). Иконки — Material Symbols, встроены в `app.js`. `tgcloud.json` → `"static"`
+- `webapp/` — сам Mini App: обычные HTML, CSS и JS без сборки. Всегда тёмный, кроваво-красный
+  со свечением (как у SQUAD VPN); формы, шрифтовая шкала и анимации из Material 3: ripple,
+  fade through между вкладками, вход карточек с задержкой, индикаторы загрузки и прогресса.
+  Цвета — токены в начале `style.css`. Иконки — Material Symbols, встроены в `app.js`.
+  После правок поднять `?v=` в `index.html`. `tgcloud.json` → `"static"`
   говорит `push` выложить эту папку; адрес — `WEBAPP_URL` в `lib/config.js`.
 - `endpoints/profile.js` → `POST /api/profile`: ранг, прогресс, место, XP за 7 дней, история
   и топ. Кто открыл приложение, платформа проверяет сама (`ctx.initData.user`). В топе

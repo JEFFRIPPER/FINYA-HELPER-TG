@@ -3,29 +3,22 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070203">
   <title>Профиль Фини</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-  <script>
-    // Pick light or dark before the first paint; app.js keeps it in sync.
-    (function () {
-      var tg = window.Telegram && window.Telegram.WebApp;
-      var dark = tg && tg.colorScheme ? tg.colorScheme === 'dark'
-        : window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
-    })();
-  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
-  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="style.css?v=3">
 </head>
 <body>
+  <div class="backdrop" aria-hidden="true"><i></i><i></i><i></i></div>
   <main id="app" aria-live="polite">
     <div class="state">
-      <div class="spinner" aria-hidden="true"></div>
+      <svg class="cpi" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="20"/></svg>
       <p>Загружаю профиль…</p>
     </div>
   </main>
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

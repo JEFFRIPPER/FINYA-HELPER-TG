@@ -1,4 +1,5 @@
-// Mini App "Профиль Фини" (Material 3). Data comes from tgcloud/endpoints/profile.js.
+// Mini App "Профиль Фини": dark blood-red theme, Material 3 shapes and motion.
+// Data comes from tgcloud/endpoints/profile.js.
 // Every user-supplied string is inserted with textContent, never as HTML.
 // Icons: Material Symbols Rounded (Apache License 2.0), inlined as SVG paths.
 (function () {
@@ -25,7 +26,6 @@
 
   var tg = window.Telegram && window.Telegram.WebApp;
   var app = document.getElementById('app');
-  var root = document.documentElement;
   var SVG = 'http://www.w3.org/2000/svg';
   var MSK = 3 * 3600;
   var WEEKDAYS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
@@ -40,11 +40,16 @@
     ['top', 'Топ', 'leaderboard'],
     ['ranks', 'Звания', 'military_tech'],
   ];
-  // Telegram's header and bottom bar take the scheme's surface colours.
-  var SURFACE = { light: ['#fff8f7', '#ffe9e7'], dark: ['#1f0f0e', '#2d1b1a'] };
+  // Telegram's header and bottom bar blend into the page (see style.css).
+  var BG = '#070203';
+  var BAR = '#090203';
+  // Material 3 fade through: the old content fades out for 90 ms.
+  var FADE_OUT_MS = 90;
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var state = { data: null, tab: 'activity', top: 'all' };
   var view = null;
   var nav = null;
+  var dests = [];
 
   function h(tag, attrs) {
     var el = document.createElement(tag);
@@ -80,21 +85,93 @@
     return svg;
   }
 
+  function loader() {
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 48 48');
+    svg.setAttribute('class', 'cpi');
+    svg.setAttribute('aria-hidden', 'true');
+    var c = document.createElementNS(SVG, 'circle');
+    c.setAttribute('cx', '24');
+    c.setAttribute('cy', '24');
+    c.setAttribute('r', '20');
+    svg.appendChild(c);
+    return svg;
+  }
+
   function haptic() {
     try { tg.HapticFeedback.selectionChanged(); } catch (e) { /* not supported */ }
   }
 
-  function applyTheme() {
-    var scheme = tg && tg.colorScheme;
-    if (scheme !== 'dark' && scheme !== 'light') {
-      scheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    root.setAttribute('data-theme', scheme);
+  function paintTelegram() {
     if (!tg) return;
-    try { tg.setHeaderColor(SURFACE[scheme][0]); } catch (e) { /* old client */ }
-    try { tg.setBackgroundColor(SURFACE[scheme][0]); } catch (e) { /* old client */ }
-    try { tg.setBottomBarColor(SURFACE[scheme][1]); } catch (e) { /* old client */ }
+    try { tg.setHeaderColor(BG); } catch (e) { /* old client */ }
+    try { tg.setBackgroundColor(BG); } catch (e) { /* old client */ }
+    try { tg.setBottomBarColor(BAR); } catch (e) { /* old client */ }
   }
+
+  // ---- motion ---------------------------------------------------------------
+
+  // Staggered entrance (emphasized decelerate), see .enter in style.css.
+  function enter(el, i) {
+    el.classList.add('enter');
+    el.style.setProperty('--i', String(i));
+    return el;
+  }
+
+  // Fade through: fade the old content out, swap it, fade the new one in.
+  function swap(el, build) {
+    clearTimeout(el.swapTimer);
+    el.classList.remove('fade-in');
+    el.classList.add('fade-out');
+    el.swapTimer = setTimeout(function () {
+      el.replaceChildren.apply(el, [].concat(build()).filter(Boolean));
+      el.classList.remove('fade-out');
+      void el.offsetWidth;
+      el.classList.add('fade-in');
+    }, reduceMotion ? 0 : FADE_OUT_MS);
+  }
+
+  // Counts a number up from zero; ease-out close to emphasized decelerate.
+  function countUp(node, to) {
+    if (reduceMotion || to <= 0) return;
+    var start = null;
+    node.nodeValue = '0';
+    function step(ts) {
+      if (start == null) start = ts;
+      var t = Math.min(1, (ts - start) / 900);
+      node.nodeValue = String(Math.round(to * (1 - Math.pow(1 - t, 4))));
+      if (t < 1) requestAnimationFrame(step);
+    }
+    setTimeout(function () { requestAnimationFrame(step); }, 120);
+  }
+
+  // Material 3 ripple: a wave grows from the touch point and fades on release.
+  function ripple(e) {
+    if (e.button > 0 || !e.target.closest) return;
+    var host = e.target.closest('.ripple, .dest');
+    if (!host) return;
+    var centered = host.classList.contains('dest');
+    if (centered) host = host.querySelector('.pill');
+    var r = host.getBoundingClientRect();
+    var x = centered ? r.width / 2 : e.clientX - r.left;
+    var y = centered ? r.height / 2 : e.clientY - r.top;
+    var size = 2 * Math.sqrt(Math.pow(Math.max(x, r.width - x), 2) + Math.pow(Math.max(y, r.height - y), 2));
+    var wave = h('span', { class: 'wave', 'aria-hidden': 'true' });
+    wave.style.width = wave.style.height = size + 'px';
+    wave.style.left = (x - size / 2) + 'px';
+    wave.style.top = (y - size / 2) + 'px';
+    host.appendChild(wave);
+    function release() {
+      window.removeEventListener('pointerup', release);
+      window.removeEventListener('pointercancel', release);
+      wave.classList.add('release');
+      setTimeout(function () { wave.remove(); }, 400);
+    }
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+  }
+
+  // ---- helpers --------------------------------------------------------------
 
   function msk(ts) {
     return new Date((ts + MSK) * 1000);
@@ -118,10 +195,15 @@
     return (n > 0 ? '+' : '') + n;
   }
 
-  function showState(title, text, retry) {
+  function dropNav() {
     if (nav) { nav.remove(); nav = null; }
+    dests = [];
     view = null;
-    app.replaceChildren(h('div', { class: 'state' },
+  }
+
+  function showState(title, text, retry) {
+    dropNav();
+    app.replaceChildren(h('div', { class: 'state enter' },
       h('h2', { text: title }),
       text ? h('p', { text: text }) : null,
       retry ? h('button', { class: 'btn-filled ripple', onclick: load }, icon('refresh'), 'Повторить') : null));
@@ -148,24 +230,24 @@
           'aria-valuenow': String(me.progress.percent) }, ind, h('i', { class: 'trk' })),
         h('div', { class: 'progress-label' },
           h('span', { text: 'До «' + me.progress.next.name + '»' }),
-          h('span', { text: 'осталось ' + me.progress.left + ' XP' })));
-      requestAnimationFrame(function () {
-        requestAnimationFrame(function () {
-          ind.style.width = 'calc(' + Math.max(1, Math.min(100, me.progress.percent)) + '% - 6px)';
-        });
-      });
+          h('span', null, 'осталось ', h('b', { text: me.progress.left + ' XP' }))));
+      setTimeout(function () {
+        ind.style.width = 'calc(' + Math.max(1, Math.min(100, me.progress.percent)) + '% - 6px)';
+      }, reduceMotion ? 0 : 200);
     }
     var note = null;
     if (me.founder) note = 'Основатель Сквада.';
     else if (me.manualRank) note = 'Звание назначено владельцем. XP продолжает копиться.';
     else if (!me.progress) note = 'Высшее звание достигнуто.';
+    var total = h('p', { class: 'xp-total' }, String(me.xp), h('small', { text: 'XP' }));
+    countUp(total.firstChild, me.xp);
     return h('section', { class: 'hero' },
       icon('military_tech_fill', 'deco'),
       h('div', { class: 'who' }, avatar(me),
         h('div', { class: 'who-text' },
           h('p', { class: 'name', text: me.name }),
           h('span', { class: 'rank-chip' }, icon('military_tech_fill'), me.rank.roman + ' · ' + me.rank.name))),
-      h('p', { class: 'xp-total' }, String(me.xp), h('small', { text: 'XP' })),
+      total,
       progress,
       note ? h('div', { class: 'note', text: note }) : null);
   }
@@ -190,6 +272,7 @@
       h('div', { class: 'chart' }, days.map(function (d, i) {
         var bar = h('i');
         bar.style.height = Math.round((d.xp / max) * 92) + 'px';
+        bar.style.setProperty('--i', String(i));
         return h('div', { class: 'col' + (d.xp ? ' has' : '') + (i === today ? ' today' : '') },
           h('em', { text: d.xp ? String(d.xp) : '' }), bar,
           h('span', { text: i === today ? 'Сег' : WEEKDAYS[msk(d.day).getUTCDay()] }));
@@ -223,15 +306,8 @@
     return h('section', { class: 'card' }, h('h3', { text: 'История' }), body);
   }
 
-  function topCard(top) {
+  function topList(top) {
     var rows = state.top === 'week' ? top.week : top.all;
-    var seg = h('div', { class: 'seg', role: 'tablist' }, [['all', 'Всё время'], ['week', 'Неделя']].map(function (t) {
-      var on = state.top === t[0];
-      return h('button', {
-        class: 'ripple', role: 'tab', 'aria-selected': String(on),
-        onclick: function () { if (!on) { state.top = t[0]; haptic(); renderView(); } },
-      }, on ? icon('check') : null, t[1]);
-    }));
     var body = rows.length ? h('ul', { class: 'list' }, withDividers(rows.map(function (r) {
       return h('li', { class: 'item' + (r.me ? ' me' : '') },
         h('div', { class: 'lead place' + (r.place <= 3 ? ' p' + r.place : ''), text: String(r.place) }),
@@ -239,7 +315,27 @@
         h('div', { class: 'trail', text: r.score + ' XP' }));
     }))) : h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' });
     var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Неделя начинается в понедельник по Москве.' }) : null;
-    return h('section', { class: 'card' }, h('h3', { text: 'Топ Сквада' }), seg, body, note);
+    return [body, note];
+  }
+
+  function topCard(top) {
+    var box = h('div', { class: 'swap' }, topList(top));
+    var buttons = [];
+    var seg = h('div', { class: 'seg', role: 'tablist' }, [['all', 'Всё время'], ['week', 'Неделя']].map(function (t) {
+      var b = h('button', {
+        class: 'ripple', role: 'tab', 'aria-selected': String(state.top === t[0]),
+        onclick: function () {
+          if (state.top === t[0]) return;
+          state.top = t[0];
+          haptic();
+          buttons.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); });
+          swap(box, function () { return topList(top); });
+        },
+      }, h('span', { class: 'check' }, icon('check')), t[1]);
+      buttons.push(b);
+      return b;
+    }));
+    return h('section', { class: 'card' }, h('h3', { text: 'Топ Сквада' }), seg, box);
   }
 
   function rankItem(roman, name, sub, reached) {
@@ -260,41 +356,52 @@
       h('section', { class: 'card' }, h('h3', { text: 'Как получить XP' }), how)];
   }
 
-  function navbar() {
-    var bar = h('nav', { class: 'navbar', role: 'tablist' }, h('div', { class: 'navbar-inner' }, TABS.map(function (t) {
-      var on = state.tab === t[0];
-      return h('button', {
-        class: 'dest', role: 'tab', 'aria-selected': String(on),
-        onclick: function () {
-          if (state.tab === t[0]) return;
-          state.tab = t[0];
-          haptic();
-          renderView();
-          window.scrollTo({ top: 0, behavior: 'smooth' });
-        },
-      }, h('span', { class: 'pill' }, icon(on ? t[2] + '_fill' : t[2])), t[1]);
-    })));
-    return bar;
+  function viewBody() {
+    var d = state.data;
+    if (state.tab === 'top') return [topCard(d.top)];
+    if (state.tab === 'ranks') return ranksCards(d.ranks, d.rules, d.me);
+    return [chart(d.chart), historyCard(d.history)];
   }
 
-  // The header is built once; switching tabs redraws the content and the bar.
-  function renderView() {
-    var d = state.data;
-    var body;
-    if (state.tab === 'top') body = topCard(d.top);
-    else if (state.tab === 'ranks') body = ranksCards(d.ranks, d.rules, d.me);
-    else body = [chart(d.chart), historyCard(d.history)];
-    view.replaceChildren.apply(view, [].concat(body));
-    var next = navbar();
-    if (nav) nav.replaceWith(next); else document.body.appendChild(next);
-    nav = next;
+  // ---- navigation bar -------------------------------------------------------
+
+  // Built once, so the active indicator animates between destinations.
+  function navbar() {
+    dests = TABS.map(function (t) {
+      var pill = h('span', { class: 'pill' }, icon(state.tab === t[0] ? t[2] + '_fill' : t[2]));
+      var btn = h('button', {
+        class: 'dest', role: 'tab', 'aria-selected': String(state.tab === t[0]),
+        onclick: function () { selectTab(t[0]); },
+      }, pill, t[1]);
+      return { tab: t, btn: btn, pill: pill };
+    });
+    return h('nav', { class: 'navbar', role: 'tablist' },
+      h('div', { class: 'navbar-inner' }, dests.map(function (d) { return d.btn; })));
+  }
+
+  function selectTab(tab) {
+    if (state.tab === tab) return;
+    state.tab = tab;
+    haptic();
+    dests.forEach(function (d) {
+      var on = d.tab[0] === tab;
+      d.btn.setAttribute('aria-selected', String(on));
+      d.pill.replaceChild(icon(on ? d.tab[2] + '_fill' : d.tab[2]), d.pill.querySelector('svg'));
+    });
+    swap(view, viewBody);
+    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
   }
 
   function render() {
     var d = state.data;
-    view = h('div');
-    app.replaceChildren(hero(d.me), stats(d.me), view, h('p', { class: 'foot', text: 'FINYA HELPER · T.N.K.C SQUAD' }));
-    renderView();
+    var cards = viewBody();
+    cards.forEach(function (c, i) { enter(c, 2 + i); });
+    view = h('div', { class: 'view' }, cards);
+    app.replaceChildren(enter(hero(d.me), 0), enter(stats(d.me), 1), view,
+      enter(h('p', { class: 'foot', text: 'FINYA HELPER · T.N.K.C SQUAD' }), 2 + cards.length));
+    if (nav) nav.remove();
+    nav = navbar();
+    document.body.appendChild(nav);
   }
 
   // ---- data -----------------------------------------------------------------
@@ -304,9 +411,8 @@
       showState('Открой профиль в Telegram', 'Нажми «Профиль» в чате с Финей.', false);
       return;
     }
-    if (nav) { nav.remove(); nav = null; }
-    app.replaceChildren(h('div', { class: 'state' }, h('div', { class: 'spinner', 'aria-hidden': 'true' }),
-      h('p', { text: 'Загружаю профиль…' })));
+    dropNav();
+    app.replaceChildren(h('div', { class: 'state' }, loader(), h('p', { text: 'Загружаю профиль…' })));
     tg.Serverless.call('profile', {}, function (err, data) {
       if (err || !data) {
         showState('Не удалось загрузить профиль',
@@ -318,10 +424,10 @@
     });
   }
 
-  applyTheme();
+  document.addEventListener('pointerdown', ripple);
+  paintTelegram();
   if (tg) {
     try { tg.ready(); tg.expand(); } catch (e) { /* old client */ }
-    try { tg.onEvent('themeChanged', applyTheme); } catch (e) { /* old client */ }
   }
   load();
 })();
