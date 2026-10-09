@@ -737,6 +737,10 @@
 
   var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
   var adminRoot = null;
+  // Admins of the SQUAD SHOP site: the public admins.json next to the shop.
+  // Only logins and who added them; passwords are never stored there.
+  var SHOP_ADMINS_URL = 'https://jeffripper.github.io/SQUAD-SHOP/admins.json';
+  var shop = { items: [], loaded: false, failed: false };
 
   function api(name, input) {
     return new Promise(function (resolve, reject) {
@@ -790,10 +794,59 @@
     adminRoot = h('div', { class: 'admin' },
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
-      h('section', { class: 'card list-card' }));
+      h('section', { class: 'card list-card' }),
+      h('section', { class: 'card list-card shop-card' }));
     drawAdmin();
+    drawShop();
     if (!admin.loaded) loadAdmin(true);
+    loadShop();
     return [adminRoot];
+  }
+
+  function loadShop() {
+    shop.loaded = false;
+    shop.failed = false;
+    drawShop();
+    fetch(SHOP_ADMINS_URL + '?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { if (r.status === 404) return { admins: [] }; if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (data) {
+        shop.items = data && Array.isArray(data.admins) ? data.admins.filter(function (a) { return a && a.login; }) : [];
+        shop.loaded = true;
+        drawShop();
+      }, function () {
+        shop.loaded = true;
+        shop.failed = true;
+        drawShop();
+      });
+  }
+
+  function shopDate(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
+  }
+
+  function shopRow(a) {
+    var when = a.added ? shopDate(a.added) : '';
+    var who = a.by ? 'добавил ' + a.by : '';
+    var note = [who, when].filter(Boolean).join(' · ') || 'добавлен до учёта дат';
+    if (a.changed) note += ' · пароль сменён ' + shopDate(a.changed);
+    return h('li', { class: 'item' },
+      h('div', { class: 'lead muted' }, icon('shield_person_fill')),
+      h('div', { class: 'body' }, h('b', { text: a.login }), h('span', { text: note })));
+  }
+
+  function drawShop() {
+    var card = adminRoot && adminRoot.querySelector('.shop-card');
+    if (!card) return;
+    var body;
+    if (!shop.loaded) body = h('div', { class: 'state small' }, loader());
+    else if (shop.failed) body = h('p', { class: 'empty', text: 'Не удалось загрузить список. Проверь интернет и повтори.' });
+    else if (!shop.items.length) body = h('p', { class: 'empty', text: 'Админов нет: в магазин входят только ключом GitHub.' });
+    else body = h('ul', { class: 'list' }, withDividers(shop.items.map(shopRow)));
+    card.replaceChildren(
+      h('h3', { text: 'Админы SQUAD SHOP' + (shop.loaded && !shop.failed ? ' · ' + shop.items.length : '') }), body,
+      shop.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadShop(); } }, icon('refresh'), 'Обновить') : null);
   }
 
   function loadAdmin(reset) {
