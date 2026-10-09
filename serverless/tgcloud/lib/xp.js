@@ -91,6 +91,11 @@ export async function listProfiles(limit = 6, offset = 0) {
   return result;
 }
 
+// Every participant without activity totals, for the owner's Mini App panel.
+export async function allProfiles() {
+  return db.all(sql`SELECT user_id, name, username, xp, manual_rank FROM profiles`);
+}
+
 export async function profileCount() {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM profiles`);
   return row ? row.c : 0;

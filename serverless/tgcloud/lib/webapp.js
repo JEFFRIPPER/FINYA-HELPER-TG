@@ -4,12 +4,13 @@ import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
 import { getSetting, trackUser } from './store.js';
-import { dayStart, fullName, nowInt, truncate } from './util.js';
+import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
 const NEWS_LIMIT = 1000;
+const STREAK_LOOKBACK_DAYS = 400;
 
 function rankView(rank) {
   return { roman: rank[1], name: rank[2], from: rank[0] };
@@ -35,6 +36,30 @@ async function place(p) {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM profiles
     WHERE xp > ${p.xp} OR (xp = ${p.xp} AND user_id < ${p.user_id})`);
   return row.c + 1;
+}
+
+// Days in a row (Moscow time) with XP. A streak stays alive until the end of the
+// day after the last active one; `today` says whether today already counts.
+async function streak(userId, ts) {
+  const rows = await db.all(sql`SELECT DISTINCT CAST(earned_at + ${MSK_OFFSET} AS INTEGER) / 86400 AS d FROM events
+    WHERE user_id = ${userId} AND points > 0 AND earned_at >= ${ts - STREAK_LOOKBACK_DAYS * 86400}
+      AND earned_at <= ${ts}
+    ORDER BY d DESC`);
+  const today = Math.floor((ts + MSK_OFFSET) / 86400);
+  const days = rows.map((r) => r.d);
+  if (!days.length || days[0] < today - 1) return { days: 0, today: false };
+  let n = 1;
+  while (n < days.length && days[n] === days[0] - n) n++;
+  return { days: n, today: days[0] === today };
+}
+
+// The next member above in the all-time top, and how much XP it takes to pass them.
+async function rival(p) {
+  const row = await db.get(sql`SELECT user_id, name, xp FROM profiles
+    WHERE xp > 0 AND (xp > ${p.xp} OR (xp = ${p.xp} AND user_id < ${p.user_id}))
+    ORDER BY xp ASC, user_id DESC LIMIT 1`);
+  if (!row) return null;
+  return { name: truncate(row.name, 35), xp: row.xp, place: await place(row), left: row.xp - p.xp + 1 };
 }
 
 // XP per Moscow day, oldest first, today last.
@@ -108,7 +133,10 @@ export async function profileData(user) {
       progress,
       place: await place(p),
       participants: participants.c,
+      streak: await streak(user.id, ts),
+      rival: await rival(p),
     },
+    admin: founder,
     chart: await chart(user.id, ts),
     history: await history(user.id),
     top: { all: await topView(false, user.id), week: await topView(true, user.id) },
