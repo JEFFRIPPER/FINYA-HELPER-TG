@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { db, EndpointError } from 'sdk';
 import profileEndpoint from '../tgcloud/endpoints/profile.js';
 import { onMessage, pump } from '../tgcloud/lib/bot.js';
-import { WEBAPP_URL } from '../tgcloud/lib/config.js';
+import { DEFAULT_NEWS, SQUAD_LINKS, WEBAPP_URL } from '../tgcloud/lib/config.js';
+import { setSetting } from '../tgcloud/lib/store.js';
 import * as xp from '../tgcloud/lib/xp.js';
 import { dayStart, nowInt } from '../tgcloud/lib/util.js';
 import { checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, setup, user } from './helpers.mjs';
@@ -113,4 +114,19 @@ test('the menu button is set to the Mini App once', async () => {
   const calls = mock.called('setChatMenuButton');
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].params.menu_button, { type: 'web_app', text: 'Профиль', web_app: { url: WEBAPP_URL } });
+});
+
+test('profile endpoint: the squad tab gets the news, the last post and the menu links', async () => {
+  await setup();
+  await seed();
+  let data = await call(user(1, { first_name: 'Alice' }));
+  assert.equal(data.squad.news, DEFAULT_NEWS);
+  assert.equal(data.squad.lastPost, null);
+  assert.equal(data.squad.channel, 'https://t.me/THKC_SQUAD');
+  assert.deepEqual(data.squad.links, SQUAD_LINKS);
+  await setSetting('news', 'Стрим в субботу');
+  await setSetting('last_channel_post_id', 1500);
+  data = await call(user(1, { first_name: 'Alice' }));
+  assert.equal(data.squad.news, 'Стрим в субботу');
+  assert.equal(data.squad.lastPost, 'https://t.me/THKC_SQUAD/1500');
 });

@@ -9,6 +9,25 @@ export const BLACKLIST_CHANNEL_ID = -1001192817776;
 // Verified Telegram account: @THKC_SQUAD_CREATOR. Usernames can change.
 export const OWNER_USER_ID = 7221285861;
 
+// Links of the "Сквад" menu, shared by the bot keyboard and the Mini App.
+export const SQUAD_LINKS = {
+  owner: 'https://t.me/THKC_SQUAD_CREATOR',
+  info: 'https://t.me/THKC_SQUAD/1449',
+  rules: 'https://teletype.in/@creatorsworld/chat_rules',
+  folder: 'https://t.me/addlist/Nw_CFrN-wzQ1MThi',
+  themeRed: 'https://t.me/addtheme/SQUADTHEME',
+  themeGreen: 'https://t.me/addtheme/SQUADGREEN',
+  stickers: 'https://t.me/addstickers/SquadCorporation',
+  wishlist: 'https://t.me/wishapp/wishlist?startapp=-w15874613',
+  anon: 'https://t.me/anonaskbot?start=r5z6k1ge4zcjbdzb',
+  tiktok: 'https://www.tiktok.com/@tnkc_squad_corporation?_t=ZS-8xtQVu6AMBl&_r=1',
+  discord: 'https://discord.gg/dCgQvVeJzs',
+  vk: 'https://vk.com/creator_this_world',
+  twitch: 'https://www.twitch.tv/tnkc_squad_creator',
+  tbank: 'https://tbank.ru/baf/AwvoxOcQ5Ee',
+  boost: 'https://t.me/boost?c=1192817776',
+};
+
 export const BROADCAST_CONFIRM_SECONDS = 600;
 
 // The Mini App (webapp/), hosted by the platform next to the bot.
