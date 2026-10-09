@@ -138,6 +138,7 @@ export function squadKeyboard() {
   };
   return keyboard([
     [link('💠 Инфо о Скваде', L.info)],
+    [link('🛒 Магазин Сквада', L.shop)],
     [link('📜 Правила беседы', L.rules)],
     [link('💠 Папка T.N.K.C SQUAD', L.folder)],
     [link('🔥 Красный Сквад', L.themeRed), link('🟢 Зелёный Сквад', L.themeGreen)],

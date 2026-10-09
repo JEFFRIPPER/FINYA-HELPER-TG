@@ -26,6 +26,7 @@ export const SQUAD_LINKS = {
   twitch: 'https://www.twitch.tv/tnkc_squad_creator',
   tbank: 'https://tbank.ru/baf/AwvoxOcQ5Ee',
   boost: 'https://t.me/boost?c=1192817776',
+  shop: 'https://jeffripper.github.io/SQUAD-SHOP/',
 };
 
 export const BROADCAST_CONFIRM_SECONDS = 600;
