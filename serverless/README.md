@@ -54,6 +54,9 @@
 - Вкладка «Панель» видна только владельцу: поиск участников, распределение по званиям,
   выдача звания и XP с подтверждением. `endpoints/ranks.js` → `lib/rank_app.js`; изменения
   идут через те же `xp.adjustXp` / `xp.setManualRank` и журнал `admin_changes`, что и в боте.
+  Внизу «Панели» список админов сайта SQUAD SHOP: приложение само читает публичный
+  `https://jeffripper.github.io/SQUAD-SHOP/admins.json` (логин, кто и когда добавил;
+  паролей там нет).
   После правок поднять `?v=` в `index.html`. `tgcloud.json` → `"static"`
   говорит `push` выложить эту папку; адрес — `WEBAPP_URL` в `lib/config.js`.
 - `endpoints/profile.js` → `POST /api/profile`: ранг, прогресс, место, XP за 7 дней, история,
