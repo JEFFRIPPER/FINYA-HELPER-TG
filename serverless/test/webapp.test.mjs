@@ -2,6 +2,7 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { db, EndpointError } from 'sdk';
 import profileEndpoint from '../tgcloud/endpoints/profile.js';
+import ranksEndpoint from '../tgcloud/endpoints/ranks.js';
 import { onMessage, pump } from '../tgcloud/lib/bot.js';
 import { DEFAULT_NEWS, SQUAD_LINKS, WEBAPP_URL } from '../tgcloud/lib/config.js';
 import { setSetting } from '../tgcloud/lib/store.js';
@@ -129,4 +130,64 @@ test('profile endpoint: the squad tab gets the news, the last post and the menu 
   data = await call(user(1, { first_name: 'Alice' }));
   assert.equal(data.squad.news, 'Стрим в субботу');
   assert.equal(data.squad.lastPost, 'https://t.me/THKC_SQUAD/1500');
+});
+
+test('profile endpoint: streak of active days and the rival above', async () => {
+  await setup();
+  const ts = await seed();
+  const alice = await call(user(1, { first_name: 'Alice' }));
+  assert.deepEqual(alice.me.streak, { days: 2, today: true });
+  assert.deepEqual(alice.me.rival, { name: 'Carol', xp: 600, place: 1, left: 481 });
+  assert.equal(alice.admin, false);
+  const carol = await call(user(3, { first_name: 'Carol' }));
+  assert.deepEqual(carol.me.streak, { days: 0, today: false });
+  assert.equal(carol.me.rival, null);
+  // A streak survives until the end of the next day, then breaks.
+  await db.run(`INSERT INTO events (user_id, chat_id, message_id, kind, points, earned_at) VALUES
+    (3, -100, 9, 'comment', 5, ?), (3, -100, 10, 'comment', 5, ?)`, [dayStart(ts) - 86400 + 60, dayStart(ts) - 3 * 86400 + 60]);
+  assert.deepEqual((await call(user(3, { first_name: 'Carol' }))).me.streak, { days: 1, today: false });
+  // A newcomer without XP chases the last member of the top.
+  const fresh = await call(user(50, { first_name: 'New' }));
+  assert.deepEqual(fresh.me.rival, { name: 'Bob', xp: 40, place: 3, left: 41 });
+  assert.equal((await call(OWNER)).admin, true);
+});
+
+const ranks = (u, input) => ranksEndpoint(input, { initData: { user: u } });
+
+test('rank panel: only the owner, list with search and rank counts', async () => {
+  await setup();
+  await seed();
+  await assert.rejects(ranks(user(1), { action: 'list' }), (err) => err instanceof EndpointError &&
+    err.parameters.code === 'FORBIDDEN');
+  const all = await ranks(OWNER, { action: 'list' });
+  assert.deepEqual(all.items.map((i) => i.name), ['Carol', 'Alice', 'Bob']);
+  assert.equal(all.ranks.find((r) => r.roman === 'IV').count, 1);
+  assert.equal(all.ranks.find((r) => r.roman === 'II').count, 1);
+  assert.deepEqual((await ranks(OWNER, { action: 'list', query: 'ali' })).items.map((i) => i.id), [1]);
+  assert.deepEqual((await ranks(OWNER, { action: 'list', query: '@user2' })).items.map((i) => i.id), [2]);
+  assert.deepEqual((await ranks(OWNER, { action: 'list', query: '3' })).items.map((i) => i.id), [3]);
+});
+
+test('rank panel: XP and manual rank changes are audited and idempotent', async () => {
+  await setup();
+  await seed();
+  let card = await ranks(OWNER, { action: 'xp', id: 2, delta: 70, op: 'abcdef12' });
+  assert.equal(card.xp, 110);
+  assert.equal(card.rank.roman, 'II');
+  // Retrying the same operation does not add XP twice.
+  card = await ranks(OWNER, { action: 'xp', id: 2, delta: 70, op: 'abcdef12' });
+  assert.equal(card.xp, 110);
+  card = await ranks(OWNER, { action: 'rank', id: 2, roman: 'VII', op: 'abcdef13' });
+  assert.equal(card.rank.roman, 'VII');
+  assert.equal(card.manual, true);
+  assert.equal(card.auto.roman, 'II');
+  assert.deepEqual(card.history.map((h) => h.action), ['set_manual_rank', 'adjust_xp']);
+  card = await ranks(OWNER, { action: 'rank', id: 2, roman: null, op: 'abcdef14' });
+  assert.equal(card.manual, false);
+  await assert.rejects(ranks(OWNER, { action: 'rank', id: OWNER.id, roman: 'I', op: 'abcdef15' }),
+    (err) => err.parameters.code === 'FORBIDDEN');
+  await assert.rejects(ranks(OWNER, { action: 'rank', id: 2, roman: 'X', op: 'abcdef16' }),
+    (err) => err.parameters.code === 'BAD_REQUEST');
+  await assert.rejects(ranks(OWNER, { action: 'xp', id: 404, delta: 5, op: 'abcdef17' }),
+    (err) => err.parameters.code === 'NOT_FOUND');
 });

@@ -39,6 +39,14 @@
     groups_fill: 'M30-240q-12.75 0-21.37-8.63Q0-257.25 0-270v-23q0-38.57 41.5-62.78Q83-380 150.38-380q12.16 0 23.39.5t22.23 2.15q-8 17.35-12 35.17-4 17.81-4 37.18v65H30Zm240 0q-12.75 0-21.37-8.63Q240-257.25 240-270v-35q0-32 17.5-58.5T307-410q32-20 76.5-30t96.5-10q53 0 97.5 10t76.5 30q32 20 49 46.5t17 58.5v35q0 12.75-8.62 21.37Q702.75-240 690-240H270Zm510 0v-65q0-19.86-3.5-37.43T765-377.27q11-1.73 22.17-2.23 11.17-.5 22.83-.5 67.5 0 108.75 23.77T960-293v23q0 12.75-8.62 21.37Q942.75-240 930-240H780ZM149.57-410q-28.57 0-49.07-20.56Q80-451.13 80-480q0-29 20.56-49.5Q121.13-550 150-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T149.57-410Zm660 0q-28.57 0-49.07-20.56Q740-451.13 740-480q0-29 20.56-49.5Q781.13-550 810-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T809.57-410ZM480-480q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T600-600q0 50-34.5 85T480-480Z',
     code: 'm166-482 176 176q9 9 8.5 21t-9.5 21q-9 9-21.5 9t-21.5-9L101-461q-5-5-7-10t-2-11q0-6 2-11t7-10l200-200q9-9 21.5-9t21.5 9q9 9 9 21.5t-9 21.5L166-482Zm628 0L618-658q-9-9-8.5-21t9.5-21q9-9 21.5-9t21.5 9l197 197q5 5 7 10t2 11q0 6-2 11t-7 10L659-261q-9 9-21 8.5t-21-9.5q-9-9-9-21.5t9-21.5l177-177Z',
     info_fill: 'M504.5-288.63q8.5-8.62 8.5-21.37v-180q0-12.75-8.68-21.38-8.67-8.62-21.5-8.62-12.82 0-21.32 8.62-8.5 8.63-8.5 21.38v180q0 12.75 8.68 21.37 8.67 8.63 21.5 8.63 12.82 0 21.32-8.63Zm-1-314.57q9.5-9.2 9.5-22.8 0-14.45-9.48-24.22-9.48-9.78-23.5-9.78t-23.52 9.78Q447-640.45 447-626q0 13.6 9.48 22.8 9.48 9.2 23.5 9.2t23.52-9.2ZM480.27-80q-82.74 0-155.5-31.5Q252-143 197.5-197.5t-86-127.34Q80-397.68 80-480.5t31.5-155.66Q143-709 197.5-763t127.34-85.5Q397.68-880 480.5-880t155.66 31.5Q709-817 763-763t85.5 127Q880-563 880-480.27q0 82.74-31.5 155.5Q817-252 763-197.68q-54 54.31-127 86Q563-80 480.27-80Z',
+    search: 'M378-329q-108.16 0-183.08-75Q120-479 120-585t75-181q75-75 181.5-75t181 75Q632-691 632-584.85 632-542 618-502q-14 40-42 75l242 240q9 8.56 9 21.78T818-143q-9 9-22.22 9-13.22 0-21.78-9L533-384q-30 26-69.96 40.5Q423.08-329 378-329Zm-1-60q81.25 0 138.13-57.5Q572-504 572-585t-56.87-138.5Q458.25-781 377-781q-82.08 0-139.54 57.5Q180-666 180-585t57.46 138.5Q294.92-389 377-389Z',
+    close: 'M480-438 270-228q-9 9-21 9t-21-9q-9-9-9-21t9-21l210-210-210-210q-9-9-9-21t9-21q9-9 21-9t21 9l210 210 210-210q9-9 21-9t21 9q9 9 9 21t-9 21L522-480l210 210q9 9 9 21t-9 21q-9 9-21 9t-21-9L480-438Z',
+    share_fill: 'M686-80q-47.5 0-80.75-33.25T572-194q0-8 5-34L278-403q-16.28 17.34-37.64 27.17Q219-366 194-366q-47.5 0-80.75-33T80-480q0-48 33.25-81T194-594q24 0 45 9.3 21 9.29 37 25.7l301-173q-2-8-3.5-16.5T572-766q0-47.5 33.25-80.75T686-880q47.5 0 80.75 33.25T800-766q0 47.5-33.25 80.75T686-652q-23.27 0-43.64-9Q622-670 606-685L302-516q3 8 4.5 17.5t1.5 18q0 8.5-1 16t-3 15.5l303 173q16-15 36.09-23.5 20.1-8.5 43.07-8.5Q734-308 767-274.75T800-194q0 47.5-33.25 80.75T686-80Z',
+    swords_fill: 'M769-88 645-212l-67 67q-19 19-35.5 4.5T514-167q-17-17-17-42t17-42l199-199q17-17 42-17t42 17q12 12 26.5 28.5T819-386l-67 67 123 124q9 9 9 21t-9 21l-64 65q-9 9-21 9t-21-9Zm102-627L427-271l19 20q30 30 15 57t-37 49q-9 9-21 9t-21-9l-67-67L191-88q-9 9-21 9t-21-9l-65-65q-9-9-9-21t9-21l124-124-67-67q-9-9-9-21t9-21q22-22 49-37t57 15l20 19 435-435q8-8 19.5-13t23.5-5h105q13 0 21.5 8.5T880-854v118q0 6-2 11t-7 10ZM257-547 98-706q-8-8-13-19.5T80-749v-105q0-13 8.5-21.5T110-884h105q12 0 23.5 5t19.5 13l159 159q9 9 9 21t-9 21L299-547q-9 9-21 9t-21-9Z',
+    shield_person: 'M382.5-489.5Q343-529 343-587t39.5-97.5Q422-724 480-724t97.5 39.5Q617-645 617-587t-39.5 97.5Q538-450 480-450t-97.5-39.5Zm153-42Q557-553 557-587t-21.5-55.5Q514-664 480-664t-55.5 21.5Q403-621 403-587t21.5 55.5Q446-510 480-510t55.5-21.5ZM480-480Zm0-337-260 98v196q0 63 17.5 120.5T287-296q46-25 93.5-37.5T480-346q52 0 99.5 12.5T673-296q32-49 49.5-106.5T740-523v-196l-260-98Zm-78 541q-39 10-77 30 32 35 71 61.5t84 41.5q45-15 84-41.5t71-61.5q-38-20-77-30t-78-10q-39 0-78 10Zm68.5 191q-4.5-1-9.5-3-139-47-220-168.5T160-523v-196q0-19 11-34.5t28-22.5l260-97q11-4 21-4t21 4l260 97q17 7 28 22.5t11 34.5v196q0 145-81 266.5T499-88q-5 2-9.5 3t-9.5 1q-5 0-9.5-1Z',
+    add: 'M450-450H230q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h220v-220q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v220h220q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H510v220q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37v-220Z',
+    remove: 'M230-450q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h500q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H230Z',
+    workspace_premium_fill: 'm480-483-76 57q-5 3-9.5 0t-2.5-8l29-93-78-61q-5-3-2.5-8t7.5-5h94l31-96q2-5 7-5t7 5l30 96h95q5 0 7.5 5t-2.5 8l-78 61 28 93q2 5-2 8t-9 0l-76-57Zm0 364L284-53q-14 5-27-4.5T244-82v-262q-45-47-64.5-103T160-560q0-136 92-228t228-92q136 0 228 92t92 228q0 57-19.5 113T716-344v262q0 15-13 24.5T676-53l-196-66Zm184.5-256.5Q740-451 740-560t-75.5-184.5Q589-820 480-820t-184.5 75.5Q220-669 220-560t75.5 184.5Q371-300 480-300t184.5-75.5Z',
   };
 
   // Brand marks: Simple Icons (CC0), 24×24.
@@ -68,6 +76,10 @@
     ['ranks', 'Звания', 'military_tech'],
     ['squad', 'Сквад', 'groups'],
   ];
+  var ADMIN_TAB = ['admin', 'Панель', 'shield_person'];
+  // Rank order, lowest first; X is the founder's.
+  var ROMANS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
+  var RANK_KEY = 'finya.rank';
   // Links of the "Сквад" tab: [key in data.squad.links, icon, title, subtitle, tint].
   // "brand:" icons are Simple Icons; the tint colours the icon tile.
   var LINK_GROUPS = [
@@ -161,6 +173,36 @@
 
   function anyIcon(name, cls) {
     return name.indexOf('brand:') === 0 ? brand(name.slice(6), cls) : icon(name, cls);
+  }
+
+  // Shoulder-board insignia of a rank (img/ranks, cut out from the owner's art).
+  function insignia(roman, cls) {
+    return h('img', { class: 'insignia' + (cls ? ' ' + cls : ''), src: 'img/ranks/' + roman + '.webp',
+      alt: '', loading: 'lazy', decoding: 'async' });
+  }
+
+  function plural(n, one, few, many) {
+    var m10 = n % 10;
+    var m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+    return many;
+  }
+
+  // Per-device memory (the last rank seen); the page works without it.
+  function remember(key, value) {
+    try {
+      if (value === undefined) return window.localStorage.getItem(key);
+      window.localStorage.setItem(key, value);
+    } catch (e) { /* storage blocked */ }
+    return null;
+  }
+
+  function vibrate(kind) {
+    try {
+      if (kind === 'success' || kind === 'error') tg.HapticFeedback.notificationOccurred(kind);
+      else tg.HapticFeedback.impactOccurred(kind);
+    } catch (e) { /* not supported */ }
   }
 
   function loader() {
@@ -353,14 +395,107 @@
     var total = h('p', { class: 'xp-total' }, String(me.xp), h('small', { text: 'XP' }));
     countUp(total.firstChild, me.xp);
     return h('section', { class: 'hero' },
-      icon('military_tech_fill', 'deco'),
+      h('div', { class: 'medal', 'aria-hidden': 'true' }, insignia(me.rank.roman)),
       h('div', { class: 'who' }, avatar(me),
         h('div', { class: 'who-text' },
           h('p', { class: 'name', text: me.name }),
-          h('span', { class: 'rank-chip' }, icon('military_tech_fill'), me.rank.roman + ' · ' + me.rank.name))),
+          h('div', { class: 'chips' },
+            h('span', { class: 'rank-chip' }, icon('military_tech_fill'), me.rank.roman + ' · ' + me.rank.name),
+            streakChip(me.streak)))),
       total,
       progress,
-      note ? h('div', { class: 'note', text: note }) : null);
+      note ? h('div', { class: 'note', text: note }) : null,
+      shareButton(me));
+  }
+
+  // Days in a row with XP: the flame grows with the streak and cools down
+  // when today has no XP yet.
+  function streakChip(st) {
+    if (!st || !st.days) return null;
+    var level = st.days >= 7 ? 3 : st.days >= 3 ? 2 : 1;
+    return h('span', {
+      class: 'streak-chip lvl' + level + (st.today ? '' : ' cold'),
+      title: st.today ? 'Серия активных дней' : 'Заработай XP сегодня, чтобы серия не сгорела',
+    }, h('span', { class: 'flame' }, icon('local_fire_department_fill')),
+      st.days + ' ' + plural(st.days, 'день', 'дня', 'дней'));
+  }
+
+  // ---- story card -------------------------------------------------------------
+
+  function canShareStory() {
+    try { return !!(tg && tg.shareToStory && tg.isVersionAtLeast('7.8')); } catch (e) { return false; }
+  }
+
+  function shareStory(me) {
+    var media = new URL('img/story/' + me.rank.roman + '.jpg', window.location.href).href;
+    var text = 'Моё звание в T.N.K.C SQUAD: ' + me.rank.roman + ' · ' + me.rank.name + ', ' + me.xp + ' XP 🔥\n@THKC_SQUAD';
+    vibrate('medium');
+    try { tg.shareToStory(media, { text: text }); } catch (e) { /* old client */ }
+  }
+
+  function shareButton(me) {
+    if (!canShareStory()) return null;
+    return h('button', { class: 'btn-tonal share ripple', onclick: function () { shareStory(me); } },
+      icon('share_fill'), 'В сторис');
+  }
+
+  // ---- rank-up celebration ----------------------------------------------------
+
+  function checkRankUp(me) {
+    var seen = remember(RANK_KEY);
+    remember(RANK_KEY, me.rank.roman);
+    var forced = window.location.hash === '#rankup';
+    if (!forced && (!seen || ROMANS.indexOf(me.rank.roman) <= ROMANS.indexOf(seen))) return;
+    setTimeout(function () { celebrate(me); }, reduceMotion ? 0 : 700);
+  }
+
+  function celebrate(me) {
+    var layer;
+    function close() {
+      layer.classList.add('leave');
+      setTimeout(function () { layer.remove(); }, reduceMotion ? 0 : 300);
+    }
+    layer = h('div', { class: 'celebrate', role: 'dialog', 'aria-label': 'Новое звание' },
+      h('div', { class: 'rays', 'aria-hidden': 'true' }),
+      h('div', { class: 'flash', 'aria-hidden': 'true' }),
+      h('div', { class: 'celebrate-body' },
+        h('p', { class: 'kicker', text: 'Новое звание' }),
+        h('div', { class: 'medal-big' }, insignia(me.rank.roman)),
+        h('h2', null, h('em', { text: me.rank.roman }), ' · ' + me.rank.name),
+        h('p', { class: 'sub', text: 'Так держать, ' + me.name + '. Сквад видит.' }),
+        h('div', { class: 'celebrate-actions' },
+          canShareStory() ? h('button', { class: 'btn-tonal ripple', onclick: function () { shareStory(me); } },
+            icon('share_fill'), 'В сторис') : null,
+          h('button', { class: 'btn-filled ripple', onclick: close }, icon('check'), 'Служу Скваду!'))));
+    document.body.appendChild(layer);
+    vibrate('success');
+  }
+
+  // ---- rival ------------------------------------------------------------------
+
+  function rivalCard(me) {
+    if (me.founder) return null;
+    if (!me.rival) {
+      if (me.place !== 1) return null;
+      return h('section', { class: 'card rival top1' },
+        h('div', { class: 'rival-row' },
+          h('div', { class: 'lead place p1', text: '1' }),
+          h('div', { class: 'body' }, h('b', { text: 'Ты на вершине Сквада' }), h('span', { text: 'Держи место, за тобой охотятся' })),
+          icon('workspace_premium_fill', 'icon crown')));
+    }
+    var r = me.rival;
+    var ind = h('i', { class: 'ind' });
+    setTimeout(function () {
+      ind.style.width = Math.max(2, Math.min(100, Math.round((me.xp / (r.xp + 1)) * 100))) + '%';
+    }, reduceMotion ? 0 : 300);
+    return h('section', { class: 'card rival press ripple', role: 'button', tabindex: '0', onclick: function () { selectTab('top'); } },
+      h('div', { class: 'rival-row' },
+        h('div', { class: 'lead primary' }, icon('swords_fill')),
+        h('div', { class: 'body' },
+          h('b', null, 'Обгони ', h('em', { text: '#' + r.place + ' ' + r.name })),
+          h('span', null, 'осталось ', h('strong', { text: r.left + ' XP' }))),
+        icon('chevron_right', 'icon go')),
+      h('div', { class: 'rival-bar' }, ind));
   }
 
   function stats(me) {
@@ -381,13 +516,26 @@
     var today = days.length - 1;
     return h('section', { class: 'card' }, h('h3', { text: 'XP за 7 дней' }),
       h('div', { class: 'chart' }, days.map(function (d, i) {
-        var bar = h('i');
-        bar.style.height = Math.round((d.xp / max) * 92) + 'px';
+        // A finished day without XP is a cracked shard; today can still be saved.
+        var cracked = !d.xp && i !== today;
+        var bar = h('i', null, cracked ? crack() : null);
+        bar.style.height = cracked ? '' : Math.round((d.xp / max) * 92) + 'px';
         bar.style.setProperty('--i', String(i));
-        return h('div', { class: 'col' + (d.xp ? ' has' : '') + (i === today ? ' today' : '') },
+        return h('div', { class: 'col' + (d.xp ? ' has' : '') + (cracked ? ' cracked' : '') + (i === today ? ' today' : '') },
           h('em', { text: d.xp ? String(d.xp) : '' }), bar,
           h('span', { text: i === today ? 'Сег' : WEEKDAYS[msk(d.day).getUTCDay()] }));
       })));
+  }
+
+  function crack() {
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 36 22');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    svg.setAttribute('aria-hidden', 'true');
+    var path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', 'M19 0 L15 7 L21 11 L14 16 L18 22');
+    svg.appendChild(path);
+    return svg;
   }
 
   function withDividers(items) {
@@ -451,8 +599,8 @@
 
   function rankItem(roman, name, sub, reached) {
     return h('li', { class: 'item' + (reached ? '' : ' locked') },
-      h('div', { class: 'lead ' + (reached ? 'primary' : 'muted'), text: roman }),
-      h('div', { class: 'body' }, h('b', { text: name }), h('span', { text: sub })),
+      h('div', { class: 'lead badge' }, insignia(roman, 'mini')),
+      h('div', { class: 'body' }, h('b', { text: roman + ' · ' + name }), h('span', { text: sub })),
       reached ? h('div', { class: 'trail' }, icon('check_circle_fill')) : null);
   }
 
@@ -471,17 +619,55 @@
 
   function banner(sq) {
     var logo = h('img', { class: 'logo', src: 'img/squad-logo.jpg', alt: '' });
+    var ring = h('div', { class: 'logo-ring' }, logo);
+    var taps = [];
+    // Five quick taps on the logo flood the screen (easter egg).
+    ring.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var t = Date.now();
+      taps = taps.filter(function (x) { return t - x < 2500; });
+      taps.push(t);
+      ring.classList.remove('tap');
+      void ring.offsetWidth;
+      ring.classList.add('tap');
+      vibrate(taps.length >= 5 ? 'heavy' : 'light');
+      if (taps.length >= 5) { taps = []; bloodWave(); }
+    });
     return h('section', {
       class: 'banner press ripple', role: 'link', tabindex: '0', 'aria-label': 'Открыть канал T.N.K.C SQUAD',
       onclick: function () { openLink(sq.channel); },
     },
       h('div', { class: 'cover', 'aria-hidden': 'true' }),
       h('div', { class: 'banner-row' },
-        h('div', { class: 'logo-ring' }, logo),
+        ring,
         h('div', { class: 'banner-text' },
           h('b', null, 'T.N.K.C ', h('em', { text: 'SQUAD' })),
           h('span', { text: 'Токийский · Неудержимый · Круг · Свободы' })),
         icon('chevron_right', 'icon go')));
+  }
+
+  function bloodWave() {
+    if (document.querySelector('.blood')) return;
+    var wave = document.createElementNS(SVG, 'svg');
+    wave.setAttribute('viewBox', '0 0 1200 120');
+    wave.setAttribute('preserveAspectRatio', 'none');
+    wave.setAttribute('class', 'wave-top');
+    var path = document.createElementNS(SVG, 'path');
+    path.setAttribute('d', 'M0 60 Q150 0 300 60 T600 60 T900 60 T1200 60 V120 H0 Z');
+    wave.appendChild(path);
+    var layer = h('div', { class: 'blood', 'aria-hidden': 'true' },
+      h('div', { class: 'blood-fill' }, wave),
+      h('p', { class: 'blood-text' }, 'Свобода', h('br'), 'начинается', h('br'), h('em', { text: 'с нас' })));
+    function drain() {
+      if (layer.classList.contains('drain')) return;
+      layer.classList.add('drain');
+      setTimeout(function () { layer.remove(); }, reduceMotion ? 0 : 900);
+    }
+    layer.addEventListener('click', drain);
+    document.body.appendChild(layer);
+    setTimeout(function () { vibrate('heavy'); }, 500);
+    setTimeout(function () { vibrate('heavy'); }, 900);
+    setTimeout(drain, 3200);
   }
 
   function newsCard(sq) {
@@ -541,16 +727,286 @@
   function viewBody() {
     var d = state.data;
     if (state.tab === 'squad') return squadBody(d.squad);
+    if (state.tab === 'admin') return adminBody();
     if (state.tab === 'top') return [topCard(d.top)];
     if (state.tab === 'ranks') return ranksCards(d.ranks, d.rules, d.me);
     return [chart(d.chart), historyCard(d.history)];
+  }
+
+  // ---- owner's rank panel -------------------------------------------------------
+
+  var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
+  var adminRoot = null;
+
+  function api(name, input) {
+    return new Promise(function (resolve, reject) {
+      tg.Serverless.call(name, input, function (err, data) {
+        if (err || !data) reject(err || new Error('empty'));
+        else resolve(data);
+      });
+    });
+  }
+
+  function errorText(err) {
+    return err && err.type === 'ENDPOINT_ERROR' && err.message ? err.message : 'Не получилось. Проверь интернет и повтори.';
+  }
+
+  function opId() {
+    var a = new Uint8Array(10);
+    try { window.crypto.getRandomValues(a); } catch (e) { for (var i = 0; i < a.length; i++) a[i] = Math.floor(Math.random() * 256); }
+    return Array.prototype.map.call(a, function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
+  }
+
+  function snackbar(text) {
+    var old = document.querySelector('.snackbar');
+    if (old) old.remove();
+    var bar = h('div', { class: 'snackbar', role: 'status', text: text });
+    document.body.appendChild(bar);
+    setTimeout(function () { bar.classList.add('leave'); }, 2600);
+    setTimeout(function () { bar.remove(); }, 3000);
+  }
+
+  // Built once per visit; drawAdmin() refreshes the header and the list so
+  // the search field keeps focus while results arrive.
+  function adminBody() {
+    var search = h('input', {
+      class: 'field-input', type: 'search', placeholder: 'Имя, @username или ID', value: admin.query,
+      autocomplete: 'off', enterkeyhint: 'search',
+    });
+    var clear = h('button', { class: 'field-clear ripple', type: 'button', 'aria-label': 'Очистить', hidden: !admin.query },
+      icon('close'));
+    var timer = null;
+    search.addEventListener('input', function () {
+      clear.hidden = !search.value;
+      clearTimeout(timer);
+      timer = setTimeout(function () { admin.query = search.value.trim(); loadAdmin(true); }, 350);
+    });
+    clear.addEventListener('click', function () {
+      search.value = '';
+      clear.hidden = true;
+      admin.query = '';
+      loadAdmin(true);
+    });
+    adminRoot = h('div', { class: 'admin' },
+      h('section', { class: 'card admin-head' }),
+      h('div', { class: 'field' }, icon('search'), search, clear),
+      h('section', { class: 'card list-card' }));
+    drawAdmin();
+    if (!admin.loaded) loadAdmin(true);
+    return [adminRoot];
+  }
+
+  function loadAdmin(reset) {
+    var seq = ++admin.seq;
+    var page = reset ? 0 : admin.page + 1;
+    if (reset) { admin.loaded = false; admin.items = []; drawAdmin(); }
+    api('ranks', { action: 'list', query: admin.query, page: page }).then(function (data) {
+      if (seq !== admin.seq) return;
+      admin.items = reset ? data.items : admin.items.concat(data.items);
+      admin.page = data.page;
+      admin.pages = data.pages;
+      admin.total = data.total;
+      admin.members = data.members;
+      admin.ranks = data.ranks;
+      admin.loaded = true;
+      drawAdmin();
+    }, function (err) {
+      if (seq !== admin.seq) return;
+      admin.loaded = true;
+      drawAdmin();
+      snackbar(errorText(err));
+    });
+  }
+
+  function adminRow(it) {
+    return h('li', { class: 'item admin-row ripple', role: 'button', tabindex: '0', onclick: function () { openMember(it.id); } },
+      h('div', { class: 'lead badge' }, insignia(it.rank.roman, 'mini')),
+      h('div', { class: 'body' },
+        h('b', null, it.name, it.manual ? h('i', { class: 'tag', text: 'ручное' }) : null, it.founder ? h('i', { class: 'tag gold', text: 'основатель' }) : null),
+        h('span', { text: (it.username ? '@' + it.username + ' · ' : '') + 'ID ' + it.id + ' · ' + it.rank.roman + ' ' + it.rank.name })),
+      h('div', { class: 'trail', text: it.xp + ' XP' }));
+  }
+
+  function drawAdmin() {
+    if (!adminRoot) return;
+    var dist = admin.ranks.length ? h('div', { class: 'dist' }, admin.ranks.map(function (r) {
+      return h('div', { class: 'dist-item' + (r.count ? '' : ' none') }, insignia(r.roman, 'mini'),
+        h('b', { text: String(r.count) }), h('span', { text: r.roman }));
+    })) : null;
+    adminRoot.querySelector('.admin-head').replaceChildren(
+      h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('shield_person_fill')),
+        h('div', { class: 'body' }, h('b', { text: 'Панель званий' }),
+          h('span', { text: admin.members ? 'Участников: ' + admin.members + ' · видишь только ты' : 'Видишь только ты' }))),
+      dist);
+    var body;
+    if (!admin.loaded) {
+      body = h('div', { class: 'state small' }, loader());
+    } else if (!admin.items.length) {
+      body = h('p', { class: 'empty', text: admin.query ? 'Никого не нашёл. Попробуй Telegram ID.' : 'Пока нет участников.' });
+    } else {
+      body = h('ul', { class: 'list' }, withDividers(admin.items.map(adminRow)));
+    }
+    var more = admin.loaded && admin.page + 1 < admin.pages
+      ? h('button', { class: 'btn-tonal more ripple', onclick: function () { loadAdmin(false); } }, 'Показать ещё')
+      : null;
+    adminRoot.querySelector('.list-card').replaceChildren(
+      h('h3', { text: admin.query ? 'Найдено: ' + admin.total : 'Все участники · по XP' }), body, more);
+  }
+
+  // Bottom sheet with one member: rank, XP and the audit history.
+  function openMember(id) {
+    vibrate('light');
+    var content = h('div', { class: 'sheet-body' }, h('div', { class: 'state small' }, loader()));
+    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
+    var scrim = h('div', { class: 'scrim' });
+    function close() {
+      scrim.classList.add('leave');
+      sheet.classList.add('leave');
+      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
+    }
+    scrim.addEventListener('click', close);
+    document.body.appendChild(scrim);
+    document.body.appendChild(sheet);
+    api('ranks', { action: 'user', id: id }).then(function (c) { drawMember(content, c, close); },
+      function (err) { content.replaceChildren(h('p', { class: 'empty', text: errorText(err) })); });
+  }
+
+  function source(c) {
+    if (c.founder) return 'закреплено за основателем';
+    return c.manual ? 'ручное · по XP было бы ' + c.auto.roman : 'по XP';
+  }
+
+  function historyText(e) {
+    if (e.action === 'adjust_xp') return 'XP ' + e.beforeXp + ' → ' + e.afterXp + ' (' + signed(e.afterXp - e.beforeXp) + ')';
+    return 'Звание ' + (e.beforeRank || 'авто') + ' → ' + (e.afterRank || 'авто');
+  }
+
+  function drawMember(content, c, close) {
+    var parts = [
+      h('div', { class: 'member' },
+        h('div', { class: 'member-medal' }, insignia(c.rank.roman)),
+        h('div', { class: 'body' },
+          h('h2', { text: c.name }),
+          h('span', { text: (c.username ? '@' + c.username + ' · ' : '') + 'ID ' + c.id }),
+          h('span', { class: 'rank-chip' }, icon('military_tech_fill'), c.rank.roman + ' · ' + c.rank.name),
+          h('small', { text: source(c) }))),
+      h('div', { class: 'stats' },
+        h('div', { class: 'stat' }, h('b', { text: String(c.xp) }), h('span', { text: 'XP всего' })),
+        h('div', { class: 'stat' }, h('b', { text: signed(c.week) }), h('span', { text: 'за неделю' })),
+        h('div', { class: 'stat' }, h('b', { text: signed(c.today) }), h('span', { text: 'сегодня' }))),
+    ];
+    if (c.founder) {
+      parts.push(h('p', { class: 'note', text: 'X · Основатель SQUAD закреплён за владельцем и не меняется.' }));
+    } else {
+      var current = c.manual ? c.rank.roman : null;
+      var chips = [h('button', { class: 'rank-opt ripple' + (current ? '' : ' on'), onclick: function () {
+        if (current) askRank(c, null, content, close);
+      } }, h('b', { text: 'Авто' }), h('span', { text: 'по XP: ' + c.auto.roman }))];
+      ROMANS.slice(0, 9).forEach(function (roman) {
+        chips.push(h('button', { class: 'rank-opt ripple' + (current === roman ? ' on' : ''), onclick: function () {
+          if (current !== roman) askRank(c, roman, content, close);
+        } }, insignia(roman, 'mini'), h('b', { text: roman })));
+      });
+      var amount = h('input', { class: 'field-input', type: 'number', inputmode: 'numeric', min: '1', placeholder: 'Своё число' });
+      function custom(sign) {
+        var n = parseInt(amount.value, 10);
+        if (!(n > 0)) { snackbar('Введи целое число больше нуля.'); return; }
+        askXp(c, sign * n, content, close);
+      }
+      parts.push(
+        h('h3', { class: 'group-title', text: 'Звание' }),
+        h('div', { class: 'rank-grid' }, chips),
+        h('h3', { class: 'group-title', text: 'XP' }),
+        h('div', { class: 'xp-quick' }, [-100, -10, 10, 50, 100, 500].map(function (n) {
+          return h('button', { class: 'xp-btn ripple' + (n < 0 ? ' minus' : ''), onclick: function () { askXp(c, n, content, close); } }, signed(n));
+        })),
+        h('div', { class: 'field xp-custom' }, amount,
+          h('button', { class: 'xp-btn minus ripple', onclick: function () { custom(-1); } }, icon('remove')),
+          h('button', { class: 'xp-btn ripple', onclick: function () { custom(1); } }, icon('add'))));
+    }
+    parts.push(h('h3', { class: 'group-title', text: 'История изменений' }),
+      c.history.length
+        ? h('ul', { class: 'list' }, withDividers(c.history.map(function (e) {
+          return h('li', { class: 'item' }, h('div', { class: 'lead muted' }, icon('history')),
+            h('div', { class: 'body' }, h('b', { text: historyText(e) }), h('span', { text: when(e.at) })));
+        })))
+        : h('p', { class: 'empty', text: 'Ручных изменений пока не было.' }),
+      h('button', { class: 'btn-tonal close-sheet ripple', onclick: close }, 'Закрыть'));
+    content.replaceChildren.apply(content, parts);
+  }
+
+  function rankName(roman) {
+    var r = state.data.ranks.filter(function (x) { return x.roman === roman; })[0];
+    return r ? roman + ' · ' + r.name : roman;
+  }
+
+  function askRank(c, roman, content, close) {
+    confirmDialog(roman ? 'Выдать звание?' : 'Вернуть звание по XP?', [
+      c.name,
+      'Звание: ' + c.rank.roman + ' → ' + (roman ? rankName(roman) : rankName(c.auto.roman) + ' (авто)'),
+      'XP не меняется: ' + c.xp,
+    ], function () {
+      return apply(content, close, { action: 'rank', id: c.id, roman: roman, op: opId() });
+    });
+  }
+
+  function askXp(c, delta, content, close) {
+    var after = Math.max(0, c.xp + delta);
+    confirmDialog(delta > 0 ? 'Добавить XP?' : 'Снять XP?', [
+      c.name,
+      'XP: ' + c.xp + ' → ' + after + ' (' + signed(after - c.xp) + ')',
+      c.manual ? 'Звание ручное и не изменится.' : 'Звание пересчитается по XP.',
+    ], function () {
+      return apply(content, close, { action: 'xp', id: c.id, delta: delta, op: opId() });
+    });
+  }
+
+  function apply(content, close, input) {
+    return api('ranks', input).then(function (c) {
+      drawMember(content, c, close);
+      admin.items = admin.items.map(function (it) {
+        return it.id === c.id ? { id: c.id, name: c.name, username: c.username, xp: c.xp, rank: c.rank, manual: c.manual, founder: c.founder } : it;
+      });
+      drawAdmin();
+      vibrate('success');
+      snackbar('Сохранено');
+    }, function (err) {
+      vibrate('error');
+      snackbar(errorText(err));
+    });
+  }
+
+  // Material 3 basic dialog: title, supporting lines, Cancel / Confirm.
+  function confirmDialog(title, lines, onConfirm) {
+    var scrim = h('div', { class: 'scrim top' });
+    var ok = h('button', { class: 'btn-filled ripple' }, 'Подтвердить');
+    var box = h('div', { class: 'dialog', role: 'alertdialog', 'aria-modal': 'true' },
+      h('h2', { text: title }),
+      lines.map(function (l, i) { return h('p', { class: i ? '' : 'who-line', text: l }); }),
+      h('div', { class: 'dialog-actions' },
+        h('button', { class: 'btn-text ripple', onclick: close }, 'Отмена'), ok));
+    function close() {
+      scrim.classList.add('leave');
+      box.classList.add('leave');
+      setTimeout(function () { scrim.remove(); box.remove(); }, reduceMotion ? 0 : 200);
+    }
+    ok.addEventListener('click', function () {
+      if (ok.disabled) return;
+      ok.disabled = true;
+      ok.replaceChildren(loader());
+      Promise.resolve(onConfirm()).then(close, close);
+    });
+    scrim.addEventListener('click', close);
+    document.body.appendChild(scrim);
+    document.body.appendChild(box);
   }
 
   // ---- navigation bar -------------------------------------------------------
 
   // Built once, so the active indicator animates between destinations.
   function navbar() {
-    dests = TABS.map(function (t) {
+    var tabs = state.data.admin ? TABS.concat([ADMIN_TAB]) : TABS;
+    dests = tabs.map(function (t) {
       var pill = h('span', { class: 'pill' }, icon(state.tab === t[0] ? t[2] + '_fill' : t[2]));
       var btn = h('button', {
         class: 'dest', role: 'tab', 'aria-selected': String(state.tab === t[0]),
@@ -563,14 +1019,18 @@
   }
 
   // Profile tabs share the hero and stats; "Сквад" replaces the whole page.
+  function ownPage(tab) {
+    return tab === 'squad' || tab === 'admin';
+  }
+
   function pageBody() {
     view.replaceChildren.apply(view, viewBody());
-    return state.tab === 'squad' ? [view] : [me, view];
+    return ownPage(state.tab) ? [view] : [me, view];
   }
 
   function selectTab(tab) {
     if (state.tab === tab) return;
-    var crossing = (tab === 'squad') !== (state.tab === 'squad');
+    var crossing = ownPage(tab) || ownPage(state.tab);
     state.tab = tab;
     haptic();
     dests.forEach(function (d) {
@@ -585,16 +1045,18 @@
 
   function render() {
     var d = state.data;
-    me = h('div', { class: 'me' }, enter(hero(d.me), 1), enter(stats(d.me), 2));
+    var rival = rivalCard(d.me);
+    me = h('div', { class: 'me' }, enter(hero(d.me), 1), enter(stats(d.me), 2), rival ? enter(rival, 3) : null);
     var cards = viewBody();
     cards.forEach(function (c, i) { enter(c, 3 + i); });
     view = h('div', { class: 'view' }, cards);
-    page = h('div', { class: 'page' }, state.tab === 'squad' ? null : me, view);
+    page = h('div', { class: 'page' }, ownPage(state.tab) ? null : me, view);
     app.replaceChildren(enter(banner(d.squad), 0), page,
       enter(h('p', { class: 'foot', text: 'FINYA HELPER · T.N.K.C SQUAD' }), 3 + cards.length));
     if (nav) nav.remove();
     nav = navbar();
     document.body.appendChild(nav);
+    checkRankUp(d.me);
   }
 
   // ---- data -----------------------------------------------------------------
