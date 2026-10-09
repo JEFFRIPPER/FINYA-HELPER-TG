@@ -121,7 +121,7 @@ main {
   from { opacity: 0; transform: translate3d(0, 24px, 0); }
   to { opacity: 1; transform: none; }
 }
-.view, .swap { transform-origin: 50% 0; }
+.page, .view, .swap { transform-origin: 50% 0; }
 .fade-out { animation: fade-out 90ms var(--ease-emph-accel) forwards; }
 .fade-in { animation: fade-in 210ms var(--ease-emph-decel) forwards; }
 @keyframes fade-out { to { opacity: 0; } }
@@ -481,6 +481,202 @@ main {
 .dest[aria-selected="true"] .pill { color: #fff; }
 .dest[aria-selected="true"] .pill::before { opacity: 1; transform: none; }
 .dest:active .pill .icon { transform: scale(0.88); }
+
+/* ---- pressed glow --------------------------------------------------------- */
+/* Cards light up their border while pressed and fade back on release. */
+.press {
+  transition: border-color var(--dur-medium) var(--ease-standard), box-shadow var(--dur-medium) var(--ease-standard),
+    transform var(--dur-medium) var(--ease-standard);
+}
+.press.pressed {
+  border-color: var(--red);
+  box-shadow: 0 0 0 1px var(--red) inset, 0 0 22px var(--glow), 0 0 44px -8px var(--glow);
+  transform: scale(0.985);
+  transition-duration: var(--dur-short);
+}
+/* Red state layer and ripple on glowing cards instead of a grey one. */
+.press.ripple::before, .press .wave { background: var(--red); }
+
+/* ---- squad banner ---------------------------------------------------------- */
+.banner {
+  display: block;
+  border-radius: 28px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+  box-shadow: 0 18px 48px -20px rgba(220, 0, 40, 0.75);
+  margin-bottom: 12px;
+  outline: none;
+}
+.banner .cover {
+  height: 132px;
+  background: url("img/squad-cover.jpg") 50% 46% / cover no-repeat;
+  animation: kenburns 24s ease-in-out infinite alternate;
+  transform-origin: 50% 45%;
+}
+/* The cover fades into the card below it. */
+.banner::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 72px;
+  height: 62px;
+  background: linear-gradient(180deg, rgba(20, 5, 7, 0), var(--surface-solid));
+  pointer-events: none;
+}
+@keyframes kenburns {
+  from { transform: scale(1); }
+  to { transform: scale(1.12) translate3d(0, 4px, 0); }
+}
+.banner-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: -30px;
+  padding: 0 16px 14px;
+}
+.logo-ring {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  padding: 2px;
+  background: conic-gradient(from 0deg, var(--red), #4a0010, var(--red), #4a0010, var(--red));
+  animation: halo 3.2s ease-in-out infinite;
+}
+.logo { display: block; width: 100%; height: 100%; border-radius: 50%; border: 2px solid var(--surface-solid); object-fit: cover; }
+.banner-text { flex: 1; min-width: 0; padding-top: 26px; }
+.banner-text b { display: block; font-size: 20px; line-height: 26px; font-weight: 700; letter-spacing: 1px; }
+.banner-text em { font-style: normal; color: var(--red); text-shadow: 0 0 16px var(--glow); }
+.banner-text span { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: 0.4px; color: var(--text-2); }
+.icon.go { width: 22px; height: 22px; fill: var(--text-2); }
+.banner .icon.go { margin-top: 26px; fill: var(--red); }
+
+/* ---- news ------------------------------------------------------------------ */
+.card.news {
+  margin-top: 0;
+  border-color: var(--line-strong);
+  background:
+    radial-gradient(80% 120% at 100% 0%, rgba(255, 34, 64, 0.22), transparent 60%),
+    var(--surface);
+}
+.news-head { display: flex; align-items: center; gap: 14px; }
+.news-text {
+  margin: 12px 0 14px;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  overflow: hidden;
+  cursor: pointer;
+}
+.news-text.open { display: block; }
+.lead.pulse { animation: halo 3.2s ease-in-out infinite; }
+.btn-tonal {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 40px;
+  padding: 0 12px 0 20px;
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  background: rgba(255, 30, 60, 0.14);
+  color: var(--on-container);
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.btn-tonal .icon { width: 18px; height: 18px; }
+
+/* ---- quick actions --------------------------------------------------------- */
+.quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.tile .icon { width: 28px; height: 28px; fill: var(--red); filter: drop-shadow(0 0 8px var(--glow)); }
+
+/* ---- link cards ------------------------------------------------------------ */
+.group { margin-top: 20px; }
+.group-title {
+  margin: 0 4px 8px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--red);
+  text-shadow: 0 0 14px var(--glow-soft);
+}
+.links { display: flex; flex-direction: column; gap: 8px; }
+.link {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 68px;
+  padding: 10px 12px 10px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  text-align: left;
+}
+.tile-icon {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--container);
+  color: var(--red);
+}
+.tile-icon .icon { width: 24px; height: 24px; }
+.tile-icon.green { color: #3ddc84; background: rgba(61, 220, 132, 0.12); }
+.tile-icon.telegram { color: #fff; background: linear-gradient(180deg, #37bbfe, #1e96d1); box-shadow: 0 0 14px rgba(42, 171, 238, 0.35); }
+.tile-icon.tiktok { color: #fff; background: #000; box-shadow: -2px -2px 0 -1px #25f4ee inset, 2px 2px 0 -1px #fe2c55 inset; }
+.tile-icon.discord { color: #fff; background: #5865f2; box-shadow: 0 0 14px rgba(88, 101, 242, 0.35); }
+.tile-icon.vk { color: #fff; background: #0077ff; box-shadow: 0 0 14px rgba(0, 119, 255, 0.35); }
+.tile-icon.twitch { color: #fff; background: #9146ff; box-shadow: 0 0 14px rgba(145, 70, 255, 0.35); }
+.tile-icon.telegram .icon, .tile-icon.tiktok .icon, .tile-icon.discord .icon,
+.tile-icon.vk .icon, .tile-icon.twitch .icon { width: 22px; height: 22px; }
+
+/* ---- projects -------------------------------------------------------------- */
+.projects { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.proj {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: 20px;
+  border: 1px solid var(--line);
+  background:
+    radial-gradient(90% 90% at 100% 0%, rgba(255, 34, 64, 0.12), transparent 60%),
+    var(--surface);
+  text-align: left;
+}
+.proj:last-child:nth-child(odd) { grid-column: 1 / -1; }
+.proj-head { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; }
+.proj-head .icon { width: 18px; height: 18px; fill: var(--text-2); }
+.proj-head b { min-width: 0; font-weight: 500; letter-spacing: 0.3px; overflow-wrap: anywhere; }
+.proj p { margin: 0; font-size: 12px; line-height: 16px; letter-spacing: 0.3px; color: var(--text-2); }
+.lang { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.lang-python { background: #3572a5; }
+.lang-csharp { background: #8b5cf6; }
+.lang-javascript { background: #f1e05a; }
 
 [hidden] { display: none !important; }
 

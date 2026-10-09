@@ -2,13 +2,14 @@
 // name and XP only: no IDs or usernames leave the bot.
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
-import { OWNER_USER_ID } from './config.js';
-import { trackUser } from './store.js';
+import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
+import { getSetting, trackUser } from './store.js';
 import { dayStart, fullName, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
+const NEWS_LIMIT = 1000;
 
 function rankView(rank) {
   return { roman: rank[1], name: rank[2], from: rank[0] };
@@ -66,6 +67,18 @@ async function history(userId) {
   return items.slice(0, HISTORY_LIMIT);
 }
 
+// The "Сквад" tab: the owner's latest announcement and the menu links.
+async function squad() {
+  const news = await getSetting('news');
+  const lastPost = await getSetting('last_channel_post_id');
+  return {
+    news: truncate(String(news || ''), NEWS_LIMIT),
+    channel: SQUAD_CHANNEL_URL,
+    lastPost: lastPost ? `${SQUAD_CHANNEL_URL}/${lastPost}` : null,
+    links: SQUAD_LINKS,
+  };
+}
+
 export async function profileData(user) {
   await trackUser(user);
   const p = await xp.profile(user);
@@ -101,6 +114,7 @@ export async function profileData(user) {
     top: { all: await topView(false, user.id), week: await topView(true, user.id) },
     ranks: xp.RANKS.map((r) => ({ ...rankView(r), reached: automatic ? p.xp >= r[0] : r[1] === current[1] })),
     rules: { comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT },
+    squad: await squad(),
     now: ts,
   };
 }

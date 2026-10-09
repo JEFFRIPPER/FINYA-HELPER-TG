@@ -2,7 +2,7 @@
 import { api } from 'sdk';
 import {
   ADMIN_BUTTON_ICONS, BOT_VERSION, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_URL,
-  SQUAD_CHANNEL_USERNAME, SQUAD_ICON_ID, WEBAPP_URL,
+  SQUAD_CHANNEL_USERNAME, SQUAD_ICON_ID, SQUAD_LINKS as L, WEBAPP_URL,
 } from './config.js';
 import { button, getMe, keyboard, menuButton } from './tg.js';
 import { getSetting, isSubscribed } from './store.js';
@@ -35,7 +35,7 @@ export function homeKeyboard(chatType = 'private') {
     [button('Мой ранг', { callback_data: 'xp:profile' }), button('Топ участников', { callback_data: 'xp:top' })],
   ];
   if (chatType === 'private') rows.push([profileAppButton()]);
-  rows.push([menuButton('👤 ЛС Владельца', { url: 'https://t.me/THKC_SQUAD_CREATOR' })]);
+  rows.push([menuButton('👤 ЛС Владельца', { url: L.owner })]);
   return keyboard(rows);
 }
 
@@ -137,19 +137,19 @@ export function squadKeyboard() {
     return menuButton(label, { url });
   };
   return keyboard([
-    [link('💠 Инфо о Скваде', 'https://t.me/THKC_SQUAD/1449')],
-    [link('📜 Правила беседы', 'https://teletype.in/@creatorsworld/chat_rules')],
-    [link('💠 Папка T.N.K.C SQUAD', 'https://t.me/addlist/Nw_CFrN-wzQ1MThi')],
-    [link('🔥 Красный Сквад', 'https://t.me/addtheme/SQUADTHEME'), link('🟢 Зелёный Сквад', 'https://t.me/addtheme/SQUADGREEN')],
-    [link('🙂 Стикеры ТГК V2', 'https://t.me/addstickers/SquadCorporation')],
-    [link('🎁 Вишлист / желания', 'https://t.me/wishapp/wishlist?startapp=-w15874613')],
-    [link('⌨️ Анонимные вопросы', 'http://t.me/anonaskbot?start=r5z6k1ge4zcjbdzb')],
-    [link('👤 Владелец · TikTok', 'https://www.tiktok.com/@tnkc_squad_corporation?_t=ZS-8xtQVu6AMBl&_r=1'),
-      link('👤 Владелец · Discord', 'https://discord.gg/dCgQvVeJzs')],
-    [link('👤 Владелец · VK', 'https://vk.com/creator_this_world'),
-      link('👤 Владелец · Twitch', 'https://www.twitch.tv/tnkc_squad_creator')],
-    [link('🏦 Приглашение Т-Банк', 'https://tbank.ru/baf/AwvoxOcQ5Ee')],
-    [link('💠 Буст канала', 'https://t.me/boost?c=1192817776')],
+    [link('💠 Инфо о Скваде', L.info)],
+    [link('📜 Правила беседы', L.rules)],
+    [link('💠 Папка T.N.K.C SQUAD', L.folder)],
+    [link('🔥 Красный Сквад', L.themeRed), link('🟢 Зелёный Сквад', L.themeGreen)],
+    [link('🙂 Стикеры ТГК V2', L.stickers)],
+    [link('🎁 Вишлист / желания', L.wishlist)],
+    [link('⌨️ Анонимные вопросы', L.anon)],
+    [link('👤 Владелец · TikTok', L.tiktok),
+      link('👤 Владелец · Discord', L.discord)],
+    [link('👤 Владелец · VK', L.vk),
+      link('👤 Владелец · Twitch', L.twitch)],
+    [link('🏦 Приглашение Т-Банк', L.tbank)],
+    [link('💠 Буст канала', L.boost)],
     [menuButton('⬅️ Назад в Инфо', { callback_data: 'info' })],
   ]);
 }
