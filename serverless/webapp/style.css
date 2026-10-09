@@ -1,3 +1,6 @@
+/* Squad display face: torn brush lettering for titles only (OFL, self-hosted). */
+@font-face { font-family: 'Squad'; font-display: swap; src: url(fonts/squad-latin.woff2) format('woff2'); unicode-range: U+0000-00FF, U+2000-206F; }
+@font-face { font-family: 'Squad'; font-display: swap; src: url(fonts/squad-cyrillic.woff2) format('woff2'); unicode-range: U+0400-045F, U+0490-0491, U+2116; }
 /* "Профиль Фини": always dark, blood red with glow (the SQUAD VPN look),
    Material 3 shapes, type scale and motion. */
 :root {
@@ -121,7 +124,7 @@ main {
   from { opacity: 0; transform: translate3d(0, 24px, 0); }
   to { opacity: 1; transform: none; }
 }
-.page, .view, .swap { transform-origin: 50% 0; }
+.page, .view, .swap, .banner { transform-origin: 50% 0; }
 .fade-out { animation: fade-out 90ms var(--ease-emph-accel) forwards; }
 .fade-in { animation: fade-in 210ms var(--ease-emph-decel) forwards; }
 @keyframes fade-out { to { opacity: 0; } }
@@ -218,20 +221,24 @@ main {
 }
 .who-text { min-width: 0; }
 .name {
-  margin: 0 0 6px;
+  margin: 0;
   font-size: 22px;
   line-height: 28px;
   font-weight: 500;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 .rank-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 32px;
-  padding: 0 12px 0 8px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 5px 12px 5px 8px;
+  line-height: 20px;
   border-radius: 8px;
   border: 1px solid var(--line-strong);
   background: rgba(255, 30, 60, 0.12);
@@ -239,7 +246,8 @@ main {
   font-weight: 500;
   letter-spacing: 0.1px;
 }
-.rank-chip .icon { width: 18px; height: 18px; fill: var(--gold); filter: drop-shadow(0 0 6px rgba(255, 207, 90, 0.6)); }
+span.rank-chip > span { display: block; min-width: 0; color: inherit; white-space: normal; overflow: visible; overflow-wrap: anywhere; }
+.rank-chip .icon { flex: none; width: 18px; height: 18px; fill: var(--gold); filter: drop-shadow(0 0 6px rgba(255, 207, 90, 0.6)); }
 .xp-total {
   position: relative;
   margin: 18px 0 0;
@@ -536,7 +544,7 @@ main {
 }
 .logo { display: block; width: 100%; height: 100%; border-radius: 50%; border: 2px solid var(--surface-solid); object-fit: cover; }
 .banner-text { flex: 1; min-width: 0; padding-top: 26px; }
-.banner-text b { display: block; font-size: 20px; line-height: 26px; font-weight: 700; letter-spacing: 1px; }
+.banner-text b { display: block; font-family: 'Squad', 'Roboto', sans-serif; font-size: 22px; line-height: 28px; font-weight: 400; letter-spacing: 0.5px; white-space: nowrap; transform: skewX(-8deg); transform-origin: 0 100%; }
 .banner-text em { font-style: normal; color: var(--red); text-shadow: 0 0 16px var(--glow); }
 .banner-text span { display: block; margin-top: 2px; font-size: 12px; line-height: 16px; letter-spacing: 0.4px; color: var(--text-2); }
 .icon.go { width: 22px; height: 22px; fill: var(--text-2); }
@@ -585,7 +593,7 @@ main {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 16px 8px 14px;
+  padding: 16px 4px 14px;
   border-radius: 20px;
   border: 1px solid var(--line);
   background: var(--surface);
@@ -681,8 +689,10 @@ main {
   0%, 100% { transform: translate3d(0, 0, 0) rotate(4deg); }
   50% { transform: translate3d(0, -5px, 0) rotate(2deg); }
 }
-.hero .who { padding-right: 60px; }
+/* The name and chips keep clear of the floating insignia. */
+.hero .who, .hero .chips { padding-right: 72px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hero .chips { position: relative; margin-top: 14px; }
 .lead.badge { background: none; border-radius: 0; box-shadow: none; }
 .insignia.mini { height: 40px; filter: drop-shadow(0 0 6px rgba(255, 30, 60, 0.35)); }
 .item.locked .insignia.mini { filter: grayscale(0.8) brightness(0.7); }
@@ -794,7 +804,7 @@ main {
   70% { opacity: 1; transform: translate3d(0, -8px, 0) scale(1.06) rotate(2deg); }
   100% { opacity: 1; transform: none; }
 }
-.celebrate h2 { margin: 0; font-size: 28px; line-height: 36px; font-weight: 500; animation: rise 600ms var(--ease-emph-decel) 600ms both; }
+.celebrate h2 { margin: 0; font-family: 'Squad', 'Roboto', sans-serif; font-size: 28px; line-height: 36px; font-weight: 400; animation: rise 600ms var(--ease-emph-decel) 600ms both; }
 .celebrate h2 em { font-style: normal; color: var(--red); text-shadow: 0 0 20px var(--glow); }
 .celebrate .sub { margin: 0; color: var(--text-2); animation: rise 600ms var(--ease-emph-decel) 700ms both; }
 .celebrate-actions { display: flex; gap: 8px; margin-top: 18px; animation: rise 600ms var(--ease-emph-decel) 800ms both; }
@@ -823,12 +833,13 @@ main {
 .blood-text {
   position: relative;
   margin: 0;
-  font-size: 44px;
+  font-family: 'Squad', 'Roboto', sans-serif;
+  font-size: clamp(28px, 10vw, 44px);
   line-height: 48px;
-  font-weight: 900;
+  font-weight: 400;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 1px;
   color: #fff;
   text-shadow: 0 0 24px rgba(0, 0, 0, 0.6), 0 4px 0 #3a0008;
   opacity: 0;
@@ -939,9 +950,10 @@ main {
 .handle { width: 32px; height: 4px; margin: 14px auto 10px; border-radius: 2px; background: var(--text-2); opacity: 0.5; }
 .member { display: flex; gap: 16px; align-items: center; }
 .member-medal { flex: none; height: 120px; filter: drop-shadow(0 0 16px rgba(255, 30, 60, 0.6)); animation: medal-in 600ms var(--ease-emph-decel) both; }
-.member .body { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.member .body { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .member h2 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 500; overflow-wrap: anywhere; }
-.member span:not(.rank-chip) { color: var(--text-2); }
+.member .body > span.rank-chip { display: inline-flex; max-width: 100%; color: var(--on-container); white-space: normal; overflow: visible; }
+.member .body > span:not(.rank-chip) { max-width: 100%; color: var(--text-2); white-space: normal; overflow-wrap: anywhere; }
 .member small { color: var(--text-2); font-size: 12px; line-height: 16px; }
 .sheet .stats .stat { align-items: flex-start; }
 .sheet .group { margin-top: 0; }
@@ -969,6 +981,8 @@ main {
 .xp-quick { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
 .xp-btn {
   height: 44px;
+  padding: 0;
+  min-width: 0;
   border-radius: 14px;
   border: 1px solid var(--line-strong);
   background: rgba(255, 30, 60, 0.16);
@@ -978,6 +992,7 @@ main {
   place-items: center;
 }
 .xp-btn.minus { background: rgba(255, 255, 255, 0.04); color: var(--text-2); border-color: var(--line); }
+@media (max-width: 359px) { .xp-quick { grid-template-columns: repeat(3, 1fr); } }
 .xp-custom { margin-top: 8px; gap: 6px; padding-right: 6px; }
 .xp-custom .xp-btn { width: 44px; height: 40px; border-radius: 20px; }
 .btn-tonal.close-sheet { display: flex; margin: 18px auto 0; }

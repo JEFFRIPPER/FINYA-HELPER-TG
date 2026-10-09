@@ -123,6 +123,7 @@
   var page = null;
   var me = null;
   var view = null;
+  var bannerEl = null;
   var nav = null;
   var dests = [];
 
@@ -397,11 +398,10 @@
     return h('section', { class: 'hero' },
       h('div', { class: 'medal', 'aria-hidden': 'true' }, insignia(me.rank.roman)),
       h('div', { class: 'who' }, avatar(me),
-        h('div', { class: 'who-text' },
-          h('p', { class: 'name', text: me.name }),
-          h('div', { class: 'chips' },
-            h('span', { class: 'rank-chip' }, icon('military_tech_fill'), me.rank.roman + ' · ' + me.rank.name),
-            streakChip(me.streak)))),
+        h('div', { class: 'who-text' }, h('p', { class: 'name', text: me.name }))),
+      h('div', { class: 'chips' },
+        h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
+        streakChip(me.streak)),
       total,
       progress,
       note ? h('div', { class: 'note', text: note }) : null,
@@ -888,7 +888,7 @@
         h('div', { class: 'body' },
           h('h2', { text: c.name }),
           h('span', { text: (c.username ? '@' + c.username + ' · ' : '') + 'ID ' + c.id }),
-          h('span', { class: 'rank-chip' }, icon('military_tech_fill'), c.rank.roman + ' · ' + c.rank.name),
+          h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: c.rank.roman + ' · ' + c.rank.name })),
           h('small', { text: source(c) }))),
       h('div', { class: 'stats' },
         h('div', { class: 'stat' }, h('b', { text: String(c.xp) }), h('span', { text: 'XP всего' })),
@@ -1018,9 +1018,10 @@
       h('div', { class: 'navbar-inner' }, dests.map(function (d) { return d.btn; })));
   }
 
-  // Profile tabs share the hero and stats; "Сквад" replaces the whole page.
+  // Each destination is its own screen, like the Squad's apps: the hero and
+  // stats belong to "Активность" only.
   function ownPage(tab) {
-    return tab === 'squad' || tab === 'admin';
+    return tab !== 'activity';
   }
 
   function pageBody() {
@@ -1028,9 +1029,26 @@
     return ownPage(state.tab) ? [view] : [me, view];
   }
 
+  // Fade through to the new destination. The jump back to the top happens
+  // while the old screen is invisible, so nothing scrolls on screen.
+  function switchScreen() {
+    var fading = window.scrollY > 4 ? [bannerEl, page] : [page];
+    clearTimeout(page.swapTimer);
+    [bannerEl, page].forEach(function (el) { el.classList.remove('fade-in'); });
+    fading.forEach(function (el) { el.classList.add('fade-out'); });
+    page.swapTimer = setTimeout(function () {
+      page.replaceChildren.apply(page, pageBody());
+      window.scrollTo(0, 0);
+      fading.forEach(function (el) {
+        el.classList.remove('fade-out');
+        void el.offsetWidth;
+        el.classList.add('fade-in');
+      });
+    }, reduceMotion ? 0 : FADE_OUT_MS);
+  }
+
   function selectTab(tab) {
     if (state.tab === tab) return;
-    var crossing = ownPage(tab) || ownPage(state.tab);
     state.tab = tab;
     haptic();
     dests.forEach(function (d) {
@@ -1038,9 +1056,7 @@
       d.btn.setAttribute('aria-selected', String(on));
       d.pill.replaceChild(icon(on ? d.tab[2] + '_fill' : d.tab[2]), d.pill.querySelector('svg'));
     });
-    if (crossing) swap(page, pageBody);
-    else swap(view, viewBody);
-    window.scrollTo({ top: 0, behavior: reduceMotion ? 'auto' : 'smooth' });
+    switchScreen();
   }
 
   function render() {
@@ -1051,7 +1067,8 @@
     cards.forEach(function (c, i) { enter(c, 3 + i); });
     view = h('div', { class: 'view' }, cards);
     page = h('div', { class: 'page' }, ownPage(state.tab) ? null : me, view);
-    app.replaceChildren(enter(banner(d.squad), 0), page,
+    bannerEl = enter(banner(d.squad), 0);
+    app.replaceChildren(bannerEl, page,
       enter(h('p', { class: 'foot', text: 'FINYA HELPER · T.N.K.C SQUAD' }), 3 + cards.length));
     if (nav) nav.remove();
     nav = navbar();
