@@ -79,6 +79,30 @@ export async function saveToken(token) {
   await setSetting('ym_sync_at', 0);
 }
 
+// /ymping: which hosts the platform can reach, to tell a YooMoney block from a
+// general outbound problem.
+const PING_TARGETS = [
+  ['ЮMoney API', 'POST', `${YM}/api/operation-history`],
+  ['ЮMoney сайт', 'GET', `${YM}/`],
+  ['GitHub Pages', 'GET', SHOP_JSON_URL],
+  ['GitHub API', 'GET', 'https://api.github.com/'],
+];
+
+export async function ping() {
+  const lines = [];
+  for (const [name, method, url] of PING_TARGETS) {
+    const started = Date.now();
+    try {
+      const res = await fetch(url, method === 'POST' ? { method, body: fetch.body.form({ records: '1' }) } : { method });
+      lines.push(`${name}: ответ ${res.status} за ${Date.now() - started} мс`);
+    } catch (err) {
+      const cause = err && err.cause ? ` (${err.cause.code || err.cause.message || err.cause})` : '';
+      lines.push(`${name}: нет связи, ${truncate((err && err.message) || String(err), 120)}${cause} за ${Date.now() - started} мс`);
+    }
+  }
+  return lines;
+}
+
 // ---- labels and products -----------------------------------------------------
 
 export function parseLabel(label) {

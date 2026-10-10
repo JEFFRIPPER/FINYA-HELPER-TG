@@ -353,6 +353,12 @@ async function ymCommand(message, args, codeOnly = false) {
   }
 }
 
+async function ymPingCommand(message) {
+  if (!isAdminUser(message.from)) return;
+  const lines = await shop.ping();
+  await reply(message, `Связь Фини с внешними сайтами:\n\n${lines.join('\n')}`);
+}
+
 // ---- routing ---------------------------------------------------------------
 
 function parseCommand(message) {
@@ -379,6 +385,7 @@ const COMMANDS = {
   posts_retry: (m, s, a) => postsRetryCommand(m, a),
   ym: (m, s, a) => ymCommand(m, a),
   ymcode: (m, s, a) => ymCommand(m, a, true),
+  ymping: (m) => ymPingCommand(m),
 };
 
 export async function onMessage(message) {

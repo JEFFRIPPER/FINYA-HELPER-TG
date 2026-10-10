@@ -140,3 +140,17 @@ test('/ymcode always answers, even when YooMoney cannot be reached', async () =>
   assert.equal(await getSetting('ym_token'), null);
 });
 
+test('/ymping lists which hosts answer', async () => {
+  const mock = await setup();
+  fetchMock.handler = async (url) => {
+    if (url.startsWith('https://yoomoney.ru')) throw new Error('request failed');
+    return { status: 200, json: {} };
+  };
+  await onMessage(privateMessage(OWNER, '/ymping'));
+  const text = mock.called('sendMessage').at(-1).params.text;
+  assert.match(text, /ЮMoney API: нет связи, request failed/);
+  assert.match(text, /GitHub API: ответ 200/);
+  await onMessage(privateMessage(user(5), '/ymping'));
+  assert.equal(mock.called('sendMessage').length, 1);
+});
+
