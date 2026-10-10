@@ -130,3 +130,13 @@ test('Mini App: the owner lists orders and marks them issued; nobody else can', 
   const rows = await db.all('SELECT COUNT(*) AS c FROM shop_orders');
   assert.equal(rows[0].c, 2);
 });
+
+test('/ymcode always answers, even when YooMoney cannot be reached', async () => {
+  const mock = await setup();
+  await setSetting('ym_client_id', CLIENT);
+  fetchMock.handler = async () => { throw new Error('connect ETIMEDOUT'); };
+  await onMessage(privateMessage(OWNER, '/ymcode SOMECODE'));
+  assert.match(mock.called('sendMessage').at(-1).params.text, /не достучалась до ЮMoney: connect ETIMEDOUT/);
+  assert.equal(await getSetting('ym_token'), null);
+});
+

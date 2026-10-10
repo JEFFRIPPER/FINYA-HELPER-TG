@@ -29,7 +29,12 @@ export class ShopError extends Error {
 
 async function ymPost(path, params, token = null) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(`${YM}${path}`, { method: 'POST', headers, body: fetch.body.form(params) });
+  let res;
+  try {
+    res = await fetch(`${YM}${path}`, { method: 'POST', headers, body: fetch.body.form(params) });
+  } catch (err) {
+    throw new ShopError(`Финя не достучалась до ЮMoney: ${truncate((err && err.message) || String(err), 200)}`, 'YM_NET');
+  }
   let data = null;
   try { data = await res.json(); } catch { /* 401 comes without a body */ }
   return { status: res.status, ok: res.ok, data };

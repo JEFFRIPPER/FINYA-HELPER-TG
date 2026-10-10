@@ -346,8 +346,10 @@ async function ymCommand(message, args, codeOnly = false) {
       'с кнопкой «Выдано» есть в «Профиль» → «Панель».');
     await shop.notifyOwner(await shop.sync());
   } catch (err) {
-    if (!(err instanceof shop.ShopError)) throw err;
-    await replyBold(message, `❌ ${escapeHtml(err.message, false)}`);
+    // The code message is already deleted, so the owner must always hear back.
+    if (!(err instanceof shop.ShopError)) await logError('ym', err);
+    const text = err instanceof shop.ShopError ? err.message : `Не получилось: ${truncate((err && (err.description || err.message)) || String(err), 300)}`;
+    await replyBold(message, `❌ ${escapeHtml(text, false)}`);
   }
 }
 
