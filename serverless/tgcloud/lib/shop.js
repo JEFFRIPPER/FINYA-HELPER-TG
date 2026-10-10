@@ -29,7 +29,12 @@ export class ShopError extends Error {
 
 async function ymPost(path, params, token = null) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const res = await fetch(`${YM}${path}`, { method: 'POST', headers, body: fetch.body.form(params) });
+  let res;
+  try {
+    res = await fetch(`${YM}${path}`, { method: 'POST', headers, body: fetch.body.form(params) });
+  } catch (err) {
+    throw new ShopError(`Финя не достучалась до ЮMoney: ${truncate((err && err.message) || String(err), 200)}`, 'YM_NET');
+  }
   let data = null;
   try { data = await res.json(); } catch { /* 401 comes without a body */ }
   return { status: res.status, ok: res.ok, data };
@@ -72,6 +77,30 @@ export async function saveToken(token) {
   await setSetting('ym_token', token);
   await setSetting('ym_error', null);
   await setSetting('ym_sync_at', 0);
+}
+
+// /ymping: which hosts the platform can reach, to tell a YooMoney block from a
+// general outbound problem.
+const PING_TARGETS = [
+  ['ЮMoney API', 'POST', `${YM}/api/operation-history`],
+  ['ЮMoney сайт', 'GET', `${YM}/`],
+  ['GitHub Pages', 'GET', SHOP_JSON_URL],
+  ['GitHub API', 'GET', 'https://api.github.com/'],
+];
+
+export async function ping() {
+  const lines = [];
+  for (const [name, method, url] of PING_TARGETS) {
+    const started = Date.now();
+    try {
+      const res = await fetch(url, method === 'POST' ? { method, body: fetch.body.form({ records: '1' }) } : { method });
+      lines.push(`${name}: ответ ${res.status} за ${Date.now() - started} мс`);
+    } catch (err) {
+      const cause = err && err.cause ? ` (${err.cause.code || err.cause.message || err.cause})` : '';
+      lines.push(`${name}: нет связи, ${truncate((err && err.message) || String(err), 120)}${cause} за ${Date.now() - started} мс`);
+    }
+  }
+  return lines;
 }
 
 // ---- labels and products -----------------------------------------------------

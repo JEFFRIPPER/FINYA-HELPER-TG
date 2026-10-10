@@ -130,3 +130,27 @@ test('Mini App: the owner lists orders and marks them issued; nobody else can', 
   const rows = await db.all('SELECT COUNT(*) AS c FROM shop_orders');
   assert.equal(rows[0].c, 2);
 });
+
+test('/ymcode always answers, even when YooMoney cannot be reached', async () => {
+  const mock = await setup();
+  await setSetting('ym_client_id', CLIENT);
+  fetchMock.handler = async () => { throw new Error('connect ETIMEDOUT'); };
+  await onMessage(privateMessage(OWNER, '/ymcode SOMECODE'));
+  assert.match(mock.called('sendMessage').at(-1).params.text, /не достучалась до ЮMoney: connect ETIMEDOUT/);
+  assert.equal(await getSetting('ym_token'), null);
+});
+
+test('/ymping lists which hosts answer', async () => {
+  const mock = await setup();
+  fetchMock.handler = async (url) => {
+    if (url.startsWith('https://yoomoney.ru')) throw new Error('request failed');
+    return { status: 200, json: {} };
+  };
+  await onMessage(privateMessage(OWNER, '/ymping'));
+  const text = mock.called('sendMessage').at(-1).params.text;
+  assert.match(text, /ЮMoney API: нет связи, request failed/);
+  assert.match(text, /GitHub API: ответ 200/);
+  await onMessage(privateMessage(user(5), '/ymping'));
+  assert.equal(mock.called('sendMessage').length, 1);
+});
+
