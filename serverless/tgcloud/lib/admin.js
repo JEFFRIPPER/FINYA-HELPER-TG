@@ -12,6 +12,7 @@ import * as blacklist from './blacklist.js';
 import * as jobs from './jobs.js';
 import * as relay from './relay.js';
 import * as rankAdmin from './rank_admin.js';
+import * as shopAdmin from './shop_admin.js';
 
 export async function relayStatusText() {
   const targets = await relay.status();
@@ -96,7 +97,12 @@ export async function handleAdminCallback(query, s, action) {
     return;
   }
   rankAdmin.clear(s, { allActions: true });
+  shopAdmin.clear(s);
 
+  if (action === 'shop' || action.startsWith('shop:')) {
+    await shopAdmin.handle(query, s, action);
+    return;
+  }
   if (action === 'posts') {
     delete s.admin_action;
     await editOrSend(query, await relayStatusText(), keyboard([
