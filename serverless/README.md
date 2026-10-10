@@ -63,8 +63,8 @@
   `shop.json` магазина. Кнопка «Выдать» отмечает выдачу. О новом заказе Финя пишет владельцу в
   личку из `pump()` (не чаще раза в минуту, при входящих апдейтах).
   Подключение кошелька: `/ym` в личке у Фини. Владелец регистрирует приложение на
-  yoomoney.ru/myservices/new (Redirect URI `WEBAPP_URL` + `ym.html`, без client_secret), шлёт
-  `/ym <client_id>`, жмёт «Разрешить доступ»; `webapp/ym.html` отправляет форму в ЮMoney и после
+  yoomoney.ru/myservices/new (Redirect URI `https://jeffripper.github.io/SQUAD-SHOP/ym.html`, без client_secret), шлёт
+  `/ym <client_id>`, жмёт «Разрешить доступ»; `ym.html` в репозитории SQUAD-SHOP (на tgcloud.ai у владельца не открывается) отправляет форму в ЮMoney и после
   возврата показывает команду `/ymcode <код>` (код живёт меньше минуты). Готовый ключ можно прислать и так: `/ym <ключ>`. Финя меняет код на ключ с правом
   `operation-history` (живёт 3 года) и хранит его в `settings.ym_token`.
   После правок поднять `?v=` в `index.html`. `tgcloud.json` → `"static"`
