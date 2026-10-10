@@ -32,5 +32,7 @@ jobs:
         run: npx tgcloud push
       - name: Apply database schema
         run: npx tgcloud migrate --safe
-      - name: Webhook state
-        run: npx tgcloud webhook
+      # Re-points the webhook at the platform every time: a leftover polling bot
+      # (the old Python Финя) drops it with deleteWebhook when it starts.
+      - name: Sync webhook
+        run: npx tgcloud webhook sync
