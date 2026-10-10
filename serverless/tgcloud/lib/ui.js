@@ -170,6 +170,7 @@ export async function adminKeyboard() {
     [adminButton('Чёрный список', 'blacklist')],
     [adminButton('Звания / XP', 'xp')],
     [adminButton('Посты в чаты', 'posts')],
+    [adminButton('Товары SQUAD SHOP', 'shop')],
     [adminButton(maintenance, 'maintenance')],
     [adminButton('Логи', 'logs')],
   ]);

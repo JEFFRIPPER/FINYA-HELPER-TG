@@ -24,6 +24,7 @@ import * as blacklist from './blacklist.js';
 import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
+import * as shopAdmin from './shop_admin.js';
 import * as relay from './relay.js';
 import * as xp from './xp.js';
 
@@ -53,6 +54,7 @@ async function sendStartPhoto(chatId, caption, replyMarkup) {
 
 async function start(message, s, args = []) {
   rankAdmin.clear(s, { allActions: true });
+  shopAdmin.clear(s);
   const returning = Boolean(await getUser(message.from.id));
   await trackUser(message.from);
   if ((await isMaintenance()) && !isAdminUser(message.from)) {
@@ -72,6 +74,7 @@ async function start(message, s, args = []) {
 async function adminCommand(message, s) {
   if (!rankAdmin.allowed(message.from, message.chat)) return;
   rankAdmin.clear(s, { allActions: true });
+  shopAdmin.clear(s);
   await trackUser(message.from);
   await setSetting('admin_chat_id', OWNER_USER_ID);
   await replyBold(message, '🛠 Админ-панель FINYA HELPER\n\nУправление ботом:', await adminKeyboard());
@@ -80,7 +83,32 @@ async function adminCommand(message, s) {
 async function cancelCommand(message, s) {
   if (!rankAdmin.allowed(message.from, message.chat)) return;
   rankAdmin.clear(s, { allActions: true });
+  shopAdmin.clear(s);
   await replyBold(message, 'Действие отменено.', rankAdmin.rankKeyboard());
+}
+
+// /shopkey <GitHub key> lets Финя edit the SQUAD SHOP products (/admin → Товары).
+async function shopKeyCommand(message, s, args) {
+  if (!rankAdmin.allowed(message.from, message.chat)) return;
+  const key = args[0] || '';
+  if (key) {
+    try {
+      await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
+    } catch {
+      // Too old or already gone: the key still works, the owner can delete it by hand.
+    }
+  }
+  if (!shopAdmin.isKey(key)) {
+    await replyBold(message, (key ? 'Это не похоже на ключ GitHub.\n\n' : '') + escapeHtml(shopAdmin.KEY_HELP));
+    return;
+  }
+  try {
+    await shopAdmin.saveKey(key);
+    await replyBold(message, '✅ Ключ GitHub подключён. Товары: /admin → «Товары SQUAD SHOP».', keyboard([[button('Товары SQUAD SHOP', { callback_data: 'admin:shop' })]]));
+  } catch (err) {
+    if (!(err instanceof shopAdmin.ShopError)) await logError('shopkey', err);
+    await replyBold(message, '❌ ' + escapeHtml(err instanceof shopAdmin.ShopError ? err.message : 'Не получилось проверить ключ. Повтори чуть позже.'));
+  }
 }
 
 async function rankCommand(message) {
@@ -190,6 +218,7 @@ async function postsRetryCommand(message, args) {
 
 async function textMessage(message, s) {
   if (await rankAdmin.handleText(message, s)) return;
+  if (await shopAdmin.handleText(message, s)) return;
   if (rankAdmin.allowed(message.from, message.chat) && s.rank_admin_pending) {
     await replyBold(message, 'Подтверди действие кнопкой или нажми «Отмена». /cancel — отменить.');
     return;
@@ -304,6 +333,7 @@ const COMMANDS = {
   start: (m, s, a) => start(m, s, a),
   admin: (m, s) => adminCommand(m, s),
   cancel: (m, s) => cancelCommand(m, s),
+  shopkey: (m, s, a) => shopKeyCommand(m, s, a),
   rank: (m) => rankCommand(m),
   top: (m, s, a) => topCommand(m, a),
   xpchat: (m, s, a) => xpChatCommand(m, a),
@@ -337,6 +367,11 @@ export async function onMessage(message) {
       await importer.importFromMessage(message);
       return;
     }
+    if ((message.photo || message.document) && isAdminUser(message.from)) {
+      let handled = false;
+      await withSession(message.from.id, async (s) => { handled = await shopAdmin.handleMedia(message, s); });
+      if (handled) return;
+    }
     if (typeof message.text === 'string') {
       await withSession(message.from.id, (s) => textMessage(message, s));
     }
@@ -350,6 +385,7 @@ async function button_(query, s) {
   const user = query.from;
   const chat = query.message && query.message.chat;
   if (!data.startsWith('admin:xp')) rankAdmin.clear(s);
+  if (!data.startsWith('admin:')) shopAdmin.clear(s);
   if (!query.message) {
     await answer(query);
     return;

@@ -5,7 +5,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { logError, setSetting, getSetting } from './store.js';
-import { boldHtml, nowInt } from './util.js';
+import { boldHtml, nowInt, utf8Decode } from './util.js';
 
 const BATCH = 100;
 const BUDGET_MS = 20000;
@@ -13,24 +13,6 @@ const BUDGET_MS = 20000;
 export function looksLikeExport(document) {
   const name = String(document.file_name || '').toLowerCase();
   return name.startsWith('finya-export') && name.endsWith('.json');
-}
-
-function utf8Decode(bytes) {
-  if (typeof TextDecoder === 'function') return new TextDecoder('utf-8').decode(bytes);
-  let out = '';
-  for (let i = 0; i < bytes.length;) {
-    const b = bytes[i];
-    let cp;
-    if (b < 0x80) { cp = b; i += 1; }
-    else if (b < 0xe0) { cp = ((b & 0x1f) << 6) | (bytes[i + 1] & 0x3f); i += 2; }
-    else if (b < 0xf0) { cp = ((b & 0x0f) << 12) | ((bytes[i + 1] & 0x3f) << 6) | (bytes[i + 2] & 0x3f); i += 3; }
-    else {
-      cp = ((b & 0x07) << 18) | ((bytes[i + 1] & 0x3f) << 12) | ((bytes[i + 2] & 0x3f) << 6) | (bytes[i + 3] & 0x3f);
-      i += 4;
-    }
-    out += String.fromCodePoint(cp);
-  }
-  return out;
 }
 
 const int = (v) => (v == null || v === '' ? null : Math.trunc(Number(v)));
