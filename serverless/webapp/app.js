@@ -745,6 +745,8 @@
   // Only logins and who added them; passwords are never stored there.
   var SHOP_ADMINS_URL = 'https://jeffripper.github.io/SQUAD-SHOP/admins.json';
   var shop = { items: [], loaded: false, failed: false };
+  // Orders of the shop: Финя reads them from the owner's YooMoney history (/ym).
+  var orders = { items: [], loaded: false, failed: false, connected: true, error: null, waiting: 0, busy: {} };
 
   function api(name, input) {
     return new Promise(function (resolve, reject) {
@@ -797,13 +799,16 @@
     });
     adminRoot = h('div', { class: 'admin' },
       h('section', { class: 'card admin-head' }),
+      h('section', { class: 'card list-card orders-card' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
-      h('section', { class: 'card list-card' }),
+      h('section', { class: 'card list-card members-card' }),
       h('section', { class: 'card list-card shop-card' }));
     drawAdmin();
     drawShop();
+    drawOrders();
     if (!admin.loaded) loadAdmin(true);
     loadShop();
+    loadOrders();
     return [adminRoot];
   }
 
@@ -848,9 +853,89 @@
     else if (shop.failed) body = h('p', { class: 'empty', text: 'Не удалось загрузить список. Проверь интернет и повтори.' });
     else if (!shop.items.length) body = h('p', { class: 'empty', text: 'Админов нет: в магазин входят только ключом GitHub.' });
     else body = h('ul', { class: 'list' }, withDividers(shop.items.map(shopRow)));
-    card.replaceChildren(
+    card.replaceChildren.apply(card, h('div', null,
       h('h3', { text: 'Админы SQUAD SHOP' + (shop.loaded && !shop.failed ? ' · ' + shop.items.length : '') }), body,
-      shop.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadShop(); } }, icon('refresh'), 'Обновить') : null);
+      shop.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadShop(); } }, icon('refresh'), 'Обновить') : null).childNodes);
+  }
+
+  function takeOrders(data) {
+    orders.items = data.items || [];
+    orders.connected = Boolean(data.connected);
+    orders.error = data.error || null;
+    orders.waiting = data.waiting || 0;
+    orders.loaded = true;
+    orders.failed = false;
+  }
+
+  function loadOrders() {
+    orders.loaded = false;
+    drawOrders();
+    api('shop', { action: 'list' }).then(function (data) {
+      takeOrders(data);
+      drawOrders();
+    }, function (err) {
+      orders.loaded = true;
+      orders.failed = true;
+      drawOrders();
+      snackbar(errorText(err));
+    });
+  }
+
+  function setIssued(o, issued) {
+    if (orders.busy[o.id]) return;
+    orders.busy[o.id] = true;
+    vibrate('light');
+    drawOrders();
+    api('shop', { action: 'issue', id: o.id, issued: issued }).then(function (data) {
+      delete orders.busy[o.id];
+      takeOrders(data);
+      drawOrders();
+      snackbar(issued ? o.order + ': выдано' : o.order + ': снова ждёт выдачи');
+    }, function (err) {
+      delete orders.busy[o.id];
+      drawOrders();
+      snackbar(errorText(err));
+    });
+  }
+
+  function orderTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) return '';
+    return d.toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+
+  function orderRow(o) {
+    var who = o.username ? '@' + o.username : 'без @username';
+    var sum = Number(o.amount).toLocaleString('ru-RU', { maximumFractionDigits: 2 }) + '\u00a0₽';
+    var note = [o.order, sum, orderTime(o.at)].concat(o.status === 'success' ? [] : ['платёж: ' + o.status]).filter(Boolean).join(' · ');
+    var toggle = o.issued
+      ? h('button', { class: 'btn-text issued ripple', type: 'button', disabled: !!orders.busy[o.id], onclick: function () { setIssued(o, false); } }, icon('check'), 'Выдано')
+      : h('button', { class: 'btn-tonal give ripple', type: 'button', disabled: !!orders.busy[o.id], onclick: function () { setIssued(o, true); } }, 'Выдать');
+    return h('li', { class: 'item order' + (o.issued ? ' done' : '') },
+      h('div', { class: 'lead ' + (o.issued ? 'muted' : 'primary') }, icon(o.issued ? 'check' : 'storefront_fill')),
+      h('div', { class: 'body' },
+        h('b', { class: o.username ? 'tap' : null, text: who, onclick: o.username ? function () { openLink('https://t.me/' + o.username); } : null }),
+        h('span', { class: 'what', text: o.what }),
+        h('span', { text: note })),
+      toggle);
+  }
+
+  function drawOrders() {
+    var card = adminRoot && adminRoot.querySelector('.orders-card');
+    if (!card) return;
+    var body;
+    if (!orders.loaded) body = h('div', { class: 'state small' }, loader());
+    else if (orders.failed) body = h('p', { class: 'empty', text: 'Не удалось загрузить заказы. Проверь интернет и повтори.' });
+    else if (!orders.connected) body = h('p', { class: 'empty', text: 'ЮMoney не подключён. Напиши Фине /ym в личке: она пришлёт шаги, после этого здесь появятся заказы.' });
+    else if (!orders.items.length) body = h('p', { class: 'empty', text: 'Оплаченных заказов пока нет.' });
+    else body = h('ul', { class: 'list' }, withDividers(orders.items.map(orderRow)));
+    var title = 'Заказы SQUAD SHOP' + (orders.loaded && orders.connected && orders.waiting ? ' · ждут выдачи: ' + orders.waiting : '');
+    // replaceChildren() would print a null as text, so h() builds the list.
+    card.replaceChildren.apply(card, h('div', null,
+      h('h3', { text: title }),
+      orders.error ? h('p', { class: 'empty warn', text: orders.error }) : null,
+      body,
+      orders.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadOrders(); } }, icon('refresh'), 'Обновить') : null).childNodes);
   }
 
   function loadAdmin(reset) {
@@ -890,11 +975,12 @@
       return h('div', { class: 'dist-item' + (r.count ? '' : ' none') }, insignia(r.roman, 'mini'),
         h('b', { text: String(r.count) }), h('span', { text: r.roman }));
     })) : null;
-    adminRoot.querySelector('.admin-head').replaceChildren(
+    var head = adminRoot.querySelector('.admin-head');
+    head.replaceChildren.apply(head, h('div', null,
       h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('shield_person_fill')),
         h('div', { class: 'body' }, h('b', { text: 'Панель званий' }),
           h('span', { text: admin.members ? 'Участников: ' + admin.members + ' · видишь только ты' : 'Видишь только ты' }))),
-      dist);
+      dist).childNodes);
     var body;
     if (!admin.loaded) {
       body = h('div', { class: 'state small' }, loader());
@@ -906,8 +992,9 @@
     var more = admin.loaded && admin.page + 1 < admin.pages
       ? h('button', { class: 'btn-tonal more ripple', onclick: function () { loadAdmin(false); } }, 'Показать ещё')
       : null;
-    adminRoot.querySelector('.list-card').replaceChildren(
-      h('h3', { text: admin.query ? 'Найдено: ' + admin.total : 'Все участники · по XP' }), body, more);
+    var members = adminRoot.querySelector('.members-card');
+    members.replaceChildren.apply(members, h('div', null,
+      h('h3', { text: admin.query ? 'Найдено: ' + admin.total : 'Все участники · по XP' }), body, more).childNodes);
   }
 
   // Bottom sheet with one member: rank, XP and the audit history.
