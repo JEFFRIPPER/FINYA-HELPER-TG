@@ -1047,3 +1047,52 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
 }
+
+/* ---- SQUAD SHOP products (Панель) ------------------------------------------ */
+.lead.thumb { overflow: hidden; border-radius: 12px; background: rgba(255, 255, 255, 0.05); }
+.lead.thumb img { width: 100%; height: 100%; object-fit: cover; }
+.goods-card .item > .icon { flex: none; width: 20px; height: 20px; fill: var(--text-2); }
+.goods-card .item.locked { opacity: 0.55; }
+.note.pre { white-space: pre-line; overflow-wrap: anywhere; color: var(--text-2); }
+.btn-filled.goods-add { display: flex; margin: 12px auto 0; }
+.goods-title { margin: 4px 0 12px; font-size: 22px; line-height: 28px; font-weight: 500; overflow-wrap: anywhere; }
+.goods-photo-row { display: flex; align-items: center; gap: 16px; }
+.goods-photo {
+  flex: none;
+  width: 96px;
+  height: 96px;
+  border-radius: 20px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  background: rgba(255, 30, 60, 0.08);
+  color: var(--red);
+}
+.goods-photo img { width: 100%; height: 100%; object-fit: cover; }
+.goods-photo .icon { width: 36px; height: 36px; }
+.goods-photo-acts { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.goods-field { display: block; margin-top: 14px; }
+.goods-field > span { display: block; margin: 0 0 -6px 14px; font-size: 12px; line-height: 16px; color: var(--text-2); }
+.field.area { height: auto; padding: 10px 14px; border-radius: 20px; }
+.field.area textarea { resize: vertical; min-height: 64px; line-height: 22px; }
+.goods-toggles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.goods-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 14px 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 500;
+}
+.goods-toggle .icon { width: 18px; height: 18px; opacity: 0; transition: opacity var(--dur-short) var(--ease-standard); }
+.goods-toggle[aria-pressed="true"] { background: rgba(255, 30, 60, 0.2); border-color: var(--red); color: var(--on-container); }
+.goods-toggle[aria-pressed="true"] .icon { opacity: 1; }
+.btn-filled.wide { display: flex; justify-content: center; width: 100%; margin-top: 20px; padding: 0 16px; }
+.btn-filled.wide .cpi { width: 22px; height: 22px; }
+.btn-filled.wide .cpi circle { stroke: #fff; }
+.goods-del { display: flex; margin: 8px auto 0; }

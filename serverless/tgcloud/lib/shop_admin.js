@@ -400,3 +400,90 @@ export async function handleMedia(message, s) {
   }
   return true;
 }
+
+// ---- Mini App ------------------------------------------------------------
+// POST /api/shop from «Панель»: the same products, edited in one form.
+
+const MAX_PHOTO_B64 = Math.ceil(MAX_PHOTO / 3) * 4;
+
+function cleanProduct(input) {
+  const str = (v, n) => truncate(String(v ?? '').trim(), n);
+  const int = (v, what) => {
+    const n = Number(String(v ?? '0').replace(/\s/g, '') || 0);
+    if (!Number.isInteger(n) || n < 0 || n > MAX_PRICE) throw new ShopError(`${what}: нужно целое число от 0 до ${MAX_PRICE.toLocaleString('ru-RU')}.`);
+    return n;
+  };
+  const p = {
+    name: str(input.name, 80),
+    stars: int(input.stars, 'Звёзды'),
+    price: int(input.price, 'Цена'),
+    desc: str(input.desc, 300),
+    tag: str(input.tag, 20),
+    gold: Boolean(input.gold),
+    hidden: Boolean(input.hidden),
+  };
+  if (!p.stars && !p.name) throw new ShopError('Укажи название товара или количество звёзд.');
+  if (!p.price) throw new ShopError('Укажи цену больше нуля.');
+  return p;
+}
+
+function photoUpload(photo) {
+  if (!photo) return null;
+  const ext = PHOTO_TYPES[photo.type];
+  const data = String(photo.data || '');
+  if (!ext || !data) throw new ShopError('Фото должно быть JPG, PNG или WebP.');
+  if (data.length > MAX_PHOTO_B64) throw new ShopError('Фото больше 5 МБ. Выбери поменьше.');
+  return { ext, bytes: base64ToBytes(data) };
+}
+
+function appList(data) {
+  return { connected: true, base: SQUAD_LINKS.shop, items: data.products };
+}
+
+export async function appHandle(user, input = {}) {
+  if (!isAdminUser(user)) throw new ShopError('Товары меняет только владелец магазина.');
+  const action = input.action || 'list';
+  if (action === 'list') {
+    const key = await getSetting(KEY_SETTING);
+    if (!key) return { connected: false, help: KEY_HELP, items: [] };
+    return appList((await readShop(key)).data);
+  }
+  if (action === 'save') {
+    const fields = cleanProduct(input.product || {});
+    const id = input.id ? String(input.id) : '';
+    const upload = photoUpload(input.photo);
+    // New ids look like the site's own: short and safe for paths and buttons.
+    const pid = id || randomHex(3);
+    let path = null;
+    if (upload) {
+      path = `img/p-${pid}-${randomHex(2)}.${upload.ext}`;
+      await putFile(path, upload.bytes, `фото ${pid}`);
+    }
+    let old = '';
+    const { data, result } = await updateShop(`${id ? 'изменён' : 'новый'} товар ${title(fields)}`, (d) => {
+      let p = id ? find(d, id) : null;
+      if (!p) {
+        p = { id: pid, name: '', stars: 0, price: 0, desc: '', tag: '', gold: false, image: '', hidden: false };
+        d.products.push(p);
+      }
+      old = p.image;
+      Object.assign(p, fields);
+      if (path) p.image = path;
+      else if (input.dropPhoto) p.image = '';
+      return p;
+    });
+    if (old && old !== result.image) await deleteFile(old);
+    return { ...appList(data), item: result };
+  }
+  if (action === 'delete') {
+    const id = String(input.id || '');
+    const { data, result } = await updateShop(`удалён товар ${id}`, (d) => {
+      const p = find(d, id);
+      d.products = d.products.filter((x) => x.id !== id);
+      return p;
+    });
+    if (result.image) await deleteFile(result.image);
+    return appList(data);
+  }
+  throw new ShopError('Неизвестное действие.');
+}
