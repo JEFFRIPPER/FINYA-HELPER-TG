@@ -25,6 +25,7 @@ import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
 import * as relay from './relay.js';
+import * as shop from './shop.js';
 import * as xp from './xp.js';
 
 const PUMP_INTERVAL_SECONDS = 30;
@@ -286,6 +287,70 @@ export async function onMessageReaction(event) {
   }
 }
 
+// /ym connects the owner's YooMoney wallet so Финя can read SQUAD SHOP orders:
+// /ym <client_id> → a link to approve access; the page YooMoney returns to hands
+// the owner "/ymcode <code>" to send back. /ym <token> takes a ready token.
+const YM_HELP =
+  'Подключение ЮMoney для заказов SQUAD SHOP\n\n' +
+  '1. Открой yoomoney.ru/myservices/new и заполни форму:\n' +
+  '• Название: SQUAD SHOP\n' +
+  '• Адрес сайта: https://jeffripper.github.io/SQUAD-SHOP/\n' +
+  `• Redirect URI: ${shop.YM_REDIRECT}\n` +
+  '• Галочку «Проверять подлинность (client_secret)» не ставь.\n' +
+  '2. Нажми «Подтвердить» и скопируй client_id.\n' +
+  '3. Пришли сюда: /ym client_id';
+
+async function ymCommand(message, args, codeOnly = false) {
+  if (!isAdminUser(message.from)) return;
+  if (message.chat.type !== 'private') {
+    await reply(message, 'Подключай ЮMoney в личке с Финей.');
+    return;
+  }
+  const arg = args.join('');
+  if (!arg && codeOnly) {
+    await replyBold(message, 'Пришли код целиком: /ymcode код. Его показывает страница после входа в ЮMoney.');
+    return;
+  }
+  if (!arg) {
+    const connected = Boolean(await getSetting('ym_token'));
+    await replyBold(message, (connected ? '✅ ЮMoney подключён, заказы приходят в личку.\n\nПереподключить:\n\n' : '') + YM_HELP);
+    return;
+  }
+  const kind = codeOnly ? 'code' : shop.isToken(arg) ? 'token' : 'client';
+  // The message holds a key to the wallet's history: keep it out of the chat.
+  if (kind !== 'client') {
+    try { await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id }); } catch { /* already gone */ }
+  }
+  try {
+    if (kind === 'client') {
+      const link = shop.authLink(arg, (await getMe()).username);
+      await setSetting('ym_client_id', arg);
+      await setSetting('ym_redirect', link);
+      await replyBold(message, 'Осталось разрешить доступ к истории кошелька.\n\n' +
+        'Нажми кнопку, войди в ЮMoney и подтверди. Потом страница сама подскажет, что прислать сюда, ' +
+        'на это будет меньше минуты.',
+        { inline_keyboard: [[{ text: 'Разрешить доступ', url: link }]] });
+      return;
+    }
+    let token = arg;
+    if (kind === 'code') {
+      const clientId = await getSetting('ym_client_id');
+      if (!clientId) {
+        await replyBold(message, 'Сначала пришли client_id приложения.\n\n' + YM_HELP);
+        return;
+      }
+      token = await shop.exchangeCode(arg, clientId, await getSetting('ym_redirect'));
+    }
+    await shop.saveToken(token);
+    await replyBold(message, '✅ ЮMoney подключён.\n\nНовые заказы SQUAD SHOP будут приходить сюда, а список ' +
+      'с кнопкой «Выдано» есть в «Профиль» → «Панель».');
+    await shop.notifyOwner(await shop.sync());
+  } catch (err) {
+    if (!(err instanceof shop.ShopError)) throw err;
+    await replyBold(message, `❌ ${escapeHtml(err.message, false)}`);
+  }
+}
+
 // ---- routing ---------------------------------------------------------------
 
 function parseCommand(message) {
@@ -310,6 +375,8 @@ const COMMANDS = {
   posts_on: (m, s, a) => postsOnCommand(m, a),
   posts_off: (m, s, a) => postsOffCommand(m, a),
   posts_retry: (m, s, a) => postsRetryCommand(m, a),
+  ym: (m, s, a) => ymCommand(m, a),
+  ymcode: (m, s, a) => ymCommand(m, a, true),
 };
 
 export async function onMessage(message) {
@@ -536,6 +603,11 @@ export async function pump({ force = false } = {}) {
     if (!(await isMaintenance())) await relay.deliverDue(5000, 10);
     await blacklist.retryPending(5);
     await jobs.runPendingJobs(10000);
+    try {
+      await shop.tick();
+    } catch (err) {
+      await logError('shop', err);
+    }
   } catch (err) {
     await logError('pump', err);
   }

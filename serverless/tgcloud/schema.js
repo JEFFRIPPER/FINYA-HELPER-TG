@@ -152,3 +152,18 @@ export const error_log = table('error_log', {
   source: text('source').notNull(),
   text: text('text').notNull(),
 });
+
+// SQUAD SHOP orders read from the owner's YooMoney history (lib/shop.js).
+export const shop_orders = table('shop_orders', {
+  operation_id: text('operation_id').primaryKey(),
+  order_id: text('order_id').notNull(),
+  username: text('username').notNull().default(''),
+  items: text('items').notNull().default(''),
+  amount: real('amount').notNull(),
+  paid_at: text('paid_at').notNull(),
+  status: text('status').notNull(),
+  issued_at: integer('issued_at'),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  byPaid: index('shop_orders_by_paid').on(t.paid_at),
+}));
