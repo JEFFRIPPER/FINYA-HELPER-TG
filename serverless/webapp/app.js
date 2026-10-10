@@ -745,6 +745,8 @@
   // Only logins and who added them; passwords are never stored there.
   var SHOP_ADMINS_URL = 'https://jeffripper.github.io/SQUAD-SHOP/admins.json';
   var shop = { items: [], loaded: false, failed: false };
+  // Products of the SQUAD SHOP: Финя commits them to the site's repository.
+  var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '' };
 
   function api(name, input) {
     return new Promise(function (resolve, reject) {
@@ -799,9 +801,12 @@
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
+      h('section', { class: 'card list-card goods-card' }),
       h('section', { class: 'card list-card shop-card' }));
     drawAdmin();
+    drawGoods();
     drawShop();
+    loadGoods();
     if (!admin.loaded) loadAdmin(true);
     loadShop();
     return [adminRoot];
@@ -851,6 +856,206 @@
     card.replaceChildren.apply(card, h('div', null,
       h('h3', { text: 'Админы SQUAD SHOP' + (shop.loaded && !shop.failed ? ' · ' + shop.items.length : '') }), body,
       shop.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadShop(); } }, icon('refresh'), 'Обновить') : null).childNodes);
+  }
+
+  // ---- SQUAD SHOP products ------------------------------------------------
+
+  function takeGoods(data) {
+    goods.items = data.items || [];
+    goods.connected = data.connected !== false;
+    goods.help = data.help || '';
+    goods.base = data.base || goods.base;
+    goods.loaded = true;
+    goods.failed = false;
+  }
+
+  function loadGoods() {
+    goods.loaded = false;
+    drawGoods();
+    api('shop', { action: 'list' }).then(function (data) {
+      takeGoods(data);
+      drawGoods();
+    }, function (err) {
+      goods.loaded = true;
+      goods.failed = true;
+      drawGoods();
+      snackbar(errorText(err));
+    });
+  }
+
+  function starsWord(n) {
+    var m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return 'звезда';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return 'звезды';
+    return 'звёзд';
+  }
+
+  function goodsTitle(p) {
+    return p.stars ? p.stars.toLocaleString('ru-RU') + ' ' + starsWord(p.stars) : (p.name || 'Без названия');
+  }
+
+  function rub(n) {
+    return Number(n || 0).toLocaleString('ru-RU') + ' ₽';
+  }
+
+  // A photo committed a moment ago is not on GitHub Pages yet: show the icon.
+  function goodsThumb(p, cls) {
+    var fallback = function () { return h('div', { class: 'lead ' + (cls || '') }, icon(p.stars ? 'workspace_premium_fill' : 'redeem_fill')); };
+    if (!p.image || !goods.base) return fallback();
+    var lead = h('div', { class: 'lead thumb ' + (cls || '') });
+    lead.appendChild(h('img', { src: goods.base + p.image, alt: '', loading: 'lazy', onerror: function () { lead.replaceWith(fallback()); } }));
+    return lead;
+  }
+
+  function goodsRow(p) {
+    var off = p.hidden || !p.price;
+    var note = [rub(p.price), p.hidden ? 'скрыт' : null, p.tag || null].filter(Boolean).join(' · ');
+    return h('li', { class: 'item admin-row ripple' + (off ? ' locked' : ''), role: 'button', tabindex: '0', onclick: function () { openGood(p); } },
+      goodsThumb(p),
+      h('div', { class: 'body' }, h('b', null, goodsTitle(p), p.gold ? h('i', { class: 'tag gold', text: 'бейдж' }) : null), h('span', { text: note })),
+      icon('chevron_right'));
+  }
+
+  function drawGoods() {
+    var card = adminRoot && adminRoot.querySelector('.goods-card');
+    if (!card) return;
+    var body;
+    if (!goods.loaded) body = h('div', { class: 'state small' }, loader());
+    else if (goods.failed) body = h('p', { class: 'empty', text: 'Не удалось загрузить товары. Повтори.' });
+    else if (!goods.connected) body = h('p', { class: 'note pre', text: goods.help });
+    else if (!goods.items.length) body = h('p', { class: 'empty', text: 'Товаров пока нет.' });
+    else body = h('ul', { class: 'list' }, withDividers(goods.items.map(goodsRow)));
+    var ready = goods.loaded && !goods.failed && goods.connected;
+    card.replaceChildren.apply(card, h('div', null,
+      h('h3', { text: 'Товары SQUAD SHOP' + (ready ? ' · ' + goods.items.length : '') }), body,
+      ready ? h('button', { class: 'btn-filled goods-add ripple', onclick: function () { openGood(null); } }, icon('add'), 'Добавить товар') : null,
+      goods.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadGoods(); } }, icon('refresh'), 'Обновить') : null).childNodes);
+  }
+
+  // Scaled to 800px JPEG in the browser, so the upload stays small.
+  function shrinkPhoto(file) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        var k = Math.min(1, 800 / Math.max(img.width, img.height));
+        var c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * k));
+        c.height = Math.max(1, Math.round(img.height * k));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        var data = c.toDataURL('image/jpeg', 0.85);
+        resolve({ type: 'image/jpeg', data: data.split(',')[1], url: data });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode')); };
+      img.src = url;
+    });
+  }
+
+  function goodsField(label, input) {
+    return h('label', { class: 'goods-field' }, h('span', { text: label }), h('div', { class: 'field' + (input.tagName === 'TEXTAREA' ? ' area' : '') }, input));
+  }
+
+  function openGood(p) {
+    vibrate('light');
+    var isNew = !p;
+    p = p || { name: '', stars: 0, price: 0, desc: '', tag: '', gold: false, hidden: false, image: '' };
+    var content = h('div', { class: 'sheet-body' });
+    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
+    var scrim = h('div', { class: 'scrim' });
+    function close() {
+      scrim.classList.add('leave');
+      sheet.classList.add('leave');
+      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
+    }
+    scrim.addEventListener('click', close);
+
+    var photo = null;      // new photo picked here: { type, data, url }
+    var dropPhoto = false;
+    var gold = !!p.gold;
+    var hidden = !!p.hidden;
+    var preview = h('div', { class: 'goods-photo' });
+    var removeBtn = h('button', { class: 'btn-text ripple', type: 'button' }, 'Убрать фото');
+    var file = h('input', { type: 'file', accept: 'image/*', hidden: true });
+    function drawPhoto() {
+      var src = photo ? photo.url : (!dropPhoto && p.image && goods.base ? goods.base + p.image : '');
+      preview.replaceChildren(src ? h('img', { src: src, alt: '' }) : icon(p.stars ? 'workspace_premium_fill' : 'redeem_fill'));
+      removeBtn.hidden = !src;
+    }
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      file.value = '';
+      if (!f) return;
+      shrinkPhoto(f).then(function (ph) { photo = ph; dropPhoto = false; drawPhoto(); },
+        function () { snackbar('Не получилось открыть эту картинку. Выбери другую.'); });
+    });
+    removeBtn.addEventListener('click', function () { photo = null; dropPhoto = true; drawPhoto(); });
+    drawPhoto();
+
+    var name = h('input', { class: 'field-input', type: 'text', maxlength: '80', placeholder: 'Например, Telegram Premium · 3 месяца', value: p.name || '' });
+    var stars = h('input', { class: 'field-input', type: 'number', inputmode: 'numeric', min: '0', placeholder: '0 — это не звёзды', value: p.stars ? String(p.stars) : '' });
+    var price = h('input', { class: 'field-input', type: 'number', inputmode: 'numeric', min: '1', placeholder: 'Например, 399', value: p.price ? String(p.price) : '' });
+    var desc = h('textarea', { class: 'field-input', rows: '3', maxlength: '300', placeholder: 'Пара слов о товаре' });
+    desc.value = p.desc || '';
+    var tag = h('input', { class: 'field-input', type: 'text', maxlength: '20', placeholder: 'Например, Хит', value: p.tag || '' });
+    function toggle(label, get, set) {
+      var b = h('button', { class: 'goods-toggle ripple', type: 'button', 'aria-pressed': String(get()) }, icon('check'), label);
+      b.addEventListener('click', function () { set(!get()); b.setAttribute('aria-pressed', String(get())); vibrate('light'); });
+      return b;
+    }
+    var save = h('button', { class: 'btn-filled wide ripple', type: 'button' }, isNew ? 'Добавить' : 'Сохранить');
+    save.addEventListener('click', function () {
+      if (save.disabled) return;
+      var product = { name: name.value, stars: stars.value || 0, price: price.value || 0, desc: desc.value, tag: tag.value, gold: gold, hidden: hidden };
+      save.disabled = true;
+      save.replaceChildren(loader());
+      api('shop', { action: 'save', id: isNew ? '' : p.id, product: product, photo: photo ? { type: photo.type, data: photo.data } : null, dropPhoto: dropPhoto })
+        .then(function (data) {
+          takeGoods(data);
+          drawGoods();
+          vibrate('success');
+          snackbar('Сохранено. На сайте через минуту');
+          close();
+        }, function (err) {
+          save.disabled = false;
+          save.replaceChildren(document.createTextNode(isNew ? 'Добавить' : 'Сохранить'));
+          vibrate('error');
+          snackbar(errorText(err));
+        });
+    });
+    var del = isNew ? null : h('button', { class: 'btn-text goods-del ripple', type: 'button', onclick: function () {
+      confirmDialog('Удалить товар?', [goodsTitle(p), 'Он пропадёт с сайта вместе с фото.'], function () {
+        return api('shop', { action: 'delete', id: p.id }).then(function (data) {
+          takeGoods(data);
+          drawGoods();
+          vibrate('success');
+          snackbar('Товар удалён');
+          close();
+        }, function (err) {
+          vibrate('error');
+          snackbar(errorText(err));
+        });
+      });
+    } }, 'Удалить товар');
+
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: isNew ? 'Новый товар' : goodsTitle(p) }),
+      h('div', { class: 'goods-photo-row' }, preview,
+        h('div', { class: 'goods-photo-acts' },
+          h('button', { class: 'btn-tonal ripple', type: 'button', onclick: function () { file.click(); } }, icon('add'), 'Выбрать фото'),
+          removeBtn, file)),
+      goodsField('Название', name),
+      goodsField('Звёзд в пакете (для звёзд вместо названия)', stars),
+      goodsField('Цена, ₽', price),
+      goodsField('Описание', desc),
+      goodsField('Метка', tag),
+      h('div', { class: 'goods-toggles' },
+        toggle('Золотой бейдж', function () { return gold; }, function (v) { gold = v; }),
+        toggle('Скрыть с витрины', function () { return hidden; }, function (v) { hidden = v; })),
+      save, del,
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+    document.body.appendChild(scrim);
+    document.body.appendChild(sheet);
   }
 
   function loadAdmin(reset) {

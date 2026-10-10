@@ -1,6 +1,8 @@
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchMock } from 'sdk';
+import { EndpointError, fetchMock } from 'sdk';
+import shopEndpoint from '../tgcloud/endpoints/shop.js';
+import { setSetting } from '../tgcloud/lib/store.js';
 import { onCallbackQuery, onMessage } from '../tgcloud/lib/bot.js';
 import { callback, checkErrors, lastText, privateMessage, setup, user, OWNER } from './helpers.mjs';
 
@@ -185,4 +187,44 @@ test('other users cannot reach the products', async () => {
   await onCallbackQuery(callback(user(5), 'admin:shop'));
   assert.equal(mock.called('editMessageText').length, 0);
   assert.equal(fetchMock.calls.length, 0);
+});
+
+const app = (u, input) => shopEndpoint(input, { initData: { user: u } });
+
+test('Mini App: owner-only; without a key it returns the help', async () => {
+  await setup();
+  fakeGitHub();
+  await assert.rejects(app(user(5), { action: 'list' }), EndpointError);
+  const data = await app(OWNER, { action: 'list' });
+  assert.equal(data.connected, false);
+  assert.match(data.help, /\/shopkey/);
+});
+
+test('Mini App: list, edit with a new photo, add and delete', async () => {
+  await setup();
+  const repo = fakeGitHub();
+  await setSetting('shop_gh_token', KEY);
+  let data = await app(OWNER, { action: 'list' });
+  assert.equal(data.items.length, 2);
+  assert.equal(data.base, 'https://jeffripper.github.io/SQUAD-SHOP/');
+
+  data = await app(OWNER, { action: 'save', id: 'prem6', product: { name: 'Premium 6', stars: 0, price: '1 500', desc: 'd', tag: 'Хит', gold: true, hidden: false },
+    photo: { type: 'image/jpeg', data: Buffer.from([9, 9]).toString('base64') } });
+  const p = repo.shop().products[1];
+  assert.deepEqual([p.name, p.price, p.desc, p.tag, p.gold], ['Premium 6', 1500, 'd', 'Хит', true]);
+  assert.match(p.image, /^img\/p-prem6-[0-9a-f]{4}\.jpg$/);
+  assert.equal('img/p-prem6-ab.jpg' in repo.files, false);
+  assert.equal(data.item.image, p.image);
+
+  await assert.rejects(app(OWNER, { action: 'save', product: { name: '', stars: 0, price: 10 } }), /название/);
+  await assert.rejects(app(OWNER, { action: 'save', product: { name: 'x', price: 0 } }), /цену/);
+  data = await app(OWNER, { action: 'save', product: { name: '', stars: 750, price: 1290 } });
+  assert.equal(data.items.length, 3);
+  const added = repo.shop().products[2];
+  assert.equal(added.stars, 750);
+
+  data = await app(OWNER, { action: 'save', id: 'prem6', product: { name: 'Premium 6', price: 1500 }, dropPhoto: true });
+  assert.equal(repo.shop().products[1].image, '');
+  data = await app(OWNER, { action: 'delete', id: added.id });
+  assert.equal(data.items.length, 2);
 });
