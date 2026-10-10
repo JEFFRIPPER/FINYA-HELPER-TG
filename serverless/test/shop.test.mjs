@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { db, EndpointError, fetchMock } from 'sdk';
 import shopEndpoint from '../tgcloud/endpoints/shop.js';
 import { onMessage, pump } from '../tgcloud/lib/bot.js';
-import { WEBAPP_URL } from '../tgcloud/lib/config.js';
 import { describeItems, isToken, parseLabel } from '../tgcloud/lib/shop.js';
 import { getSetting, setSetting } from '../tgcloud/lib/store.js';
 import { checkErrors, OWNER, privateMessage, setup, user } from './helpers.mjs';
@@ -58,11 +57,11 @@ test('/ym: client_id → consent link, /ymcode → token, then orders arrive in 
 
   await onMessage(privateMessage(OWNER, '/ym'));
   assert.match(mock.called('sendMessage').at(-1).params.text, /yoomoney\.ru\/myservices\/new/);
-  assert.match(mock.called('sendMessage').at(-1).params.text, new RegExp(`${WEBAPP_URL}ym\\.html`));
+  assert.match(mock.called('sendMessage').at(-1).params.text, /jeffripper\.github\.io\/SQUAD-SHOP\/ym\.html/);
 
   await onMessage(privateMessage(OWNER, `/ym ${CLIENT}`));
   const link = mock.called('sendMessage').at(-1).params.reply_markup.inline_keyboard[0][0].url;
-  assert.equal(link, `${WEBAPP_URL}ym.html?cid=${CLIENT}&bot=finya_bot`);
+  assert.equal(link, `https://jeffripper.github.io/SQUAD-SHOP/ym.html?cid=${CLIENT}&bot=finya_bot`);
 
   await onMessage(privateMessage(OWNER, '/ymcode OLDCODE'));
   assert.match(mock.called('sendMessage').at(-1).params.text, /истёк/);

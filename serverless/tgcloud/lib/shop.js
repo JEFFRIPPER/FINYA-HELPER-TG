@@ -5,13 +5,14 @@
 // keeps them in shop_orders and tells the owner about each new one.
 import { db, api, fetch } from 'sdk';
 import { sql } from 'sdk/db';
-import { OWNER_USER_ID, WEBAPP_URL } from './config.js';
+import { OWNER_USER_ID } from './config.js';
 import { getSetting, setSetting } from './store.js';
 import { escapeHtml, nowInt, truncate } from './util.js';
 
 const YM = 'https://yoomoney.ru';
 const SHOP_JSON_URL = 'https://jeffripper.github.io/SQUAD-SHOP/shop.json';
-export const YM_REDIRECT = `${WEBAPP_URL}ym.html`;
+// On GitHub Pages next to the shop: tgcloud.ai does not open for the owner.
+export const YM_REDIRECT = 'https://jeffripper.github.io/SQUAD-SHOP/ym.html';
 export const YM_SCOPE = 'operation-history';
 const LABEL_RE = /^(SQ-[A-Z0-9]{4,12})(?:\s+@?([A-Za-z0-9_]{1,32}))?(?:\s+(\S.*))?$/;
 const TITLES_TTL = 600;
