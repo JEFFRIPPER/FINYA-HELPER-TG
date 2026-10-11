@@ -18,6 +18,7 @@ const FIELDS = {
   name: 'Название',
   stars: 'Количество звёзд',
   price: 'Цена',
+  cat: 'Категория',
   desc: 'Описание',
   tag: 'Метка',
   photo: 'Фото',
@@ -90,6 +91,30 @@ export async function saveKey(key) {
     throw new ShopError('У ключа нет права записи в SQUAD-SHOP. Поставь ему Contents: Read and write.\n\n' + KEY_HELP);
   }
   await setSetting(KEY_SETTING, key);
+}
+
+// Categories in the order the shop lists products, as the site's filter chips.
+export function categories(data) {
+  const list = [];
+  for (const p of data.products) {
+    const c = String(p.cat || '').trim();
+    if (c && !list.includes(c)) list.push(c);
+  }
+  return list;
+}
+
+// Products for the statistics screen; null while the GitHub key is missing.
+export async function shopData() {
+  const key = await getSetting(KEY_SETTING);
+  return key ? (await readShop(key)).data : null;
+}
+
+// Writes one value of shop.json → settings (the site reads them on load).
+export async function setShopSetting(name, value) {
+  await updateShop(`настройка ${name}`, (data) => {
+    data.settings = data.settings && typeof data.settings === 'object' ? data.settings : {};
+    data.settings[name] = value;
+  });
 }
 
 async function readShop(key) {
@@ -171,6 +196,7 @@ function listView(data, note = '') {
   text += '\nСкрытые и товары без цены покупатели не видят.';
   const rows = items.map((p) => [btn(`${p.hidden || !p.price ? '🙈 ' : ''}${truncate(title(p), 28)} · ${money(p.price)}`, `p:${p.id}`)]);
   rows.push([btn('➕ Добавить товар', 'new')]);
+  rows.push([btn('📊 Статистика магазина', 'stats')]);
   rows.push([button('Открыть магазин', { url: SQUAD_LINKS.shop })]);
   rows.push([menuButton('⬅️ Админ-панель', { callback_data: 'admin:menu' })]);
   return [text, keyboard(rows)];
@@ -184,6 +210,7 @@ function cardView(p, note = '') {
     `${escapeHtml(title(p))}\n\n` +
     (p.stars ? `Звёзд: ${p.stars}\n` : `Название: ${show(p.name)}\n`) +
     `Цена: ${money(p.price)}\n` +
+    `Категория: ${show(p.cat)}\n` +
     `Описание: ${show(p.desc)}\n` +
     `Метка: ${show(p.tag)}\n` +
     `Фото: ${photo}\n` +
@@ -193,14 +220,23 @@ function cardView(p, note = '') {
   return [text, keyboard([
     [btn(p.stars ? 'Звёзды' : 'Название', `e:${id}:${p.stars ? 'stars' : 'name'}`), btn('Цена', `e:${id}:price`)],
     [btn('Описание', `e:${id}:desc`), btn('Фото', `e:${id}:photo`)],
-    [btn('Метка', `e:${id}:tag`), btn(p.gold ? 'Убрать бейдж' : 'Золотой бейдж', `g:${id}`)],
+    [btn('Метка', `e:${id}:tag`), btn('Категория', `e:${id}:cat`)],
+    [btn(p.gold ? 'Убрать бейдж' : 'Золотой бейдж', `g:${id}`)],
     [btn(p.hidden ? 'Показать' : 'Скрыть', `h:${id}`), btn('Удалить', `d:${id}`)],
     backToList(),
   ])];
 }
 
-function promptView(p, field) {
+function promptView(p, field, cats = []) {
   const name = title(p);
+  if (field === 'cat') {
+    // Existing categories are one tap away, so names stay the same everywhere.
+    const picks = cats.filter((c) => c !== p.cat).slice(0, 12).map((c) => [btn(truncate(c, 30), `c:${p.id}:${cats.indexOf(c)}`)]);
+    return [`${FIELDS.cat} · ${escapeHtml(name)}\n\n` +
+      (picks.length ? 'Выбери категорию кнопкой или отправь новую.' : 'Отправь категорию, например «Звёзды».') +
+      ' Покупатели фильтруют по ней витрину. Минус «-» уберёт её, и товар попадёт в «Другое».\n/cancel — отменить.',
+    keyboard([...picks, [btn('Карточка товара', `p:${p.id}`)], backToList()])];
+  }
   const prompts = {
     name: 'Отправь новое название товара.',
     stars: 'Отправь количество звёзд числом, например 750.',
@@ -247,9 +283,19 @@ export async function handle(query, s, action) {
     } else if (cmd === 'p') {
       view = cardView(find((await readShop(await token())).data, id));
     } else if (cmd === 'e' && FIELDS[parts[3]]) {
-      const p = find((await readShop(await token())).data, id);
+      const { data } = await readShop(await token());
+      const p = find(data, id);
       s.shop_admin = { mode: 'field', id, field: parts[3] };
-      view = promptView(p, parts[3]);
+      view = promptView(p, parts[3], categories(data));
+    } else if (cmd === 'c') {
+      const { result } = await updateShop(`категория ${id}`, (data) => {
+        const name = categories(data)[Number(parts[3])];
+        if (!name) throw new ShopError('Такой категории уже нет. Открой товар заново.');
+        const p = find(data, id);
+        p.cat = name;
+        return p;
+      });
+      view = cardView(result, SAVED);
     } else if (cmd === 'g' || cmd === 'h') {
       const { result } = await updateShop(`${cmd === 'g' ? 'бейдж' : 'видимость'} ${id}`, (data) => {
         const p = find(data, id);
@@ -307,6 +353,8 @@ function applyText(p, field, text) {
     p.desc = clearIt ? '' : truncate(text, 300);
   } else if (field === 'tag') {
     p.tag = clearIt ? '' : truncate(text, 20);
+  } else if (field === 'cat') {
+    p.cat = clearIt ? '' : truncate(text, 24);
   }
 }
 
@@ -422,6 +470,8 @@ function cleanProduct(input) {
     gold: Boolean(input.gold),
     hidden: Boolean(input.hidden),
   };
+  // An older Mini App sends no category: keep the one the product has.
+  if ('cat' in input) p.cat = str(input.cat, 24);
   if (!p.stars && !p.name) throw new ShopError('Укажи название товара или количество звёзд.');
   if (!p.price) throw new ShopError('Укажи цену больше нуля.');
   return p;
