@@ -741,10 +741,8 @@
 
   var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
   var adminRoot = null;
-  // Admins of the SQUAD SHOP site: the public admins.json next to the shop.
-  // Only logins and who added them; passwords are never stored there.
-  var SHOP_ADMINS_URL = 'https://jeffripper.github.io/SQUAD-SHOP/admins.json';
-  var shop = { items: [], loaded: false, failed: false };
+  // SQUAD SHOP statistics: Финя reads them from Yandex Metrika.
+  var shopStats = { period: 'week', data: null, loaded: false, failed: false, seq: 0 };
   // Products of the SQUAD SHOP: Финя commits them to the site's repository.
   var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '' };
 
@@ -802,60 +800,85 @@
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
       h('section', { class: 'card list-card goods-card' }),
-      h('section', { class: 'card list-card shop-card' }));
+      h('section', { class: 'card list-card stats-card' }));
     drawAdmin();
     drawGoods();
-    drawShop();
+    drawStats();
     loadGoods();
     if (!admin.loaded) loadAdmin(true);
-    loadShop();
+    loadStats();
     return [adminRoot];
   }
 
-  function loadShop() {
-    shop.loaded = false;
-    shop.failed = false;
-    drawShop();
-    fetch(SHOP_ADMINS_URL + '?t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (r.status === 404) return { admins: [] }; if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (data) {
-        shop.items = data && Array.isArray(data.admins) ? data.admins.filter(function (a) { return a && a.login; }) : [];
-        shop.loaded = true;
-        drawShop();
-      }, function () {
-        shop.loaded = true;
-        shop.failed = true;
-        drawShop();
-      });
+  // ---- SQUAD SHOP statistics ------------------------------------------------
+
+  var STAT_PERIODS = [['today', 'Сегодня'], ['week', '7 дней'], ['month', '30 дней']];
+
+  function loadStats() {
+    var seq = ++shopStats.seq;
+    shopStats.loaded = false;
+    shopStats.failed = false;
+    drawStats();
+    api('shop', { action: 'stats', period: shopStats.period }).then(function (data) {
+      if (seq !== shopStats.seq) return;
+      shopStats.data = data;
+      shopStats.loaded = true;
+      drawStats();
+    }, function (err) {
+      if (seq !== shopStats.seq) return;
+      shopStats.loaded = true;
+      shopStats.failed = errorText(err);
+      drawStats();
+    });
   }
 
-  function shopDate(iso) {
-    var d = new Date(iso);
-    if (isNaN(d)) return '';
-    return d.toLocaleDateString('ru-RU', { timeZone: 'Europe/Moscow' });
+  function num(n) { return Number(n || 0).toLocaleString('ru-RU'); }
+
+  function statsBody(d) {
+    var seg = h('div', { class: 'seg', role: 'tablist' }, STAT_PERIODS.map(function (t) {
+      return h('button', {
+        class: 'ripple', role: 'tab', 'aria-selected': String(shopStats.period === t[0]),
+        onclick: function () {
+          if (shopStats.period === t[0]) return;
+          shopStats.period = t[0];
+          haptic();
+          loadStats();
+        },
+      }, h('span', { class: 'check' }, icon('check')), t[1]);
+    }));
+    var tiles = h('div', { class: 'stats' },
+      h('div', { class: 'stat' }, icon('groups_fill'), h('b', { text: num(d.users) }), h('span', { text: 'посетители' })),
+      h('div', { class: 'stat' }, icon('monitoring_fill'), h('b', { text: num(d.visits) }), h('span', { text: 'визиты' })),
+      h('div', { class: 'stat' }, icon('storefront_fill'), h('b', { text: num(d.pay) }), h('span', { text: 'нажали «Оплатить»' })));
+    var paid = h('p', { class: 'stats-note', text: 'Вернулись после оплаты: ' + num(d.paid) });
+    var list = d.products && d.products.length
+      ? h('ul', { class: 'list' }, withDividers(d.products.map(function (p) {
+        return h('li', { class: 'item' + (p.hidden ? ' locked' : '') },
+          h('div', { class: 'body' }, h('b', { text: p.title }),
+            h('span', { text: [p.cat, p.hidden ? 'скрыт' : null].filter(Boolean).join(' · ') || 'без категории' })),
+          h('div', { class: 'stats-nums' }, h('b', { text: num(p.views) }), h('span', { text: 'просм.' })),
+          h('div', { class: 'stats-nums' }, h('b', { text: num(p.cart) }), h('span', { text: 'в корз.' })));
+      })))
+      : h('p', { class: 'empty', text: 'Товаров нет или Финя не видит магазин.' });
+    return [seg, tiles, paid, h('h4', { class: 'stats-sub', text: 'Товары' }), list,
+      h('p', { class: 'stats-foot', text: 'Цифры из Яндекс Метрики, новые визиты появляются через несколько минут.' })];
   }
 
-  function shopRow(a) {
-    var when = a.added ? shopDate(a.added) : '';
-    var who = a.by ? 'добавил ' + a.by : '';
-    var note = [who, when].filter(Boolean).join(' · ') || 'добавлен до учёта дат';
-    if (a.changed) note += ' · пароль сменён ' + shopDate(a.changed);
-    return h('li', { class: 'item' },
-      h('div', { class: 'lead muted' }, icon('shield_person_fill')),
-      h('div', { class: 'body' }, h('b', { text: a.login }), h('span', { text: note })));
-  }
-
-  function drawShop() {
-    var card = adminRoot && adminRoot.querySelector('.shop-card');
+  function drawStats() {
+    var card = adminRoot && adminRoot.querySelector('.stats-card');
     if (!card) return;
+    var d = shopStats.data;
     var body;
-    if (!shop.loaded) body = h('div', { class: 'state small' }, loader());
-    else if (shop.failed) body = h('p', { class: 'empty', text: 'Не удалось загрузить список. Проверь интернет и повтори.' });
-    else if (!shop.items.length) body = h('p', { class: 'empty', text: 'Админов нет: в магазин входят только ключом GitHub.' });
-    else body = h('ul', { class: 'list' }, withDividers(shop.items.map(shopRow)));
+    if (!shopStats.loaded && !d) body = [h('div', { class: 'state small' }, loader())];
+    else if (shopStats.failed) body = [h('p', { class: 'empty', text: shopStats.failed })];
+    else if (d && !d.connected) body = [h('p', { class: 'note pre', text: d.help })];
+    else body = statsBody(d);
+    if (!shopStats.loaded && d) card.classList.add('busy'); else card.classList.remove('busy');
     card.replaceChildren.apply(card, h('div', null,
-      h('h3', { text: 'Админы SQUAD SHOP' + (shop.loaded && !shop.failed ? ' · ' + shop.items.length : '') }), body,
-      shop.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadShop(); } }, icon('refresh'), 'Обновить') : null).childNodes);
+      h('h3', { text: 'Статистика SQUAD SHOP' }),
+      h('div', null, body),
+      d && d.connected && d.link ? h('button', { class: 'btn-tonal more ripple', onclick: function () { openLink(d.link); } }, icon('monitoring'), 'Открыть Метрику') : null,
+      shopStats.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadStats(); } }, icon('refresh'), 'Обновить') : null).childNodes);
   }
 
   // ---- SQUAD SHOP products ------------------------------------------------
@@ -909,7 +932,7 @@
 
   function goodsRow(p) {
     var off = p.hidden || !p.price;
-    var note = [rub(p.price), p.hidden ? 'скрыт' : null, p.tag || null].filter(Boolean).join(' · ');
+    var note = [rub(p.price), p.cat || null, p.hidden ? 'скрыт' : null, p.tag || null].filter(Boolean).join(' · ');
     return h('li', { class: 'item admin-row ripple' + (off ? ' locked' : ''), role: 'button', tabindex: '0', onclick: function () { openGood(p); } },
       goodsThumb(p),
       h('div', { class: 'body' }, h('b', null, goodsTitle(p), p.gold ? h('i', { class: 'tag gold', text: 'бейдж' }) : null), h('span', { text: note })),
@@ -998,6 +1021,11 @@
     var desc = h('textarea', { class: 'field-input', rows: '3', maxlength: '300', placeholder: 'Пара слов о товаре' });
     desc.value = p.desc || '';
     var tag = h('input', { class: 'field-input', type: 'text', maxlength: '20', placeholder: 'Например, Хит', value: p.tag || '' });
+    // Categories already in the shop are offered as you type.
+    var cat = h('input', { class: 'field-input', type: 'text', maxlength: '24', list: 'goodsCats', placeholder: 'Например, Звёзды', value: p.cat || '' });
+    var cats = [];
+    goods.items.forEach(function (x) { if (x.cat && cats.indexOf(x.cat) < 0) cats.push(x.cat); });
+    var catList = h('datalist', { id: 'goodsCats' }, cats.map(function (c) { return h('option', { value: c }); }));
     function toggle(label, get, set) {
       var b = h('button', { class: 'goods-toggle ripple', type: 'button', 'aria-pressed': String(get()) }, icon('check'), label);
       b.addEventListener('click', function () { set(!get()); b.setAttribute('aria-pressed', String(get())); vibrate('light'); });
@@ -1006,7 +1034,7 @@
     var save = h('button', { class: 'btn-filled wide ripple', type: 'button' }, isNew ? 'Добавить' : 'Сохранить');
     save.addEventListener('click', function () {
       if (save.disabled) return;
-      var product = { name: name.value, stars: stars.value || 0, price: price.value || 0, desc: desc.value, tag: tag.value, gold: gold, hidden: hidden };
+      var product = { name: name.value, stars: stars.value || 0, price: price.value || 0, cat: cat.value, desc: desc.value, tag: tag.value, gold: gold, hidden: hidden };
       save.disabled = true;
       save.replaceChildren(loader());
       api('shop', { action: 'save', id: isNew ? '' : p.id, product: product, photo: photo ? { type: photo.type, data: photo.data } : null, dropPhoto: dropPhoto })
@@ -1047,6 +1075,7 @@
       goodsField('Название', name),
       goodsField('Звёзд в пакете (для звёзд вместо названия)', stars),
       goodsField('Цена, ₽', price),
+      goodsField('Категория (по ней фильтруют витрину)', cat), catList,
       goodsField('Описание', desc),
       goodsField('Метка', tag),
       h('div', { class: 'goods-toggles' },

@@ -228,3 +228,140 @@ test('Mini App: list, edit with a new photo, add and delete', async () => {
   data = await app(OWNER, { action: 'delete', id: added.id });
   assert.equal(data.items.length, 2);
 });
+
+// ---- categories ---------------------------------------------------------------
+
+test('category: typed, picked from the existing ones, cleared with «-»', async () => {
+  const mock = await setup();
+  const repo = fakeGitHub();
+  await connect(mock);
+  await onCallbackQuery(callback(OWNER, 'admin:shop:e:s50:cat'));
+  assert.match(lastText(mock), /Отправь категорию/);
+  await onMessage(privateMessage(OWNER, 'Звёзды'));
+  assert.equal(repo.shop().products[0].cat, 'Звёзды');
+  assert.match(lastText(mock), /Категория: Звёзды/);
+  // prem6 is offered the existing category as a button.
+  await onCallbackQuery(callback(OWNER, 'admin:shop:e:prem6:cat'));
+  const pick = buttons(mock).find((b) => b.text === 'Звёзды');
+  assert.equal(pick.callback_data, 'admin:shop:c:prem6:0');
+  await onCallbackQuery(callback(OWNER, pick.callback_data));
+  assert.equal(repo.shop().products[1].cat, 'Звёзды');
+  assert.match(lastText(mock), /Сохранено/);
+  await onCallbackQuery(callback(OWNER, 'admin:shop:e:prem6:cat'));
+  await onMessage(privateMessage(OWNER, '-'));
+  assert.equal(repo.shop().products[1].cat, '');
+});
+
+test('Mini App: category is saved, and an older app without it keeps the old one', async () => {
+  await setup();
+  const repo = fakeGitHub();
+  await setSetting('shop_gh_token', KEY);
+  await app(OWNER, { action: 'save', id: 's50', product: { stars: 50, price: 85, cat: '  Звёзды ' } });
+  assert.equal(repo.shop().products[0].cat, 'Звёзды');
+  await app(OWNER, { action: 'save', id: 's50', product: { stars: 50, price: 90 } });
+  assert.equal(repo.shop().products[0].cat, 'Звёзды');
+  assert.equal(repo.shop().products[0].price, 90);
+});
+
+// ---- statistics (Yandex Metrika) ------------------------------------------------
+
+const YM_TOKEN = 'y0_' + 'B'.repeat(40);
+
+// GitHub plus a fake Metrika API: 12345678 is the only counter the key can see.
+function fakeMetrika(repo, { down = false } = {}) {
+  const github = fetchMock.handler;
+  const calls = [];
+  fetchMock.handler = async (url, opts) => {
+    if (!url.startsWith('https://api-metrika.yandex.net/')) return github(url, opts);
+    if (down) throw new Error('request failed');
+    assert.equal(opts.headers.Authorization, `OAuth ${YM_TOKEN}`);
+    const u = new URL(url);
+    calls.push(u);
+    if (u.pathname === '/management/v1/counter/12345678') return { json: { counter: { id: 12345678, name: 'SQUAD SHOP' } } };
+    if (u.pathname.startsWith('/management/v1/counter/')) return { status: 403, json: { message: 'Access denied' } };
+    assert.equal(u.pathname, '/stat/v1/data');
+    assert.equal(u.searchParams.get('ids'), '12345678');
+    const from = u.searchParams.get('date1');
+    if (u.searchParams.get('metrics') === 'ym:s:users,ym:s:visits') {
+      return { json: { data: [], totals: { today: [3, 4], '6daysAgo': [20, 31], '29daysAgo': [70, 95] }[from] } };
+    }
+    assert.equal(u.searchParams.get('dimensions'), 'ym:pv:URL');
+    const k = from === 'today' ? 1 : 5;
+    const row = (path, n) => ({ dimensions: [{ name: 'https://jeffripper.github.io/SQUAD-SHOP/' + path }], metrics: [n * k] });
+    return { json: { data: [row('', 40), row('?p=s50', 6), row('?p=prem6', 2), row('?cart=s50', 1), row('?pay=1', 1), row('?paid=1', 1), row('?p=gone', 9)] } };
+  };
+  return { calls };
+}
+
+test('/metrika checks the pair, hides the key and turns the counter on on the site', async () => {
+  const mock = await setup();
+  const repo = fakeGitHub();
+  await setSetting('shop_gh_token', KEY);
+  fakeMetrika(repo);
+  await onMessage(privateMessage(user(5), `/metrika 12345678 ${YM_TOKEN}`));
+  assert.equal(mock.called('sendMessage').length, 0);
+  await onMessage(privateMessage(OWNER, '/metrika'));
+  assert.match(lastText(mock), /metrika\.yandex\.ru/);
+  await onMessage(privateMessage(OWNER, `/metrika 999 ${YM_TOKEN}`));
+  assert.match(lastText(mock), /Нужны номер/);
+  await onMessage(privateMessage(OWNER, `/metrika 87654321 ${YM_TOKEN}`));
+  assert.match(lastText(mock), /нет доступа/);
+  assert.equal(repo.shop().settings.metrika, undefined);
+  await onMessage(privateMessage(OWNER, `/metrika 12345678 ${YM_TOKEN}`));
+  assert.match(lastText(mock), /Метрика подключена: SQUAD SHOP/);
+  assert.equal(mock.called('deleteMessage').length, 3);
+  assert.equal(repo.shop().settings.metrika, '12345678');
+  assert.equal(repo.shop().settings.receiver, '4100');
+});
+
+test('statistics screen: visitors for each period, payments and products by views', async () => {
+  const mock = await setup();
+  const repo = fakeGitHub();
+  await setSetting('shop_gh_token', KEY);
+  await onCallbackQuery(callback(OWNER, 'admin:shop:list'));
+  assert.ok(buttons(mock).some((b) => b.callback_data === 'admin:shop:stats'));
+  await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
+  assert.match(lastText(mock), /\/metrika номер ключ/);
+
+  fakeMetrika(repo);
+  await setSetting('metrika_counter', '12345678');
+  await setSetting('metrika_token', YM_TOKEN);
+  await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
+  const text = lastText(mock);
+  assert.match(text, /Сегодня: 3 · 4\n7 дней: 20 · 31\n30 дней: 70 · 95/);
+  assert.match(text, /Нажали «Оплатить»: 5\nВернулись после оплаты: 5/);
+  assert.match(text, /50 звёзд — 30 · 5\nTelegram Premium · 6 месяцев — 10 · 0/);
+  assert.doesNotMatch(text, /gone/);
+  assert.ok(buttons(mock).some((b) => b.text === '✓ 7 дней'));
+  assert.ok(buttons(mock).some((b) => b.url === 'https://metrika.yandex.ru/dashboard?id=12345678'));
+  await onCallbackQuery(callback(OWNER, 'admin:shop:stats:today'));
+  assert.match(lastText(mock), /Сегодня\nНажали «Оплатить»: 1/);
+  assert.match(lastText(mock), /50 звёзд — 6 · 1/);
+});
+
+test('statistics: Metrika out of reach is an error message, not a crash', async () => {
+  const mock = await setup();
+  const repo = fakeGitHub();
+  fakeMetrika(repo, { down: true });
+  await setSetting('metrika_counter', '12345678');
+  await setSetting('metrika_token', YM_TOKEN);
+  await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
+  assert.match(lastText(mock), /Метрика не отвечает/);
+  assert.ok(buttons(mock).some((b) => b.callback_data === 'admin:shop:stats:week'));
+});
+
+test('Mini App: statistics for one period, owner only', async () => {
+  await setup();
+  const repo = fakeGitHub();
+  await setSetting('shop_gh_token', KEY);
+  let data = await app(OWNER, { action: 'stats' });
+  assert.equal(data.connected, false);
+  const { calls } = fakeMetrika(repo);
+  await setSetting('metrika_counter', '12345678');
+  await setSetting('metrika_token', YM_TOKEN);
+  await assert.rejects(app(user(5), { action: 'stats' }), EndpointError);
+  data = await app(OWNER, { action: 'stats', period: 'month' });
+  assert.deepEqual([data.period, data.users, data.visits, data.pay, data.paid], ['month', 70, 95, 5, 5]);
+  assert.deepEqual(data.products.map((p) => [p.id, p.views, p.cart]), [['s50', 30, 5], ['prem6', 10, 0]]);
+  assert.equal(calls.filter((u) => u.searchParams.get('metrics') === 'ym:s:users,ym:s:visits').length, 1);
+});

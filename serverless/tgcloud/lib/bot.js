@@ -25,6 +25,7 @@ import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
 import * as shopAdmin from './shop_admin.js';
+import * as shopStats from './shop_stats.js';
 import * as relay from './relay.js';
 import * as xp from './xp.js';
 
@@ -107,6 +108,29 @@ async function shopKeyCommand(message, s, args) {
     await replyBold(message, '✅ Ключ GitHub подключён. Товары: /admin → «Товары SQUAD SHOP».', keyboard([[button('Товары SQUAD SHOP', { callback_data: 'admin:shop' })]]));
   } catch (err) {
     if (!(err instanceof shopAdmin.ShopError)) await logError('shopkey', err);
+    await replyBold(message, '❌ ' + escapeHtml(err instanceof shopAdmin.ShopError ? err.message : 'Не получилось проверить ключ. Повтори чуть позже.'));
+  }
+}
+
+// /metrika <counter> <token> connects Yandex Metrika: the shop's statistics.
+async function metrikaCommand(message, s, args) {
+  if (!rankAdmin.allowed(message.from, message.chat)) return;
+  if (args.length) {
+    try {
+      await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
+    } catch {
+      // Too old or already gone: the owner can delete the key by hand.
+    }
+  }
+  const stats = keyboard([[button('📊 Статистика магазина', { callback_data: 'admin:shop:stats' })]]);
+  try {
+    const { name, siteError } = await shopStats.connect(args[0], args[1]);
+    const site = siteError
+      ? `\n\nНо включить счётчик на сайте не вышло: ${escapeHtml(siteError)}\nКогда починишь, пришли /metrika ещё раз.`
+      : '\nСайт начнёт считать посетителей примерно через минуту.';
+    await replyBold(message, `✅ Метрика подключена${name ? `: ${escapeHtml(name)}` : ''}.${site}`, stats);
+  } catch (err) {
+    if (!(err instanceof shopAdmin.ShopError)) await logError('metrika', err);
     await replyBold(message, '❌ ' + escapeHtml(err instanceof shopAdmin.ShopError ? err.message : 'Не получилось проверить ключ. Повтори чуть позже.'));
   }
 }
@@ -334,6 +358,7 @@ const COMMANDS = {
   admin: (m, s) => adminCommand(m, s),
   cancel: (m, s) => cancelCommand(m, s),
   shopkey: (m, s, a) => shopKeyCommand(m, s, a),
+  metrika: (m, s, a) => metrikaCommand(m, s, a),
   rank: (m) => rankCommand(m),
   top: (m, s, a) => topCommand(m, a),
   xpchat: (m, s, a) => xpChatCommand(m, a),

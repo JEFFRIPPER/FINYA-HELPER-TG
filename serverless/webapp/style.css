@@ -1096,3 +1096,14 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .btn-filled.wide .cpi { width: 22px; height: 22px; }
 .btn-filled.wide .cpi circle { stroke: #fff; }
 .goods-del { display: flex; margin: 8px auto 0; }
+
+/* ---- SQUAD SHOP statistics ------------------------------------------------- */
+.stats-card .stats { margin-top: 4px; }
+.stats-note { margin: 10px 4px 0; color: var(--text-2); }
+.stats-sub { margin: 18px 4px 4px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text-2); }
+.stats-nums { flex: none; min-width: 52px; display: flex; flex-direction: column; align-items: flex-end; }
+.stats-nums b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.stats-nums span { font-size: 11px; line-height: 14px; color: var(--text-2); }
+.stats-foot { margin: 12px 4px 0; font-size: 12px; line-height: 16px; color: var(--text-2); text-align: center; }
+.stats-card > div { transition: opacity var(--dur-short) var(--ease-standard); }
+.stats-card.busy > div { opacity: 0.55; }
