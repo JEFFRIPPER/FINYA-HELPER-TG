@@ -276,7 +276,7 @@ function fakeGoat({ down = false } = {}) {
     if (!u.hostname.endsWith('.goatcounter.com')) return github(url, opts);
     if (down) throw new Error('request failed');
     calls.push(u);
-    if (u.hostname !== 'squadshop.goatcounter.com') return { status: 404, json: { error: 'no such site' } };
+    if (u.hostname !== 'squadshop.goatcounter.com') return { status: 400, json: { error: `no site at this domain ("${u.hostname}")` } };
     if (opts.headers.Authorization !== `Bearer ${GC_TOKEN}`) return { status: 401, json: { error: 'bad key' } };
     assert.equal(u.pathname, '/api/v0/stats/hits');
     assert.match(u.searchParams.get('start'), /^\d{4}-\d\d-\d\dT\d\d:00:00Z$/);
@@ -307,7 +307,7 @@ test('/shopstats checks the pair, hides the key and turns the counter on on the 
   await onMessage(privateMessage(OWNER, '/shopstats'));
   assert.match(lastText(mock), /goatcounter\.com/);
   await onMessage(privateMessage(OWNER, `/shopstats othershop ${GC_TOKEN}`));
-  assert.match(lastText(mock), /Счётчика с таким кодом нет/);
+  assert.match(lastText(mock), /Счётчика othershop\.goatcounter\.com нет/);
   await onMessage(privateMessage(OWNER, `/shopstats squadshop ${'x'.repeat(50)}`));
   assert.match(lastText(mock), /не принимает ключ/);
   assert.equal(repo.shop().settings.goatcounter, undefined);

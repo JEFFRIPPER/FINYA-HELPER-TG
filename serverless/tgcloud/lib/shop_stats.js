@@ -54,7 +54,10 @@ async function goat(code, token, path, params) {
   }
   if (res.status === 401) throw new ShopError('GoatCounter не принимает ключ: он удалён или в коде счётчика ошибка. Проверь и пришли /shopstats код ключ ещё раз.');
   if (res.status === 403) throw new ShopError('У ключа нет права читать статистику. Создай ключ с этим правом в меню API.');
-  if (res.status === 404) throw new ShopError('Счётчика с таким кодом нет. Код — это первая часть адреса: код.goatcounter.com.');
+  // An unknown code comes back as 400 "no site at this domain".
+  if (res.status === 404 || (res.status === 400 && /no site/i.test(String(body && body.error)))) {
+    throw new ShopError(`Счётчика ${code}.goatcounter.com нет. Код — первая часть адреса твоего счётчика: открой GoatCounter и посмотри адрес в браузере (код.goatcounter.com).`);
+  }
   if (!res.ok) {
     const why = body && (body.error || body.errors) ? `: ${truncate(typeof body.error === 'string' ? body.error : JSON.stringify(body.errors || body.error), 200)}` : '';
     throw new ShopError(`GoatCounter ответил ошибкой ${res.status}${why}. Повтори чуть позже.`);
@@ -80,7 +83,7 @@ export function range(days, now = Date.now()) {
 export async function connect(rawCode, token) {
   const code = cleanCode(rawCode);
   if (!code || !/^[A-Za-z0-9_-]{16,}$/.test(String(token || ''))) {
-    throw new ShopError('Нужны код счётчика и ключ через пробел: /shopstats squadshop ключ\n\n' + STATS_HELP);
+    throw new ShopError('Нужны код счётчика и ключ через пробел: /shopstats код ключ\n\n' + STATS_HELP);
   }
   await goat(code, token, '/stats/hits', { ...range(1), limit: 1 });
   await setSetting(CODE_SETTING, code);
