@@ -741,8 +741,6 @@
 
   var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
   var adminRoot = null;
-  // SQUAD SHOP statistics: Финя reads them from GoatCounter.
-  var shopStats = { period: 'week', data: null, loaded: false, failed: false, seq: 0 };
   // Products of the SQUAD SHOP: Финя commits them to the site's repository.
   var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '' };
 
@@ -799,85 +797,12 @@
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
-      h('section', { class: 'card list-card goods-card' }),
-      h('section', { class: 'card list-card stats-card' }));
+      h('section', { class: 'card list-card goods-card' }));
     drawAdmin();
     drawGoods();
-    drawStats();
     loadGoods();
     if (!admin.loaded) loadAdmin(true);
-    loadStats();
     return [adminRoot];
-  }
-
-  // ---- SQUAD SHOP statistics ------------------------------------------------
-
-  var STAT_PERIODS = [['today', 'Сегодня'], ['week', '7 дней'], ['month', '30 дней']];
-
-  function loadStats() {
-    var seq = ++shopStats.seq;
-    shopStats.loaded = false;
-    shopStats.failed = false;
-    drawStats();
-    api('shop', { action: 'stats', period: shopStats.period }).then(function (data) {
-      if (seq !== shopStats.seq) return;
-      shopStats.data = data;
-      shopStats.loaded = true;
-      drawStats();
-    }, function (err) {
-      if (seq !== shopStats.seq) return;
-      shopStats.loaded = true;
-      shopStats.failed = errorText(err);
-      drawStats();
-    });
-  }
-
-  function num(n) { return Number(n || 0).toLocaleString('ru-RU'); }
-
-  function statsBody(d) {
-    var seg = h('div', { class: 'seg', role: 'tablist' }, STAT_PERIODS.map(function (t) {
-      return h('button', {
-        class: 'ripple', role: 'tab', 'aria-selected': String(shopStats.period === t[0]),
-        onclick: function () {
-          if (shopStats.period === t[0]) return;
-          shopStats.period = t[0];
-          haptic();
-          loadStats();
-        },
-      }, h('span', { class: 'check' }, icon('check')), t[1]);
-    }));
-    var tiles = h('div', { class: 'stats' },
-      h('div', { class: 'stat' }, icon('groups_fill'), h('b', { text: num(d.total) }), h('span', { text: 'посещения' })),
-      h('div', { class: 'stat' }, icon('storefront_fill'), h('b', { text: num(d.pay) }), h('span', { text: 'нажали «Оплатить»' })),
-      h('div', { class: 'stat' }, icon('check_circle_fill'), h('b', { text: num(d.paid) }), h('span', { text: 'вернулись после оплаты' })));
-    var list = d.products && d.products.length
-      ? h('ul', { class: 'list' }, withDividers(d.products.map(function (p) {
-        return h('li', { class: 'item' + (p.hidden ? ' locked' : '') },
-          h('div', { class: 'body' }, h('b', { text: p.title }),
-            h('span', { text: [p.cat, p.hidden ? 'скрыт' : null].filter(Boolean).join(' · ') || 'без категории' })),
-          h('div', { class: 'stats-nums' }, h('b', { text: num(p.views) }), h('span', { text: 'просм.' })),
-          h('div', { class: 'stats-nums' }, h('b', { text: num(p.cart) }), h('span', { text: 'в корз.' })));
-      })))
-      : h('p', { class: 'empty', text: 'Товаров нет или Финя не видит магазин.' });
-    return [seg, tiles, h('h4', { class: 'stats-sub', text: 'Товары' }), list,
-      h('p', { class: 'stats-foot', text: 'Цифры из GoatCounter. Каждый посетитель считается один раз за 8 часов.' })];
-  }
-
-  function drawStats() {
-    var card = adminRoot && adminRoot.querySelector('.stats-card');
-    if (!card) return;
-    var d = shopStats.data;
-    var body;
-    if (!shopStats.loaded && !d) body = [h('div', { class: 'state small' }, loader())];
-    else if (shopStats.failed) body = [h('p', { class: 'empty', text: shopStats.failed })];
-    else if (d && !d.connected) body = [h('p', { class: 'note pre', text: d.help })];
-    else body = statsBody(d);
-    if (!shopStats.loaded && d) card.classList.add('busy'); else card.classList.remove('busy');
-    card.replaceChildren.apply(card, h('div', null,
-      h('h3', { text: 'Статистика SQUAD SHOP' }),
-      h('div', null, body),
-      d && d.connected && d.link ? h('button', { class: 'btn-tonal more ripple', onclick: function () { openLink(d.link); } }, icon('monitoring'), 'Открыть GoatCounter') : null,
-      shopStats.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadStats(); } }, icon('refresh'), 'Обновить') : null).childNodes);
   }
 
   // ---- SQUAD SHOP products ------------------------------------------------

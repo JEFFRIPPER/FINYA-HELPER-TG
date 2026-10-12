@@ -103,20 +103,6 @@ export function categories(data) {
   return list;
 }
 
-// Products for the statistics screen; null while the GitHub key is missing.
-export async function shopData() {
-  const key = await getSetting(KEY_SETTING);
-  return key ? (await readShop(key)).data : null;
-}
-
-// Writes one value of shop.json → settings (the site reads them on load).
-export async function setShopSetting(name, value) {
-  await updateShop(`настройка ${name}`, (data) => {
-    data.settings = data.settings && typeof data.settings === 'object' ? data.settings : {};
-    data.settings[name] = value;
-  });
-}
-
 async function readShop(key) {
   const file = await gh('GET', `${contentPath('shop.json')}?ref=${BRANCH}`, key);
   if (!file) throw new ShopError('В репозитории нет shop.json.');
@@ -196,7 +182,6 @@ function listView(data, note = '') {
   text += '\nСкрытые и товары без цены покупатели не видят.';
   const rows = items.map((p) => [btn(`${p.hidden || !p.price ? '🙈 ' : ''}${truncate(title(p), 28)} · ${money(p.price)}`, `p:${p.id}`)]);
   rows.push([btn('➕ Добавить товар', 'new')]);
-  rows.push([btn('📊 Статистика магазина', 'stats')]);
   rows.push([button('Открыть магазин', { url: SQUAD_LINKS.shop })]);
   rows.push([menuButton('⬅️ Админ-панель', { callback_data: 'admin:menu' })]);
   return [text, keyboard(rows)];
