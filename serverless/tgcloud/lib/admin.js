@@ -13,7 +13,6 @@ import * as jobs from './jobs.js';
 import * as relay from './relay.js';
 import * as rankAdmin from './rank_admin.js';
 import * as shopAdmin from './shop_admin.js';
-import * as shopStats from './shop_stats.js';
 
 export async function relayStatusText() {
   const targets = await relay.status();
@@ -100,10 +99,6 @@ export async function handleAdminCallback(query, s, action) {
   rankAdmin.clear(s, { allActions: true });
   shopAdmin.clear(s);
 
-  if (action === 'shop:stats' || action.startsWith('shop:stats:')) {
-    await shopStats.handle(query, action);
-    return;
-  }
   if (action === 'shop' || action.startsWith('shop:')) {
     await shopAdmin.handle(query, s, action);
     return;
