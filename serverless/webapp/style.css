@@ -1099,7 +1099,6 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 
 /* ---- SQUAD SHOP statistics ------------------------------------------------- */
 .stats-card .stats { margin-top: 4px; }
-.stats-note { margin: 10px 4px 0; color: var(--text-2); }
 .stats-sub { margin: 18px 4px 4px; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text-2); }
 .stats-nums { flex: none; min-width: 52px; display: flex; flex-direction: column; align-items: flex-end; }
 .stats-nums b { font-weight: 500; font-variant-numeric: tabular-nums; }

@@ -741,7 +741,7 @@
 
   var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
   var adminRoot = null;
-  // SQUAD SHOP statistics: Финя reads them from Yandex Metrika.
+  // SQUAD SHOP statistics: Финя reads them from GoatCounter.
   var shopStats = { period: 'week', data: null, loaded: false, failed: false, seq: 0 };
   // Products of the SQUAD SHOP: Финя commits them to the site's repository.
   var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '' };
@@ -847,10 +847,9 @@
       }, h('span', { class: 'check' }, icon('check')), t[1]);
     }));
     var tiles = h('div', { class: 'stats' },
-      h('div', { class: 'stat' }, icon('groups_fill'), h('b', { text: num(d.users) }), h('span', { text: 'посетители' })),
-      h('div', { class: 'stat' }, icon('monitoring_fill'), h('b', { text: num(d.visits) }), h('span', { text: 'визиты' })),
-      h('div', { class: 'stat' }, icon('storefront_fill'), h('b', { text: num(d.pay) }), h('span', { text: 'нажали «Оплатить»' })));
-    var paid = h('p', { class: 'stats-note', text: 'Вернулись после оплаты: ' + num(d.paid) });
+      h('div', { class: 'stat' }, icon('groups_fill'), h('b', { text: num(d.total) }), h('span', { text: 'посещения' })),
+      h('div', { class: 'stat' }, icon('storefront_fill'), h('b', { text: num(d.pay) }), h('span', { text: 'нажали «Оплатить»' })),
+      h('div', { class: 'stat' }, icon('check_circle_fill'), h('b', { text: num(d.paid) }), h('span', { text: 'вернулись после оплаты' })));
     var list = d.products && d.products.length
       ? h('ul', { class: 'list' }, withDividers(d.products.map(function (p) {
         return h('li', { class: 'item' + (p.hidden ? ' locked' : '') },
@@ -860,8 +859,8 @@
           h('div', { class: 'stats-nums' }, h('b', { text: num(p.cart) }), h('span', { text: 'в корз.' })));
       })))
       : h('p', { class: 'empty', text: 'Товаров нет или Финя не видит магазин.' });
-    return [seg, tiles, paid, h('h4', { class: 'stats-sub', text: 'Товары' }), list,
-      h('p', { class: 'stats-foot', text: 'Цифры из Яндекс Метрики, новые визиты появляются через несколько минут.' })];
+    return [seg, tiles, h('h4', { class: 'stats-sub', text: 'Товары' }), list,
+      h('p', { class: 'stats-foot', text: 'Цифры из GoatCounter. Каждый посетитель считается один раз за 8 часов.' })];
   }
 
   function drawStats() {
@@ -877,7 +876,7 @@
     card.replaceChildren.apply(card, h('div', null,
       h('h3', { text: 'Статистика SQUAD SHOP' }),
       h('div', null, body),
-      d && d.connected && d.link ? h('button', { class: 'btn-tonal more ripple', onclick: function () { openLink(d.link); } }, icon('monitoring'), 'Открыть Метрику') : null,
+      d && d.connected && d.link ? h('button', { class: 'btn-tonal more ripple', onclick: function () { openLink(d.link); } }, icon('monitoring'), 'Открыть GoatCounter') : null,
       shopStats.loaded ? h('button', { class: 'btn-tonal more ripple', onclick: function () { vibrate('light'); loadStats(); } }, icon('refresh'), 'Обновить') : null).childNodes);
   }
 

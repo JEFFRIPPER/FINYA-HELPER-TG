@@ -263,105 +263,109 @@ test('Mini App: category is saved, and an older app without it keeps the old one
   assert.equal(repo.shop().products[0].price, 90);
 });
 
-// ---- statistics (Yandex Metrika) ------------------------------------------------
+// ---- statistics (GoatCounter) ---------------------------------------------------
 
-const YM_TOKEN = 'y0_' + 'B'.repeat(40);
+const GC_TOKEN = 'k'.repeat(50);
 
-// GitHub plus a fake Metrika API: 12345678 is the only counter the key can see.
-function fakeMetrika(repo, { down = false } = {}) {
+// GitHub plus a fake GoatCounter API: squadshop is the only counter the key can read.
+function fakeGoat({ down = false } = {}) {
   const github = fetchMock.handler;
   const calls = [];
   fetchMock.handler = async (url, opts) => {
-    if (!url.startsWith('https://api-metrika.yandex.net/')) return github(url, opts);
-    if (down) throw new Error('request failed');
-    assert.equal(opts.headers.Authorization, `OAuth ${YM_TOKEN}`);
     const u = new URL(url);
+    if (!u.hostname.endsWith('.goatcounter.com')) return github(url, opts);
+    if (down) throw new Error('request failed');
     calls.push(u);
-    if (u.pathname === '/management/v1/counter/12345678') return { json: { counter: { id: 12345678, name: 'SQUAD SHOP' } } };
-    if (u.pathname.startsWith('/management/v1/counter/')) return { status: 403, json: { message: 'Access denied' } };
-    assert.equal(u.pathname, '/stat/v1/data');
-    assert.equal(u.searchParams.get('ids'), '12345678');
-    const from = u.searchParams.get('date1');
-    if (u.searchParams.get('metrics') === 'ym:s:users,ym:s:visits') {
-      return { json: { data: [], totals: { today: [3, 4], '6daysAgo': [20, 31], '29daysAgo': [70, 95] }[from] } };
-    }
-    assert.equal(u.searchParams.get('dimensions'), 'ym:pv:URL');
-    const k = from === 'today' ? 1 : 5;
-    const row = (path, n) => ({ dimensions: [{ name: 'https://jeffripper.github.io/SQUAD-SHOP/' + path }], metrics: [n * k] });
-    return { json: { data: [row('', 40), row('?p=s50', 6), row('?p=prem6', 2), row('?cart=s50', 1), row('?pay=1', 1), row('?paid=1', 1), row('?p=gone', 9)] } };
+    if (u.hostname !== 'squadshop.goatcounter.com') return { status: 404, json: { error: 'no such site' } };
+    if (opts.headers.Authorization !== `Bearer ${GC_TOKEN}`) return { status: 401, json: { error: 'bad key' } };
+    assert.equal(u.pathname, '/api/v0/stats/hits');
+    assert.match(u.searchParams.get('start'), /^\d{4}-\d\d-\d\dT\d\d:00:00Z$/);
+    assert.match(u.searchParams.get('end'), /^\d{4}-\d\d-\d\dT\d\d:00:00Z$/);
+    const days = Math.round((Date.parse(u.searchParams.get('end')) - Date.parse(u.searchParams.get('start'))) / 86400000);
+    const k = days <= 1 ? 1 : days <= 8 ? 5 : 17;
+    const row = (path, n, event = true) => ({ path, title: path, event, count: n * k });
+    return { json: { more: false, hits: [row('/', 8, false), row('/?utm=tg', 1, false), row('p-s50', 6), row('p-prem6', 2),
+      row('cart-s50', 1), row('pay', 1), row('paid', 1), row('p-gone', 9)] } };
   };
   return { calls };
 }
 
-test('/metrika checks the pair, hides the key and turns the counter on on the site', async () => {
+test('range: Moscow days, whole hours', async () => {
+  const { range } = await import('../tgcloud/lib/shop_stats.js');
+  const now = Date.parse('2026-10-12T00:30:00Z'); // 03:30 in Moscow
+  assert.deepEqual(range(1, now), { start: '2026-10-11T21:00:00Z', end: '2026-10-12T01:00:00Z' });
+  assert.deepEqual(range(7, now), { start: '2026-10-05T21:00:00Z', end: '2026-10-12T01:00:00Z' });
+});
+
+test('/shopstats checks the pair, hides the key and turns the counter on on the site', async () => {
   const mock = await setup();
   const repo = fakeGitHub();
   await setSetting('shop_gh_token', KEY);
-  fakeMetrika(repo);
-  await onMessage(privateMessage(user(5), `/metrika 12345678 ${YM_TOKEN}`));
+  fakeGoat();
+  await onMessage(privateMessage(user(5), `/shopstats squadshop ${GC_TOKEN}`));
   assert.equal(mock.called('sendMessage').length, 0);
-  await onMessage(privateMessage(OWNER, '/metrika'));
-  assert.match(lastText(mock), /metrika\.yandex\.ru/);
-  await onMessage(privateMessage(OWNER, `/metrika 999 ${YM_TOKEN}`));
-  assert.match(lastText(mock), /Нужны номер/);
-  await onMessage(privateMessage(OWNER, `/metrika 87654321 ${YM_TOKEN}`));
-  assert.match(lastText(mock), /нет доступа/);
-  assert.equal(repo.shop().settings.metrika, undefined);
-  await onMessage(privateMessage(OWNER, `/metrika 12345678 ${YM_TOKEN}`));
-  assert.match(lastText(mock), /Метрика подключена: SQUAD SHOP/);
+  await onMessage(privateMessage(OWNER, '/shopstats'));
+  assert.match(lastText(mock), /goatcounter\.com/);
+  await onMessage(privateMessage(OWNER, `/shopstats othershop ${GC_TOKEN}`));
+  assert.match(lastText(mock), /Счётчика с таким кодом нет/);
+  await onMessage(privateMessage(OWNER, `/shopstats squadshop ${'x'.repeat(50)}`));
+  assert.match(lastText(mock), /не принимает ключ/);
+  assert.equal(repo.shop().settings.goatcounter, undefined);
+  await onMessage(privateMessage(OWNER, `/shopstats https://SquadShop.goatcounter.com/ ${GC_TOKEN}`));
+  assert.match(lastText(mock), /GoatCounter подключён: squadshop\.goatcounter\.com/);
   assert.equal(mock.called('deleteMessage').length, 3);
-  assert.equal(repo.shop().settings.metrika, '12345678');
+  assert.equal(repo.shop().settings.goatcounter, 'squadshop');
   assert.equal(repo.shop().settings.receiver, '4100');
 });
 
-test('statistics screen: visitors for each period, payments and products by views', async () => {
+test('statistics screen: visits for each period, payments and products by views', async () => {
   const mock = await setup();
-  const repo = fakeGitHub();
+  fakeGitHub();
   await setSetting('shop_gh_token', KEY);
   await onCallbackQuery(callback(OWNER, 'admin:shop:list'));
   assert.ok(buttons(mock).some((b) => b.callback_data === 'admin:shop:stats'));
   await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
-  assert.match(lastText(mock), /\/metrika номер ключ/);
+  assert.match(lastText(mock), /\/shopstats код ключ/);
 
-  fakeMetrika(repo);
-  await setSetting('metrika_counter', '12345678');
-  await setSetting('metrika_token', YM_TOKEN);
+  fakeGoat();
+  await setSetting('goat_code', 'squadshop');
+  await setSetting('goat_token', GC_TOKEN);
   await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
   const text = lastText(mock);
-  assert.match(text, /Сегодня: 3 · 4\n7 дней: 20 · 31\n30 дней: 70 · 95/);
+  assert.match(text, /Сегодня: 9\n7 дней: 45\n30 дней: 153/);
   assert.match(text, /Нажали «Оплатить»: 5\nВернулись после оплаты: 5/);
   assert.match(text, /50 звёзд — 30 · 5\nTelegram Premium · 6 месяцев — 10 · 0/);
   assert.doesNotMatch(text, /gone/);
   assert.ok(buttons(mock).some((b) => b.text === '✓ 7 дней'));
-  assert.ok(buttons(mock).some((b) => b.url === 'https://metrika.yandex.ru/dashboard?id=12345678'));
+  assert.ok(buttons(mock).some((b) => b.url === 'https://squadshop.goatcounter.com'));
   await onCallbackQuery(callback(OWNER, 'admin:shop:stats:today'));
   assert.match(lastText(mock), /Сегодня\nНажали «Оплатить»: 1/);
   assert.match(lastText(mock), /50 звёзд — 6 · 1/);
 });
 
-test('statistics: Metrika out of reach is an error message, not a crash', async () => {
+test('statistics: GoatCounter out of reach is an error message, not a crash', async () => {
   const mock = await setup();
-  const repo = fakeGitHub();
-  fakeMetrika(repo, { down: true });
-  await setSetting('metrika_counter', '12345678');
-  await setSetting('metrika_token', YM_TOKEN);
+  fakeGitHub();
+  fakeGoat({ down: true });
+  await setSetting('goat_code', 'squadshop');
+  await setSetting('goat_token', GC_TOKEN);
   await onCallbackQuery(callback(OWNER, 'admin:shop:stats'));
-  assert.match(lastText(mock), /Метрика не отвечает/);
+  assert.match(lastText(mock), /GoatCounter не отвечает/);
   assert.ok(buttons(mock).some((b) => b.callback_data === 'admin:shop:stats:week'));
 });
 
 test('Mini App: statistics for one period, owner only', async () => {
   await setup();
-  const repo = fakeGitHub();
+  fakeGitHub();
   await setSetting('shop_gh_token', KEY);
   let data = await app(OWNER, { action: 'stats' });
   assert.equal(data.connected, false);
-  const { calls } = fakeMetrika(repo);
-  await setSetting('metrika_counter', '12345678');
-  await setSetting('metrika_token', YM_TOKEN);
+  const { calls } = fakeGoat();
+  await setSetting('goat_code', 'squadshop');
+  await setSetting('goat_token', GC_TOKEN);
   await assert.rejects(app(user(5), { action: 'stats' }), EndpointError);
   data = await app(OWNER, { action: 'stats', period: 'month' });
-  assert.deepEqual([data.period, data.users, data.visits, data.pay, data.paid], ['month', 70, 95, 5, 5]);
-  assert.deepEqual(data.products.map((p) => [p.id, p.views, p.cart]), [['s50', 30, 5], ['prem6', 10, 0]]);
-  assert.equal(calls.filter((u) => u.searchParams.get('metrics') === 'ym:s:users,ym:s:visits').length, 1);
+  assert.deepEqual([data.period, data.total, data.pay, data.paid], ['month', 153, 17, 17]);
+  assert.deepEqual(data.products.map((p) => [p.id, p.views, p.cart]), [['s50', 102, 17], ['prem6', 34, 0]]);
+  assert.equal(calls.length, 1);
 });
