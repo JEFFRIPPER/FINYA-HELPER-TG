@@ -112,8 +112,8 @@ async function shopKeyCommand(message, s, args) {
   }
 }
 
-// /metrika <counter> <token> connects Yandex Metrika: the shop's statistics.
-async function metrikaCommand(message, s, args) {
+// /shopstats <code> <key> connects GoatCounter: the shop's statistics.
+async function shopStatsCommand(message, s, args) {
   if (!rankAdmin.allowed(message.from, message.chat)) return;
   if (args.length) {
     try {
@@ -124,13 +124,13 @@ async function metrikaCommand(message, s, args) {
   }
   const stats = keyboard([[button('📊 Статистика магазина', { callback_data: 'admin:shop:stats' })]]);
   try {
-    const { name, siteError } = await shopStats.connect(args[0], args[1]);
+    const { code, siteError } = await shopStats.connect(args[0], args[1]);
     const site = siteError
-      ? `\n\nНо включить счётчик на сайте не вышло: ${escapeHtml(siteError)}\nКогда починишь, пришли /metrika ещё раз.`
+      ? `\n\nНо включить счётчик на сайте не вышло: ${escapeHtml(siteError)}\nКогда починишь, пришли /shopstats ещё раз.`
       : '\nСайт начнёт считать посетителей примерно через минуту.';
-    await replyBold(message, `✅ Метрика подключена${name ? `: ${escapeHtml(name)}` : ''}.${site}`, stats);
+    await replyBold(message, `✅ GoatCounter подключён: ${escapeHtml(code)}.goatcounter.com.${site}`, stats);
   } catch (err) {
-    if (!(err instanceof shopAdmin.ShopError)) await logError('metrika', err);
+    if (!(err instanceof shopAdmin.ShopError)) await logError('shopstats', err);
     await replyBold(message, '❌ ' + escapeHtml(err instanceof shopAdmin.ShopError ? err.message : 'Не получилось проверить ключ. Повтори чуть позже.'));
   }
 }
@@ -358,7 +358,7 @@ const COMMANDS = {
   admin: (m, s) => adminCommand(m, s),
   cancel: (m, s) => cancelCommand(m, s),
   shopkey: (m, s, a) => shopKeyCommand(m, s, a),
-  metrika: (m, s, a) => metrikaCommand(m, s, a),
+  shopstats: (m, s, a) => shopStatsCommand(m, s, a),
   rank: (m) => rankCommand(m),
   top: (m, s, a) => topCommand(m, a),
   xpchat: (m, s, a) => xpChatCommand(m, a),
