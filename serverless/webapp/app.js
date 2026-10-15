@@ -95,6 +95,7 @@
     birthday: ['cake_fill', 'Подарок на день рождения', 'gold'],
     poll: ['how_to_vote_fill', 'Голос в опросе', ''],
     weekly: ['trophy_fill', 'Бонус за топ недели', 'gold'],
+    farm: ['bolt_fill', 'Фарм в чате', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
@@ -447,11 +448,25 @@
           title ? h('span', { class: 'title-chip', text: title }) : null)),
       h('div', { class: 'chips' },
         h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
-        streakChip(me.streak)),
+        streakChip(me.streak), marriageChip(me.marriage), repChip(me.rep)),
       total,
       progress,
       note ? h('div', { class: 'note', text: note }) : null,
       shareButton(me));
+  }
+
+  // «брак» in the chat: who the member is married to and for how long.
+  function marriageChip(m) {
+    if (!m) return null;
+    return h('span', { class: 'love-chip', title: 'Брак в чате Сквада' }, icon('favorite_fill'),
+      h('span', { text: 'Пара: ' + m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }));
+  }
+
+  // «+» in the chat.
+  function repChip(rep) {
+    if (!rep) return null;
+    return h('span', { class: 'rep-chip', title: 'Репутация в чате Сквада' }, icon('verified_fill'),
+      h('span', { text: 'Репутация ' + rep }));
   }
 
   // Days in a row with XP: the flame grows with the streak and cools down
@@ -661,7 +676,8 @@
       h('li', null, icon('favorite_fill'), h('span', { text: '+' + rules.reaction + ' XP за реакцию в обсуждениях, до ' + rules.dailyReactions + ' в день.' })),
       h('li', null, icon('local_fire_department_fill'), h('span', { text: 'Не больше ' + me.dailyLimit + ' XP в день за комментарии и реакции, по Москве.' })),
       h('li', null, icon('redeem_fill'), h('span', { text: 'Сверху лимита: награда дня, квесты недели, ачивки, +' + rules.poll + ' XP за голос в опросе, +' + rules.referral + ' XP за друга и +' + rules.birthday + ' XP в день рождения.' })),
-      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели по комментариям и реакциям получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
+      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели по комментариям и реакциям получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })),
+      rules.farm ? h('li', null, icon('bolt_fill'), h('span', { text: '«фарм» в чате: до +' + rules.farm + ' XP, иногда до +' + rules.farmRare + ', раз в ' + rules.farmHours + ' ч. Все команды чата: «Финя, команды».' })) : null);
     return [achievementsCard(state.data.club),
       h('section', { class: 'card' }, h('h3', { text: 'Звания' }), h('ul', { class: 'list' }, withDividers(items))),
       h('section', { class: 'card' }, h('h3', { text: 'Как получить XP' }), how)];
@@ -1202,11 +1218,13 @@
     });
     return h('section', { class: 'card club-admin' },
       h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('celebration_fill')),
-        h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели и поздравления' }))),
+        h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели, поздравления и защита чатов' }))),
       h('div', { class: 'switches' },
         setting('weekly', 'Итоги недели в канал', 'Понедельник, 12:00 МСК: топ-3 с бонусом XP'),
         setting('welcome', 'Приветствие новичков', 'В обсуждениях, когда кто-то вступает'),
-        setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК')),
+        setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК'),
+        setting('captcha', 'Капча для новичков', 'Кнопка «Я не бот», иначе кик через 5 минут'),
+        setting('antiflood', 'Антифлуд в чатах', 'Мут на 10 минут за 8 сообщений за 10 секунд')),
       h('div', { class: 'row-btns' },
         h('button', { class: 'btn-filled ripple', onclick: openPollSheet }, icon('add'), 'Новый опрос'), preview),
       polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);

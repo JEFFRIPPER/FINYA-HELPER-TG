@@ -686,6 +686,8 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
       weekly: Boolean(await getSetting('club_weekly')),
       welcome: Boolean(await getSetting('club_welcome')),
       birthdays: Boolean(await getSetting('club_birthdays')),
+      antiflood: Boolean(await getSetting('chat_antiflood')),
+      captcha: Boolean(await getSetting('chat_captcha')),
     };
   }
   return data;

@@ -4,7 +4,10 @@ import { isMaintenance, setSetting } from './store.js';
 import * as club from './club.js';
 import { profileData } from './webapp.js';
 
-const OWNER_SETTINGS = { weekly: 'club_weekly', welcome: 'club_welcome', birthdays: 'club_birthdays' };
+const OWNER_SETTINGS = {
+  weekly: 'club_weekly', welcome: 'club_welcome', birthdays: 'club_birthdays',
+  antiflood: 'chat_antiflood', captcha: 'chat_captcha',
+};
 
 function int(value) {
   const n = Number(value);

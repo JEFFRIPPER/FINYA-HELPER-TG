@@ -15,6 +15,9 @@ const DEFAULTS = {
   club_weekly: true,
   club_welcome: true,
   club_birthdays: true,
+  // Chat protection in the Squad chats, switched in the Mini App panel or by text.
+  chat_antiflood: true,
+  chat_captcha: true,
 };
 
 export async function getSetting(key) {
@@ -152,6 +155,19 @@ export async function recentFeedback(limit = 5) {
 export async function feedbackCount() {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM feedback`);
   return row ? row.c : 0;
+}
+
+// ---- bot replies that clean themselves up --------------------------------
+
+export const GROUP_REPLY_TTL = 120;
+
+// Messages in a group that pump() deletes later (see autodelete in schema.js).
+export async function deleteLater(chatId, messageIds, ttl = GROUP_REPLY_TTL) {
+  const at = nowInt() + ttl;
+  for (const id of messageIds) {
+    if (!id) continue;
+    await db.run(sql`INSERT OR IGNORE INTO autodelete (chat_id, message_id, delete_at) VALUES (${chatId}, ${id}, ${at})`);
+  }
 }
 
 // ---- error log (replaces logs/*.log) ------------------------------------

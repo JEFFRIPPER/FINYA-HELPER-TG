@@ -7,7 +7,7 @@ import profileEndpoint from '../tgcloud/endpoints/profile.js';
 import { onCallbackQuery, onChannelPost, onMessage, pump } from '../tgcloud/lib/bot.js';
 import * as club from '../tgcloud/lib/club.js';
 import * as jobs from '../tgcloud/lib/jobs.js';
-import { getSetting } from '../tgcloud/lib/store.js';
+import { getSetting, setSetting } from '../tgcloud/lib/store.js';
 import { nowInt, weekStart } from '../tgcloud/lib/util.js';
 import * as xp from '../tgcloud/lib/xp.js';
 import {
@@ -147,6 +147,7 @@ test('weekly summary is retried when the channel post fails', async () => {
 
 test('welcome works per chat and removes only that chat\'s old greeting', async () => {
   const api = await setup();
+  await setSetting('chat_captcha', false);
   const OTHER = { id: -1009, type: 'supergroup', title: 'Relay' };
   await db.run("INSERT INTO relay_targets VALUES (?, 'R', 1, 0)", [OTHER.id]);
   const join = (chat, u) => groupMessage(chat, u, undefined, { new_chat_members: [u] });
