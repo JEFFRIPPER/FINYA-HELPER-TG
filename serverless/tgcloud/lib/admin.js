@@ -74,7 +74,7 @@ async function showBlacklist(query, s, page = 0) {
   if (page + 1 < pages) nav.push(button('Далее', { callback_data: `admin:blacklist:${page + 1}` }));
   const rows = nav.length ? [nav] : [];
   rows.push([button('Обновить', { callback_data: `admin:blacklist:${page}` })]);
-  rows.push([menuButton('⬅️ Админ-панель', { callback_data: 'admin:menu' })]);
+  rows.push([menuButton('⬅️ Участники', { callback_data: 'admin:sec:people' })]);
   await editText(query, boldHtml(text), keyboard(rows));
 }
 
@@ -107,7 +107,7 @@ export async function handleAdminCallback(query, s, action) {
     delete s.admin_action;
     await editOrSend(query, await relayStatusText(), keyboard([
       [button('Обновить', { callback_data: 'admin:posts' })],
-      [menuButton('⬅️ Админ-панель', { callback_data: 'admin:menu' })],
+      [menuButton('⬅️ Рассылки', { callback_data: 'admin:sec:posts' })],
     ]));
     return;
   }

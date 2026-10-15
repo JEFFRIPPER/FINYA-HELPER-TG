@@ -312,7 +312,7 @@ export async function handle(query, s, action) {
 async function errorText(err) {
   if (err instanceof ShopError) return escapeHtml(err.message);
   await logError('shop_admin', err);
-  return 'Не получилось: внутренняя ошибка. Подробности в /admin → Логи.';
+  return 'Не получилось: внутренняя ошибка. Подробности в /admin → Сервис → Логи.';
 }
 
 // ---- input -----------------------------------------------------------------

@@ -5,14 +5,14 @@ import {
   HOME_TEXT, INFO_TEXT, MORE_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT, WEBAPP_URL,
 } from './config.js';
 import {
-  answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, keyboard, reply, replyBold,
+  answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, isRetryAfter, keyboard, reply, replyBold,
 } from './tg.js';
 import {
   addFeedback, getSetting, getUser, isAdminUser, isMaintenance, logError, setSetting, setSubscribed,
   trackUser, userCount, withSession,
 } from './store.js';
 import {
-  adminKeyboard, backHomeKeyboard, channelNewsView, channelSubscriptionKeyboard, channelSubscriptionText,
+  adminKeyboard, backHomeKeyboard, backMoreKeyboard, channelNewsView, channelSubscriptionKeyboard, channelSubscriptionText,
   homeKeyboard, infoKeyboard, moreKeyboard, partnerKeyboard, profileAppKeyboard, profileRow, squadKeyboard, statusKeyboard,
   statusText, xpKeyboard, xpProfileText, xpRulesText, xpTopText,
 } from './ui.js';
@@ -67,6 +67,11 @@ async function sendStartPhoto(chatId, caption, replyMarkup) {
 // A private chat keeps one menu: the user's command and the previous menu go away.
 async function tidyPrivate(message, s, sent) {
   if (!message || message.chat.type !== 'private') return;
+  // The prompt «напиши текст» is deleted with the old menu, so its mode must end too.
+  delete s.awaiting_feedback;
+  delete s.admin_action;
+  rankAdmin.clear(s, { allActions: true });
+  shopAdmin.clear(s);
   const old = s.menu_id;
   if (sent && sent.message_id) s.menu_id = sent.message_id;
   for (const id of [message.message_id, old]) {
@@ -85,24 +90,31 @@ export const GROUP_REPLY_TTL = 120;
 async function cleanUpLater(message, sent) {
   if (!['group', 'supergroup'].includes(message.chat.type)) return;
   const at = now() + GROUP_REPLY_TTL;
-  for (const id of [message.message_id, sent && sent.message_id]) {
-    if (!id) continue;
-    await db.run(sql`INSERT OR IGNORE INTO autodelete (chat_id, message_id, delete_at)
-      VALUES (${message.chat.id}, ${id}, ${Math.floor(at)})`);
+  try {
+    for (const id of [message.message_id, sent && sent.message_id]) {
+      if (!id) continue;
+      await db.run(sql`INSERT OR IGNORE INTO autodelete (chat_id, message_id, delete_at)
+        VALUES (${message.chat.id}, ${id}, ${Math.floor(at)})`);
+    }
+  } catch (err) {
+    // The reply is already out; a failed clean-up must not make Telegram resend the update.
+    await logError('autodelete', err);
   }
 }
 
-async function deleteDue(limit = 20) {
+async function deleteDue(deadline, limit = 20) {
   const rows = await db.all(sql`SELECT chat_id, message_id FROM autodelete WHERE delete_at <= ${now()}
     ORDER BY delete_at LIMIT ${limit}`);
   for (const r of rows) {
-    // One attempt: without delete rights or after 48 hours Telegram refuses, and that's fine.
-    await db.run(sql`DELETE FROM autodelete WHERE chat_id = ${r.chat_id} AND message_id = ${r.message_id}`);
+    if (leftMs(deadline) < 3000) break;
     try {
       await api.deleteMessage({ chat_id: r.chat_id, message_id: r.message_id });
-    } catch {
-      // No rights or already deleted.
+    } catch (err) {
+      // Flood limit: try again on a later pump. Anything else (no rights, older than
+      // 48 hours, already deleted) will not get better, so the row goes.
+      if (isRetryAfter(err)) break;
     }
+    await db.run(sql`DELETE FROM autodelete WHERE chat_id = ${r.chat_id} AND message_id = ${r.message_id}`);
   }
 }
 
@@ -116,11 +128,16 @@ async function ensureCommands() {
     { command: 'top', description: 'Топ Сквада' },
   ];
   await api.setMyCommands({ commands: common });
-  await api.setMyCommands({
-    commands: [...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' }],
-    scope: { type: 'chat', chat_id: OWNER_USER_ID },
-  });
+  // Saved right away: a failing owner list must not repeat (and log) on every pump.
   await setSetting('commands_version', COMMANDS_VERSION);
+  try {
+    await api.setMyCommands({
+      commands: [...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' }],
+      scope: { type: 'chat', chat_id: OWNER_USER_ID },
+    });
+  } catch (err) {
+    await logError('commands.owner', err);
+  }
 }
 
 // ---- commands --------------------------------------------------------------
@@ -223,7 +240,7 @@ async function xpChatCommand(message, args) {
   if (args.length === 1 && args[0] === 'auto') {
     await setSetting('xp_discussion_chat_id', null);
     await setSetting('xp_chat_cache', null);
-    await reply(message, 'Включено автоматическое определение обсуждений канала. Проверка: /admin → Активность / XP.');
+    await reply(message, 'Включено автоматическое определение обсуждений канала. Проверка: /admin → Участники → Звания / XP.');
     return;
   }
   if (args.length || !['group', 'supergroup'].includes(message.chat.type)) {
@@ -298,7 +315,7 @@ async function postsRetryCommand(message, args) {
   if (!isAdminUser(message.from)) return;
   if (!['group', 'supergroup'].includes(message.chat.type) || args.length !== 1 ||
       !/^[0-9]+$/.test(args[0]) || Number(args[0]) <= 0) {
-    await reply(message, 'Проверь, что пост не появился в чате, затем отправь /posts_retry ID_поста. ID виден в /admin → Посты в чаты.');
+    await reply(message, 'Проверь, что пост не появился в чате, затем отправь /posts_retry ID_поста. ID виден в /admin → Рассылки → Посты в чаты.');
     return;
   }
   if (!(await relay.enabled(message.chat.id))) {
@@ -558,7 +575,7 @@ async function button_(query, s) {
   } else if (data === 'feedback') {
     s.awaiting_feedback = true;
     text = '<b>💬 Обратная связь</b>\n\nНапиши следующим сообщением проблему, идею или предложение.\nЯ передам это владельцу.';
-    kb = backHomeKeyboard();
+    kb = backMoreKeyboard();
   } else if (data.startsWith('partner:')) {
     const partner = PARTNERS[data.split(':')[1]];
     if (!partner) {
@@ -575,7 +592,18 @@ async function button_(query, s) {
     return;
   }
   const sent = await editOrSend(query, text, kb);
-  if (sent && sent.message_id && chat.type === 'private') s.menu_id = sent.message_id;
+  if (chat.type !== 'private') return;
+  // The menu in use is the live one; an older menu left from before goes away.
+  const live = (sent && sent.message_id) || query.message.message_id;
+  const old = s.menu_id;
+  s.menu_id = live;
+  if (old && old !== live && old !== query.message.message_id) {
+    try {
+      await api.deleteMessage({ chat_id: chat.id, message_id: old });
+    } catch {
+      // Older than 48 hours or already gone.
+    }
+  }
 }
 
 export async function onCallbackQuery(query) {
@@ -684,11 +712,9 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     return;
   }
   const steps = [
-    ['pump.menu', async () => {
-      await ensureMenuButton();
-      await ensureCommands();
-    }],
-    ['pump.autodelete', () => deleteDue()],
+    ['pump.menu', () => ensureMenuButton()],
+    ['pump.commands', () => ensureCommands()],
+    ['pump.autodelete', () => deleteDue(deadline)],
     ['pump.relay', async () => {
       await relay.sweepStale();
       if (!(await isMaintenance())) await relay.deliverDue(Math.min(5000, leftMs(deadline) - 12000), 10);

@@ -89,3 +89,58 @@ test('the «/» menu is set once: three commands, the owner gets two more', asyn
   assert.deepEqual(calls[0].params.commands.map((c) => c.command), ['start', 'rank', 'top']);
   assert.equal(calls[1].params.scope.chat_id, OWNER.id);
 });
+
+test('/rank in private ends the feedback and news modes along with their prompt', async () => {
+  const api = await setup();
+  await onCallbackQuery(callback(user(5), 'feedback'));
+  await onMessage(privateMessage(user(5), '/rank'));
+  await onMessage(privateMessage(user(5), 'привет'));
+  assert.equal(api.called('sendMessage').filter((c) => c.params.chat_id === OWNER.id).length, 0);
+  const { getSetting } = await import('../tgcloud/lib/store.js');
+  const news = await getSetting('news');
+  await onCallbackQuery(callback(OWNER, 'admin:news'));
+  await onMessage(privateMessage(OWNER, '/top'));
+  await onMessage(privateMessage(OWNER, 'случайный текст'));
+  assert.equal(await getSetting('news'), news);
+});
+
+test('a button on an older menu makes it the live one and removes the newer copy', async () => {
+  const api = await setup();
+  await onMessage(privateMessage(user(6), '/rank'));
+  const before = api.called('deleteMessage').length;
+  await onCallbackQuery(callback(user(6), 'xp:top', { message_id: 5 }));
+  const deleted = api.called('deleteMessage').slice(before).map((c) => c.params.message_id);
+  assert.equal(deleted.length, 1);
+  assert.notEqual(deleted[0], 5);
+  await onCallbackQuery(callback(user(6), 'xp:week', { message_id: 5 }));
+  assert.equal(api.called('deleteMessage').length, before + 1);
+});
+
+test('the owner list failing does not repeat setMyCommands on every pump', async () => {
+  const { apiError } = await import('./helpers.mjs');
+  const api = await setup({
+    setMyCommands: (p) => { if (p.scope) throw apiError('setMyCommands', 400, 'Bad Request: chat not found'); return true; },
+  });
+  await pump({ force: true });
+  await pump({ force: true });
+  assert.equal(api.called('setMyCommands').length, 2);
+  assert.deepEqual((await db.all('SELECT source FROM error_log')).map((r) => r.source), ['commands.owner']);
+  await db.run('DELETE FROM error_log');
+});
+
+test('flood limit keeps the message queued for deletion', async () => {
+  const { apiError } = await import('./helpers.mjs');
+  let flood = true;
+  const api = await setup({
+    deleteMessage: () => { if (flood) throw apiError('deleteMessage', 429, 'Too Many Requests', { retry_after: 3 }); return true; },
+  });
+  await onMessage(groupMessage(DISCUSSION, user(7), '/top'));
+  const later = nowInt() + GROUP_REPLY_TTL + 1;
+  Date.now = () => later * 1000;
+  await pump({ force: true });
+  assert.equal((await db.all('SELECT * FROM autodelete')).length, 2);
+  flood = false;
+  await pump({ force: true });
+  assert.equal((await db.all('SELECT * FROM autodelete')).length, 0);
+  assert.ok(api.called('deleteMessage').length >= 3);
+});

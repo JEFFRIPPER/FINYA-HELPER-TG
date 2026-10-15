@@ -52,6 +52,10 @@ export function profileAppKeyboard() {
   return keyboard([[profileAppButton()], [menuButton('⬅️ Главное меню', { callback_data: 'home' })]]);
 }
 
+export function backMoreKeyboard() {
+  return keyboard([[menuButton('⬅️ Назад', { callback_data: 'more' })]]);
+}
+
 export function backHomeKeyboard() {
   return keyboard([[menuButton('⬅️ Главное меню', { callback_data: 'home' })]]);
 }
@@ -78,7 +82,7 @@ export async function statusKeyboard(userId) {
   if (subscribed && (await getSetting('last_channel_post_id'))) {
     rows.push([button('Последний пост', { callback_data: 'channel:last', icon_custom_emoji_id: '5411614357228390551' })]);
   }
-  rows.push([menuButton('⬅️ Главное меню', { callback_data: 'home' })]);
+  rows.push([menuButton('⬅️ Назад', { callback_data: 'more' })]);
   return keyboard(rows);
 }
 
@@ -93,7 +97,7 @@ export async function channelNewsView() {
         `<b>📌 Закреплённый пост @THKC_SQUAD</b>\n\n${escapeHtml(body)}`,
         keyboard([
           [button('Открыть закреп', { url: `${SQUAD_CHANNEL_URL}/${pinned.message_id}`, icon_custom_emoji_id: '5411614357228390551' })],
-          [menuButton('⬅️ Главное меню', { callback_data: 'home' })],
+          [menuButton('⬅️ Назад', { callback_data: 'more' })],
         ]),
       ];
     }
@@ -105,7 +109,7 @@ export async function channelNewsView() {
     `<b>📢 Новости / объявления</b>\n\n${news}`,
     keyboard([
       [button('Открыть канал', { url: SQUAD_CHANNEL_URL, icon_custom_emoji_id: '5411527152212411235' })],
-      [menuButton('⬅️ Главное меню', { callback_data: 'home' })],
+      [menuButton('⬅️ Назад', { callback_data: 'more' })],
     ]),
   ];
 }
@@ -126,7 +130,7 @@ export async function channelSubscriptionKeyboard(userId) {
   return keyboard([
     [toggle],
     [button('Открыть T.N.K.C SQUAD', { url: SQUAD_CHANNEL_URL, icon_custom_emoji_id: '5411527152212411235' })],
-    [menuButton('⬅️ Главное меню', { callback_data: 'home' })],
+    [menuButton('⬅️ Назад', { callback_data: 'more' })],
   ]);
 }
 
