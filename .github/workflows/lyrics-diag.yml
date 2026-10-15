@@ -23,7 +23,9 @@ jobs:
       - run: npx tgcloud fetch
       - name: Run diagnostic
         run: npx tgcloud run endpoints/zdiag '{}' 2>&1 | tee diag.txt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: diag
-          path: serverless/diag.txt
+      # Logs and artifacts are not readable from where this is debugged; annotations are.
+      - name: Publish as annotations
+        if: always()
+        run: >-
+          node -e "const s=require('fs').readFileSync('diag.txt','utf8').replace(/\x1b\[[0-9;]*m/g,'');
+          for(let i=0,n=0;i<s.length&&n<10;i+=6000,n++)console.log('::notice title=diag'+n+'::'+s.slice(i,i+6000).replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'))"
