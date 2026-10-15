@@ -23,6 +23,7 @@ import { handleAdminCallback } from './admin.js';
 import * as blacklist from './blacklist.js';
 import * as chat from './chat.js';
 import * as club from './club.js';
+import * as emoji from './emoji.js';
 import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
@@ -360,6 +361,9 @@ async function textMessage(message, s) {
       return;
     }
   }
+
+  // The owner sends premium emoji: Финя takes their packs for her chat replies.
+  if (isAdminUser(message.from) && (await emoji.handlePrivate(message))) return;
 
   if (!s.awaiting_feedback) {
     // «фарм», «кто я», «браки»… work in the private chat too, except during maintenance.

@@ -345,3 +345,23 @@ export const captcha = table('captcha', {
   pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
   due: index('captcha_due').on(t.status, t.created_at),
 }));
+
+// ---- Премиум-эмодзи в ответах Фини ---------------------------------------------
+
+// Emoji packs the owner sent Финя in the private chat (one emoji is enough per pack).
+export const emoji_packs = table('emoji_packs', {
+  name: text('name').primaryKey(),
+  title: text('title').notNull(),
+  count: integer('count').notNull(),
+  added_at: integer('added_at').notNull(),
+});
+
+// Plain emoji → the premium one used in the chat replies. `picked`: the owner sent
+// exactly this one, so a later pack doesn't replace it.
+export const premium_emoji = table('premium_emoji', {
+  base: text('base').primaryKey(),
+  custom_id: text('custom_id').notNull(),
+  set_name: text('set_name'),
+  picked: integer('picked').notNull().default(0),
+  added_at: integer('added_at').notNull(),
+});

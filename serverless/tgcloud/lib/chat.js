@@ -9,6 +9,7 @@ import { answer, button, getMe, keyboard } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, nowInt, truncate } from './util.js';
 import * as club from './club.js';
+import { withPremium } from './emoji.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
 import * as social from './social.js';
@@ -52,7 +53,7 @@ async function say(message, text, { markup, temp = false } = {}) {
     link_preview_options: { is_disabled: true },
   };
   if (markup) params.reply_markup = markup;
-  const sent = await api.sendMessage(params);
+  const sent = await withPremium(params, (p) => api.sendMessage(p));
   if (temp && isGroupChat(message.chat)) await deleteLater(message.chat.id, [message.message_id, sent && sent.message_id]);
   return sent;
 }
@@ -335,7 +336,8 @@ function helpText(owner) {
     '🛡 Админам (ответом): мут 1ч · размут · бан · разбан · кик · варн · снять варн · варны. ' +
     'Причину пиши с новой строки.';
   if (owner) {
-    text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд вкл/выкл · капча вкл/выкл';
+    text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд вкл/выкл · капча вкл/выкл · ' +
+      'эмодзи (в личке) — премиум-эмодзи';
   }
   return text;
 }
@@ -534,10 +536,10 @@ export async function onSquadChatMember(event) {
 
 async function edit(query, text) {
   try {
-    await api.editMessageText({
+    await withPremium({
       chat_id: query.message.chat.id, message_id: query.message.message_id, text: boldHtml(text), parse_mode: 'HTML',
       link_preview_options: { is_disabled: true },
-    });
+    }, (p) => api.editMessageText(p));
   } catch {
     // Too old or unchanged.
   }
