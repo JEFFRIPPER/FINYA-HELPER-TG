@@ -8,6 +8,10 @@ on:
       confirm:
         description: 'Напиши ПЕРЕЕЗД, чтобы задеплоить (Railway должен быть остановлен)'
         required: true
+      drop_deprecated:
+        description: 'Применить и опасные изменения базы (migrate --yes), например удалить таблицы .deprecated(): их данные пропадут навсегда'
+        type: boolean
+        default: false
 
 jobs:
   deploy:
@@ -30,8 +34,10 @@ jobs:
         run: npx tgcloud fetch
       - name: Deploy modules
         run: npx tgcloud push
+      # --safe skips warning changes such as dropping a .deprecated() table;
+      # --yes (drop_deprecated) applies them too.
       - name: Apply database schema
-        run: npx tgcloud migrate --safe
+        run: npx tgcloud migrate ${{ inputs.drop_deprecated && '--yes' || '--safe' }}
       # Re-points the webhook at the platform every time: a leftover polling bot
       # (the old Python Финя) drops it with deleteWebhook when it starts.
       - name: Sync webhook
