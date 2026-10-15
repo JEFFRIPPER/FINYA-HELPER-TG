@@ -21,6 +21,8 @@ async function seed() {
     (1, -100, 1, 'comment', 5, ?), (1, -100, 2, 'reaction', 1, ?), (1, -100, 3, 'comment', 0, ?),
     (1, -100, 4, 'comment', 5, ?), (2, -100, 5, 'comment', 5, ?)`,
   [ts - 60, ts - 30, ts - 20, dayStart(ts) - 86400 + 3600, ts - 10]);
+  // Already unlocked, so opening the profile doesn't add achievement XP here.
+  await db.run(`INSERT INTO achievements (user_id, code, unlocked_at) VALUES (1, 'first_comment', 0), (2, 'first_comment', 0)`);
   return ts;
 }
 

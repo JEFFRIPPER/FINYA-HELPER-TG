@@ -152,3 +152,81 @@ export const error_log = table('error_log', {
   source: text('source').notNull(),
   text: text('text').notNull(),
 });
+
+// ---- club: rewards, shop, polls, birthdays, referrals ----------------------
+// Bonus XP (daily reward, quests, achievements, ...) goes to `events` with
+// chat_id = 0 and message_id as the idempotency key of that reward.
+
+export const achievements = table('achievements', {
+  user_id: integer('user_id').notNull(),
+  code: text('code').notNull(),
+  unlocked_at: integer('unlocked_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user_id, t.code] }),
+}));
+
+// Items bought for XP. Buying spends the balance (XP minus purchases), not XP itself.
+export const purchases = table('purchases', {
+  user_id: integer('user_id').notNull(),
+  item: text('item').notNull(),
+  price: integer('price').notNull(),
+  bought_at: integer('bought_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user_id, t.item] }),
+}));
+
+// Equipped cosmetics: avatar frame, name colour, title.
+export const wardrobe = table('wardrobe', {
+  user_id: integer('user_id').primaryKey(),
+  frame: text('frame'),
+  color: text('color'),
+  title: text('title'),
+  updated_at: integer('updated_at').notNull(),
+});
+
+export const polls = table('polls', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  question: text('question').notNull(),
+  options: text('options').notNull(),
+  status: text('status').notNull().default('open'),
+  created_at: integer('created_at').notNull(),
+  closed_at: integer('closed_at'),
+}, (t) => ({
+  byStatus: index('polls_by_status').on(t.status, t.id),
+}));
+
+export const poll_votes = table('poll_votes', {
+  poll_id: integer('poll_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  option: integer('option').notNull(),
+  voted_at: integer('voted_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.poll_id, t.user_id] }),
+}));
+
+export const birthdays = table('birthdays', {
+  user_id: integer('user_id').primaryKey(),
+  day: integer('day').notNull(),
+  month: integer('month').notNull(),
+  announce: integer('announce').notNull().default(1),
+  updated_at: integer('updated_at').notNull(),
+}, (t) => ({
+  byDate: index('birthdays_by_date').on(t.month, t.day),
+}));
+
+// One personal invite link to the channel per member.
+export const ref_links = table('ref_links', {
+  user_id: integer('user_id').primaryKey(),
+  link: text('link').notNull().unique(),
+  created_at: integer('created_at').notNull(),
+});
+
+// Who joined the channel through whose link; a member counts once, ever.
+export const referrals = table('referrals', {
+  referred_id: integer('referred_id').primaryKey(),
+  referrer_id: integer('referrer_id').notNull(),
+  joined_at: integer('joined_at').notNull(),
+  points: integer('points').notNull().default(0),
+}, (t) => ({
+  byReferrer: index('referrals_by_referrer').on(t.referrer_id, t.joined_at),
+}));

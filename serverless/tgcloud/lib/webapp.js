@@ -6,6 +6,7 @@ import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
 import { getSetting, trackUser } from './store.js';
 import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
+import * as club from './club.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -20,14 +21,26 @@ function rankOf(row) {
   return xp.rankFor(row.xp, { founder: row.user_id === OWNER_USER_ID, manualRank: row.manual_rank })[0];
 }
 
+// Equipped cosmetics of the listed members, by user_id.
+async function styles(ids) {
+  const out = new Map();
+  if (!ids.length) return out;
+  const rows = await db.all(sql`SELECT user_id, frame, color, title FROM wardrobe
+    WHERE user_id IN (SELECT value FROM json_each(${JSON.stringify(ids)}))`);
+  for (const r of rows) out.set(r.user_id, club.styleView(r));
+  return out;
+}
+
 async function topView(weekly, userId) {
   const rows = await xp.leaderboard({ weekly, limit: 10 });
+  const looks = await styles(rows.map((r) => r.user_id));
   return rows.map((row, i) => ({
     place: i + 1,
     name: truncate(row.name, 35),
     score: row.score,
     rank: rankView(rankOf(row)),
     me: row.user_id === userId,
+    style: looks.get(row.user_id) || null,
   }));
 }
 
@@ -38,11 +51,13 @@ async function place(p) {
   return row.c + 1;
 }
 
-// Days in a row (Moscow time) with XP. A streak stays alive until the end of the
-// day after the last active one; `today` says whether today already counts.
+// Days in a row (Moscow time) with comment or reaction XP; bonuses don't count.
+// A streak stays alive until the end of the day after the last active one;
+// `today` says whether today already counts.
 async function streak(userId, ts) {
   const rows = await db.all(sql`SELECT DISTINCT CAST(earned_at + ${MSK_OFFSET} AS INTEGER) / 86400 AS d FROM events
-    WHERE user_id = ${userId} AND points > 0 AND earned_at >= ${ts - STREAK_LOOKBACK_DAYS * 86400}
+    WHERE user_id = ${userId} AND kind IN ('comment', 'reaction') AND points > 0
+      AND earned_at >= ${ts - STREAK_LOOKBACK_DAYS * 86400}
       AND earned_at <= ${ts}
     ORDER BY d DESC`);
   const today = Math.floor((ts + MSK_OFFSET) / 86400);
@@ -106,8 +121,13 @@ async function squad() {
 
 export async function profileData(user) {
   await trackUser(user);
-  const p = await xp.profile(user);
   const founder = user.id === OWNER_USER_ID;
+  const ts = nowInt();
+  let p = await xp.profile(user);
+  const streakNow = await streak(user.id, ts);
+  // Club first: achievements and birthday gifts may add XP shown below.
+  const clubView = await club.clubData(user, { xpTotal: p.xp, streakDays: streakNow.days, founder });
+  if (clubView.xp !== p.xp) p = await xp.profile(user);
   const [current, following] = xp.rankFor(p.xp, { founder, manualRank: p.manual_rank });
   const automatic = !founder && !p.manual_rank;
   let progress = null;
@@ -118,7 +138,6 @@ export async function profileData(user) {
       percent: Math.floor(((p.xp - current[0]) / (following[0] - current[0])) * 100),
     };
   }
-  const ts = nowInt();
   const participants = await db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`);
   return {
     me: {
@@ -133,16 +152,21 @@ export async function profileData(user) {
       progress,
       place: await place(p),
       participants: participants.c,
-      streak: await streak(user.id, ts),
+      streak: streakNow,
       rival: await rival(p),
+      style: await club.myStyle(user.id),
     },
     admin: founder,
     chart: await chart(user.id, ts),
     history: await history(user.id),
     top: { all: await topView(false, user.id), week: await topView(true, user.id) },
     ranks: xp.RANKS.map((r) => ({ ...rankView(r), reached: automatic ? p.xp >= r[0] : r[1] === current[1] })),
-    rules: { comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT },
+    rules: {
+      comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT,
+      poll: club.POLL_XP, referral: club.REFERRAL_XP, birthday: club.BIRTHDAY_XP, weekly: club.WEEKLY_BONUS,
+    },
     squad: await squad(),
+    club: clubView,
     now: ts,
   };
 }

@@ -48,6 +48,23 @@
     add: 'M450-450H230q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h220v-220q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v220h220q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H510v220q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37v-220Z',
     remove: 'M230-450q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h500q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H230Z',
     workspace_premium_fill: 'm480-483-76 57q-5 3-9.5 0t-2.5-8l29-93-78-61q-5-3-2.5-8t7.5-5h94l31-96q2-5 7-5t7 5l30 96h95q5 0 7.5 5t-2.5 8l-78 61 28 93q2 5-2 8t-9 0l-76-57Zm0 364L284-53q-14 5-27-4.5T244-82v-262q-45-47-64.5-103T160-560q0-136 92-228t228-92q136 0 228 92t92 228q0 57-19.5 113T716-344v262q0 15-13 24.5T676-53l-196-66Zm184.5-256.5Q740-451 740-560t-75.5-184.5Q589-820 480-820t-184.5 75.5Q220-669 220-560t75.5 184.5Q371-300 480-300t184.5-75.5Z',
+    storefront: 'M201-120q-33 0-56.5-23.5T121-200v-318q-23-21-35.5-54t-.5-72l42-136q8-26 28.5-43t47.5-17h556q27 0 47 16.5t29 43.5l42 136q12 39-.5 71T841-518v318q0 33-23.5 56.5T761-120H201Zm368-440q27 0 41-18.5t11-41.5l-22-140h-78v148q0 21 14 36.5t34 15.5Zm-180 0q23 0 37.5-15.5T441-612v-148h-78l-22 140q-4 24 10.5 42t37.5 18Zm-178 0q18 0 31.5-13t16.5-33l22-154h-78l-40 134q-6 20 6.5 43t41.5 23Zm540 0q29 0 42-23t6-43l-42-134h-76l22 154q3 20 16.5 33t31.5 13ZM201-200h560v-282q-5 2-6.5 2H751q-27 0-47.5-9T663-518q-18 18-41 28t-49 10q-27 0-50.5-10T481-518q-17 18-39.5 28T393-480q-29 0-52.5-10T299-518q-21 21-41.5 29.5T211-480h-4.5q-2.5 0-5.5-2v282Zm560 0H201h560Z',
+    cake_fill: 'M160-80q-17 0-28.5-11.5T120-120v-160q0-33 23.5-56.5T200-360h560q33 0 56.5 23.5T840-280v160q0 17-11.5 28.5T800-80H160Zm40-360v-120q0-33 23.5-56.5T280-640h160v-58q-18-12-29-29t-11-41q0-15 6-29.5t18-26.5l42-42q2-2 14-6 2 0 14 6l42 42q12 12 18 26.5t6 29.5q0 24-11 41t-29 29v58h160q33 0 56.5 23.5T760-560v120H200Z',
+    how_to_vote_fill: 'M200-80q-33 0-56.5-23.5T120-160v-152q0-14 5-28t15-25l62-70q11-13 28.5-13.5T260-437q11 11 12 27t-10 28l-55 62h546l-53-60q-11-12-10-28t12-27q12-12 29.5-11.5T760-433l60 68q10 11 15 25t5 28v152q0 33-23.5 56.5T760-80H200Zm224-304L285-525q-23-23-23-57t23-57l196-196q23-23 57-23t57 23l141 139q23 23 23.5 56.5T737-583L537-383q-23 23-56.5 22.5T424-384Zm256-256L538-780 340-582l142 140 198-198Z',
+    person_add_fill: 'M720-520h-80q-17 0-28.5-11.5T600-560q0-17 11.5-28.5T640-600h80v-80q0-17 11.5-28.5T760-720q17 0 28.5 11.5T800-680v80h80q17 0 28.5 11.5T920-560q0 17-11.5 28.5T880-520h-80v80q0 17-11.5 28.5T760-400q-17 0-28.5-11.5T720-440v-80Zm-360 40q-66 0-113-47t-47-113q0-66 47-113t113-47q66 0 113 47t47 113q0 66-47 113t-113 47ZM40-240v-32q0-34 17.5-62.5T104-378q62-31 126-46.5T360-440q66 0 130 15.5T616-378q29 15 46.5 43.5T680-272v32q0 33-23.5 56.5T600-160H120q-33 0-56.5-23.5T40-240Z',
+    task_alt: 'M480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q48 0 93.5 11t87.5 32q15 8 19.5 24t-5.5 30q-10 14-26.5 18t-32.5-4q-32-15-66.5-23t-69.5-8q-133 0-226.5 93.5T160-480q0 133 93.5 226.5T480-160q133 0 226.5-93.5T800-480q0-8-.5-15.5T798-511q-2-17 6.5-32.5T830-564q16-5 30 3t16 24q2 14 3 28t1 29q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Zm-56-328 372-373q11-11 27.5-11.5T852-781q11 11 11 28t-11 28L452-324q-12 12-28 12t-28-12L282-438q-11-11-11-28t11-28q11-11 28-11t28 11l86 86Z',
+    lock_fill: 'M240-80q-33 0-56.5-23.5T160-160v-400q0-33 23.5-56.5T240-640h40v-80q0-83 58.5-141.5T480-920q83 0 141.5 58.5T680-720v80h40q33 0 56.5 23.5T800-560v400q0 33-23.5 56.5T720-80H240Zm240-200q33 0 56.5-23.5T560-360q0-33-23.5-56.5T480-440q-33 0-56.5 23.5T400-360q0 33 23.5 56.5T480-280ZM360-640h240v-80q0-50-35-85t-85-35q-50 0-85 35t-35 85v80Z',
+    celebration_fill: 'm108-160 151-420q5-13 15.5-20t22.5-7q8 0 15 3t13 9l270 270q6 6 9 13t3 15q0 12-7 22.5T580-259L160-108q-12 5-23 1.5T118-118q-8-8-11.5-19t1.5-23Zm813-519q-9 9-21 9t-21-9l-3-3q-14-14-35-14t-35 14L603-479q-9 9-21 9t-21-9q-9-9-9-21t9-21l203-203q32-32 77-32t77 32l3 3q9 9 9 21t-9 21ZM399-799q9-9 21-9t21 9l5 5q32 32 32 76t-32 76l-3 3q-9 9-21 9t-21-9q-9-9-9-21t9-21l3-3q14-14 14-34t-14-34l-5-5q-9-9-9-21t9-21Zm162-80q9-9 21-9t21 9l43 43q32 32 32 77t-32 77L523-559q-9 9-21 9t-21-9q-9-9-9-21t9-21l123-123q14-14 14-35t-14-35l-43-43q-9-9-9-21t9-21Zm320 480q-9 9-21 9t-21-9l-43-43q-14-14-35-14t-35 14l-43 43q-9 9-21 9t-21-9q-9-9-9-21t9-21l43-43q32-32 77-32t77 32l43 43q9 9 9 21t-9 21Z',
+    bolt_fill: 'M360-360H236q-24 0-35.5-21.5T203-423l299-430q10-14 26-19.5t33 .5q17 6 25 21t6 32l-32 259h155q26 0 36.5 23t-6.5 43L416-100q-11 13-27 17t-31-3q-15-7-23.5-21.5T328-139l32-221Z',
+    verified_fill: 'm438-452-58-57q-11-11-27.5-11T324-508q-11 11-11 28t11 28l86 86q12 12 28 12t28-12l170-170q12-12 11.5-28T636-592q-12-12-28.5-12.5T579-593L438-452ZM326-90l-58-98-110-24q-15-3-24-15.5t-7-27.5l11-113-75-86q-10-11-10-26t10-26l75-86-11-113q-2-15 7-27.5t24-15.5l110-24 58-98q8-13 22-17.5t28 1.5l104 44 104-44q14-6 28-1.5t22 17.5l58 98 110 24q15 3 24 15.5t7 27.5l-11 113 75 86q10 11 10 26t-10 26l-75 86 11 113q2 15-7 27.5T802-212l-110 24-58 98q-8 13-22 17.5T584-74l-104-44-104 44q-14 6-28 1.5T326-90Z',
+    checkroom_fill: 'M240-240h480L480-420 240-240Zm185-444q-5 11-14.5 18t-22.5 7q-17 0-28.5-11.5T348-699q0-5 .5-8.5t2.5-7.5q17-38 52-61.5t77-23.5q58 0 99 40.5t41 98.5q0 47-27.5 84T520-526v36l344 258q8 5 12 13.5t4 18.5q0 17-11.5 28.5T840-160H120q-17 0-28.5-11.5T80-200q0-10 4-18.5T96-232l344-258v-70q0-17 12-28.5t29-11.5q25 0 42-18t17-43q0-25-17.5-42T480-720q-18 0-33 9.5T425-684Z',
+    flag_fill: 'M280-400v240q0 17-11.5 28.5T240-120q-17 0-28.5-11.5T200-160v-600q0-17 11.5-28.5T240-800h287q14 0 25 9t14 23l10 48h184q17 0 28.5 11.5T800-680v320q0 17-11.5 28.5T760-320H553q-14 0-25-9t-14-23l-10-48H280Z',
+    content_copy: 'M360-240q-33 0-56.5-23.5T280-320v-480q0-33 23.5-56.5T360-880h360q33 0 56.5 23.5T800-800v480q0 33-23.5 56.5T720-240H360Zm0-80h360v-480H360v480ZM200-80q-33 0-56.5-23.5T120-160v-520q0-17 11.5-28.5T160-720q17 0 28.5 11.5T200-680v520h400q17 0 28.5 11.5T640-120q0 17-11.5 28.5T600-80H200Zm160-240v-480 480Z',
+    send_fill: 'M176-183q-20 8-38-3.5T120-220v-180l320-80-320-80v-180q0-22 18-33.5t38-3.5l616 260q25 11 25 37t-25 37L176-183Z',
+    emoji_events_fill: 'M280-528v-152h-80v40q0 38 22 68.5t58 43.5Zm400 0q36-13 58-43.5t22-68.5v-40h-80v152ZM440-200v-124q-49-11-87.5-41.5T296-442q-75-9-125.5-65.5T120-640v-40q0-33 23.5-56.5T200-760h80q0-33 23.5-56.5T360-840h240q33 0 56.5 23.5T680-760h80q33 0 56.5 23.5T840-680v40q0 76-50.5 132.5T664-442q-18 46-56.5 76.5T520-324v124h120q17 0 28.5 11.5T680-160q0 17-11.5 28.5T640-120H320q-17 0-28.5-11.5T280-160q0-17 11.5-28.5T320-200h120Z',
+    diamond_fill: 'M368-630h224L486-840h-12L368-630Zm82 474v-414H105l345 414Zm60 0 345-414H510v414Zm148-474h207l-83-166q-11-20-29.5-32T711-840H554l104 210Zm-563 0h207l104-210H249q-23 0-41.5 12T178-796L95-630Z',
+    visibility_fill: 'M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-134 0-244.5-72T61-462q-5-9-7.5-18.5T51-500q0-10 2.5-19.5T61-538q64-118 174.5-190T480-800q134 0 244.5 72T899-538q5 9 7.5 18.5T909-500q0 10-2.5 19.5T899-462q-64 118-174.5 190T480-200Z',
+    schedule_fill: 'M520-496v-144q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640v159q0 8 3 15.5t9 13.5l132 132q11 11 28 11t28-11q11-11 11-28t-11-28L520-496ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
   };
 
   // Brand marks: Simple Icons (CC0), 24×24.
@@ -70,11 +87,20 @@
     reaction: ['favorite_fill', 'Реакция', ''],
     owner_xp: ['shield_person_fill', 'Изменение XP владельцем', 'muted'],
     owner_rank: ['shield_person_fill', 'Звание от владельца', 'muted'],
+    daily: ['redeem_fill', 'Награда дня', 'gold'],
+    quest: ['flag_fill', 'Квест недели', 'primary'],
+    achievement: ['emoji_events_fill', 'Ачивка', 'gold'],
+    referral: ['person_add_fill', 'Друг пришёл по твоей ссылке', 'primary'],
+    invited: ['person_add_fill', 'Вход по приглашению', 'primary'],
+    birthday: ['cake_fill', 'Подарок на день рождения', 'gold'],
+    poll: ['how_to_vote_fill', 'Голос в опросе', ''],
+    weekly: ['trophy_fill', 'Бонус за топ недели', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
     ['top', 'Топ', 'leaderboard'],
     ['ranks', 'Звания', 'military_tech'],
+    ['shop', 'Лавка', 'storefront'],
     ['squad', 'Сквад', 'groups'],
   ];
   var ADMIN_TAB = ['admin', 'Панель', 'shield_person'];
@@ -122,6 +148,9 @@
   var BAR = '#090203';
   // Material 3 fade through: the old content fades out for 90 ms.
   var FADE_OUT_MS = 90;
+  // Values before an action, so the hero counts on from them instead of from zero.
+  var prevXp = 0;
+  var prevPercent = null;
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   var state = { data: null, tab: 'activity', top: 'all' };
   var page = null;
@@ -274,18 +303,22 @@
     }, reduceMotion ? 0 : FADE_OUT_MS);
   }
 
-  // Counts a number up from zero; ease-out close to emphasized decelerate.
-  function countUp(node, to) {
-    if (reduceMotion || to <= 0) return;
+  // Counts a number up (from zero or a previous value); ease-out close to
+  // emphasized decelerate. The text node changes only when the digits do.
+  function countUp(node, to, from) {
+    from = from || 0;
+    if (reduceMotion || to <= from) return;
     var start = null;
-    node.nodeValue = '0';
+    var shown = String(from);
+    node.nodeValue = shown;
     function step(ts) {
       if (start == null) start = ts;
       var t = Math.min(1, (ts - start) / 900);
-      node.nodeValue = String(Math.round(to * (1 - Math.pow(1 - t, 4))));
+      var v = String(Math.round(from + (to - from) * (1 - Math.pow(1 - t, 4))));
+      if (v !== shown) { shown = v; node.nodeValue = v; }
       if (t < 1) requestAnimationFrame(step);
     }
-    setTimeout(function () { requestAnimationFrame(step); }, 120);
+    setTimeout(function () { requestAnimationFrame(step); }, from ? 0 : 120);
   }
 
   // Material 3 ripple: a wave grows from the touch point and fades on release.
@@ -369,14 +402,20 @@
 
   // ---- header ---------------------------------------------------------------
 
-  function avatar(me) {
+  // The avatar sits in the frame bought in the shop, if any.
+  function avatar(me, frame) {
     var user = tg && tg.initDataUnsafe && tg.initDataUnsafe.user;
     var box = h('div', { class: 'avatar', 'aria-hidden': 'true' }, Array.from(me.name || '?')[0].toUpperCase());
     if (user && user.photo_url) {
       var img = h('img', { alt: '', src: user.photo_url });
       img.addEventListener('load', function () { box.replaceChildren(img); });
     }
-    return box;
+    if (frame === undefined) frame = me.style && me.style.frame;
+    return frame ? h('div', { class: 'frame ' + frame }, box) : box;
+  }
+
+  function nickClass(style) {
+    return style && style.color ? ' nick ' + style.color : '';
   }
 
   function hero(me) {
@@ -389,20 +428,23 @@
         h('div', { class: 'progress-label' },
           h('span', { text: 'До «' + me.progress.next.name + '»' }),
           h('span', null, 'осталось ', h('b', { text: me.progress.left + ' XP' }))));
+      if (prevPercent != null) ind.style.width = 'calc(' + Math.max(1, Math.min(100, prevPercent)) + '% - 6px)';
       setTimeout(function () {
         ind.style.width = 'calc(' + Math.max(1, Math.min(100, me.progress.percent)) + '% - 6px)';
-      }, reduceMotion ? 0 : 200);
+      }, reduceMotion ? 0 : prevPercent != null ? 30 : 200);
     }
     var note = null;
     if (me.founder) note = 'Основатель Сквада.';
     else if (me.manualRank) note = 'Звание назначено владельцем. XP продолжает копиться.';
     else if (!me.progress) note = 'Высшее звание достигнуто.';
     var total = h('p', { class: 'xp-total' }, String(me.xp), h('small', { text: 'XP' }));
-    countUp(total.firstChild, me.xp);
+    countUp(total.firstChild, me.xp, prevXp);
+    var title = me.style && me.style.title;
     return h('section', { class: 'hero' },
       h('div', { class: 'medal', 'aria-hidden': 'true' }, insignia(me.rank.roman)),
       h('div', { class: 'who' }, avatar(me),
-        h('div', { class: 'who-text' }, h('p', { class: 'name', text: me.name }))),
+        h('div', { class: 'who-text' }, h('p', { class: 'name' + nickClass(me.style), text: me.name }),
+          title ? h('span', { class: 'title-chip', text: title }) : null)),
       h('div', { class: 'chips' },
         h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
         streakChip(me.streak)),
@@ -572,9 +614,12 @@
   function topList(top) {
     var rows = state.top === 'week' ? top.week : top.all;
     var body = rows.length ? h('ul', { class: 'list' }, withDividers(rows.map(function (r) {
+      var st = r.style;
       return h('li', { class: 'item' + (r.me ? ' me' : '') },
         h('div', { class: 'lead place' + (r.place <= 3 ? ' p' + r.place : ''), text: String(r.place) }),
-        h('div', { class: 'body' }, h('b', { text: r.name + (r.me ? ' · ты' : '') }), h('span', { text: r.rank.roman + ' · ' + r.rank.name })),
+        h('div', { class: 'body' },
+          h('b', null, h('em', { class: 'nm' + nickClass(st), text: r.name }), r.me ? ' · ты' : ''),
+          h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
         h('div', { class: 'trail', text: r.score + ' XP' }));
     }))) : h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' });
     var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Неделя начинается в понедельник по Москве.' }) : null;
@@ -614,8 +659,11 @@
     var how = h('ul', { class: 'rules' },
       h('li', null, icon('chat_bubble_fill'), h('span', { text: '+' + rules.comment + ' XP за комментарий под постом: от 5 букв, не чаще раза в минуту.' })),
       h('li', null, icon('favorite_fill'), h('span', { text: '+' + rules.reaction + ' XP за реакцию в обсуждениях, до ' + rules.dailyReactions + ' в день.' })),
-      h('li', null, icon('local_fire_department_fill'), h('span', { text: 'Не больше ' + me.dailyLimit + ' XP в день по Москве.' })));
-    return [h('section', { class: 'card' }, h('h3', { text: 'Звания' }), h('ul', { class: 'list' }, withDividers(items))),
+      h('li', null, icon('local_fire_department_fill'), h('span', { text: 'Не больше ' + me.dailyLimit + ' XP в день за комментарии и реакции, по Москве.' })),
+      h('li', null, icon('redeem_fill'), h('span', { text: 'Сверху лимита: награда дня, квесты недели, ачивки, +' + rules.poll + ' XP за голос в опросе, +' + rules.referral + ' XP за друга и +' + rules.birthday + ' XP в день рождения.' })),
+      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
+    return [achievementsCard(state.data.club),
+      h('section', { class: 'card' }, h('h3', { text: 'Звания' }), h('ul', { class: 'list' }, withDividers(items))),
       h('section', { class: 'card' }, h('h3', { text: 'Как получить XP' }), how)];
   }
 
@@ -723,9 +771,442 @@
   }
 
   function squadBody(sq) {
-    return [newsCard(sq), quickGrid(sq)]
+    var c = state.data.club;
+    return [newsCard(sq)].concat(c.polls.map(pollCard)).concat([referralCard(c.referral), birthdayCard(c.birthday), quickGrid(sq)])
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
       .concat([projectsSection()]);
+  }
+
+  // ---- club: daily reward, quests, achievements, shop, polls, friends ---------
+
+  var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  var MONTHS_NOM = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  var SLOTS = [['frame', 'Рамки аватара'], ['color', 'Цвет ника'], ['title', 'Титулы']];
+  var busy = false;
+
+  // Runs a club action. The endpoint answers with the whole profile, so the
+  // screen is redrawn in place; resolves to the new data or null.
+  function act(input, btn, done) {
+    if (busy) return Promise.resolve(null);
+    busy = true;
+    var label = btn ? Array.prototype.slice.call(btn.childNodes) : null;
+    if (btn) { btn.disabled = true; btn.replaceChildren(loader()); }
+    return api('club', input).then(function (data) {
+      busy = false;
+      refresh(data);
+      if (done) done(data);
+      return data;
+    }, function (err) {
+      busy = false;
+      if (btn) { btn.disabled = false; btn.replaceChildren.apply(btn, label); }
+      vibrate('error');
+      snackbar(errorText(err));
+      return null;
+    });
+  }
+
+  // Redraws the hero and the current screen from new data without entrance
+  // animations; the XP counts on from the old value.
+  function refresh(data) {
+    var old = state.data;
+    state.data = data;
+    prevXp = old.me.xp;
+    prevPercent = old.me.progress ? old.me.progress.percent : null;
+    me.replaceChildren.apply(me, [hero(data.me), stats(data.me), rivalCard(data.me)].filter(Boolean));
+    prevXp = 0;
+    prevPercent = null;
+    if (state.tab === 'admin' && adminRoot) {
+      var card = adminRoot.querySelector('.club-admin');
+      if (card) card.replaceWith(clubAdminCard(data.club));
+    } else {
+      view.replaceChildren.apply(view, viewBody());
+    }
+    checkRankUp(data.me);
+    announce(data.club.fresh);
+  }
+
+  // "+N" floats up from the XP total.
+  function burst(points) {
+    var total = document.querySelector('.hero .xp-total');
+    if (!total || !points || reduceMotion) return;
+    var b = h('span', { class: 'burst', 'aria-hidden': 'true', text: '+' + points });
+    b.addEventListener('animationend', function () { b.remove(); });
+    total.appendChild(b);
+  }
+
+  function rewarded(text) {
+    return function (data) {
+      vibrate('success');
+      if (data.result && data.result.points) {
+        burst(data.result.points);
+        snackbar(text + ': +' + data.result.points + ' XP');
+      }
+    };
+  }
+
+  // Unlocked achievements slide in one by one.
+  function announce(codes) {
+    if (!codes || !codes.length) return;
+    var list = state.data.club.achievements.filter(function (a) { return codes.indexOf(a.code) >= 0; });
+    // Many at once (the first visit of an active member): one summary toast.
+    if (list.length > 2) {
+      list = [{
+        icon: 'emoji_events_fill',
+        title: 'Открыто ачивок: ' + list.length,
+        xp: list.reduce(function (sum, a) { return sum + a.xp; }, 0),
+      }];
+    }
+    var i = 0;
+    function next() {
+      if (i >= list.length) return;
+      var a = list[i++];
+      var t = h('div', { class: 'ach-toast', role: 'status' },
+        h('span', { class: 'ach-icon' }, icon(a.icon)),
+        h('div', { class: 'body' }, h('small', { text: 'Ачивка открыта' }), h('b', { text: a.title })),
+        h('em', { text: '+' + a.xp + ' XP' }));
+      document.body.appendChild(t);
+      vibrate('success');
+      setTimeout(function () { t.classList.add('leave'); }, 2600);
+      setTimeout(function () { t.remove(); next(); }, reduceMotion ? 2600 : 2900);
+    }
+    setTimeout(next, reduceMotion ? 0 : 900);
+  }
+
+  function cardHead(iconName, tint, title, sub) {
+    return h('div', { class: 'news-head' }, h('div', { class: 'lead ' + tint }, icon(iconName)),
+      h('div', { class: 'body' }, h('b', { text: title }), h('span', { text: sub })));
+  }
+
+  // Material 3 switch.
+  function switchEl(on, onChange) {
+    var b = h('button', { class: 'switch', type: 'button', role: 'switch', 'aria-checked': String(!!on) }, h('i'));
+    b.addEventListener('click', function () {
+      var v = b.getAttribute('aria-checked') !== 'true';
+      b.setAttribute('aria-checked', String(v));
+      haptic();
+      Promise.resolve(onChange(v)).then(function (ok) {
+        if (ok === null && b.isConnected) b.setAttribute('aria-checked', String(!v));
+      });
+    });
+    return b;
+  }
+
+  function switchRow(title, sub, on, onChange) {
+    var sw = switchEl(on, onChange);
+    return h('div', { class: 'switch-row', onclick: function (e) { if (e.target === sw || sw.contains(e.target)) return; sw.click(); } },
+      h('div', { class: 'body' }, h('b', { text: title }), sub ? h('span', { text: sub }) : null), sw);
+  }
+
+  function dailyCard(d) {
+    var last = d.rewards.length - 1;
+    var cells = d.rewards.map(function (points, i) {
+      var done = i < d.step || (d.claimed && i === d.step);
+      var now = i === d.step && !d.claimed;
+      return h('div', { class: 'day' + (done ? ' done' : '') + (now ? ' now' : '') + (i === last ? ' big' : '') },
+        h('span', { text: String(i + 1) }),
+        done ? icon('check') : h('b', { text: '+' + points }));
+    });
+    var btn;
+    if (d.claimed) {
+      btn = h('button', { class: 'btn-tonal wide', disabled: true }, icon('schedule_fill'), 'Следующая награда завтра');
+    } else {
+      btn = h('button', { class: 'btn-filled wide ripple', onclick: function () {
+        act({ action: 'daily' }, btn, rewarded('Награда дня'));
+      } }, icon('redeem_fill'), 'Забрать +' + d.rewards[d.step] + ' XP');
+    }
+    var sub = d.run ? 'Серия: ' + d.run + ' ' + plural(d.run, 'день', 'дня', 'дней') + ' подряд' : 'Заходи каждый день: 7-й день самый щедрый';
+    return h('section', { class: 'card daily' + (d.claimed ? '' : ' ready') },
+      cardHead('redeem_fill', 'gold', 'Награда дня', sub),
+      h('div', { class: 'days' }, cells), btn);
+  }
+
+  function questsCard(c) {
+    var days = Math.max(1, Math.ceil((c.weekEnds - state.data.now) / 86400));
+    var items = c.quests.map(function (q) {
+      var done = q.progress >= q.goal;
+      var ind = h('i');
+      ind.style.transform = 'scaleX(' + (q.progress / q.goal) + ')';
+      var trail;
+      if (q.claimed) {
+        trail = h('div', { class: 'trail' }, icon('check_circle_fill'));
+      } else if (done) {
+        trail = h('button', { class: 'btn-filled small ripple', onclick: function () {
+          act({ action: 'quest', id: q.id }, trail, rewarded('Квест выполнен'));
+        } }, '+' + q.xp + ' XP');
+      } else {
+        trail = h('div', { class: 'trail dim', text: '+' + q.xp + ' XP' });
+      }
+      return h('li', { class: 'item quest' + (q.claimed ? ' claimed' : '') },
+        h('div', { class: 'lead' + (done ? ' primary' : '') }, icon(q.icon)),
+        h('div', { class: 'body' }, h('b', { text: q.title }), h('span', { text: q.text }),
+          h('div', { class: 'qbar' }, ind), h('small', { text: q.progress + ' / ' + q.goal })),
+        trail);
+    });
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-title' }, h('h3', { text: 'Квесты недели' }),
+        h('span', { class: 'chip-time' }, icon('schedule_fill'), days === 1 ? 'последний день' : 'ещё ' + days + ' ' + plural(days, 'день', 'дня', 'дней'))),
+      h('ul', { class: 'list' }, withDividers(items)));
+  }
+
+  function achievementsCard(c) {
+    var got = c.achievements.filter(function (a) { return a.at; }).length;
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-title' }, h('h3', { text: 'Ачивки' }), h('span', { class: 'count-chip', text: got + ' из ' + c.achievements.length })),
+      h('div', { class: 'ach-grid' }, c.achievements.map(function (a) {
+        return h('button', { class: 'ach ripple' + (a.at ? ' on' : ''), type: 'button', onclick: function () {
+          haptic();
+          snackbar(a.title + ': ' + a.text.toLowerCase() + '. ' + (a.at ? 'Открыта, ' : a.progress + ' из ' + a.goal + ', ') + '+' + a.xp + ' XP');
+        } },
+          h('span', { class: 'ach-icon' }, icon(a.icon), a.at ? null : h('i', { class: 'ach-lock' }, icon('lock_fill'))),
+          h('b', { text: a.title }),
+          h('small', { text: a.at ? '+' + a.xp + ' XP' : a.progress + '/' + a.goal }));
+      })));
+  }
+
+  // ---- XP shop ----------------------------------------------------------------
+
+  function shopSample(it, me) {
+    if (it.slot === 'frame') return avatar(me, it.id);
+    if (it.slot === 'color') return h('b', { class: 'nick-sample nick ' + it.id, text: Array.from(me.name).slice(0, 10).join('') });
+    return h('span', { class: 'title-chip', text: it.name });
+  }
+
+  function buyItem(it, shop) {
+    if (shop.balance < it.price) {
+      vibrate('error');
+      snackbar('Не хватает ' + (it.price - shop.balance) + ' XP на балансе');
+      return;
+    }
+    confirmDialog('Купить «' + it.name + '»?', [
+      it.price + ' XP с баланса',
+      'Останется: ' + (shop.balance - it.price) + ' XP',
+      'Звание и XP не изменятся.',
+    ], function () {
+      return act({ action: 'buy', item: it.id }, null, function () { vibrate('success'); snackbar('Куплено и надето'); });
+    });
+  }
+
+  function shopItem(it, shop, me) {
+    var btn;
+    if (it.equipped) {
+      btn = h('button', { class: 'btn-text small ripple', onclick: function () {
+        act({ action: 'wear', slot: it.slot, item: null }, btn, function () { haptic(); });
+      } }, 'Снять');
+    } else if (it.owned) {
+      btn = h('button', { class: 'btn-tonal small ripple', onclick: function () {
+        act({ action: 'wear', slot: it.slot, item: it.id }, btn, function () { vibrate('light'); });
+      } }, 'Надеть');
+    } else {
+      btn = h('button', { class: 'btn-filled small ripple' + (shop.balance >= it.price ? '' : ' off'), onclick: function () { buyItem(it, shop); } },
+        it.price + ' XP');
+    }
+    return h('div', { class: 'shop-item' + (it.equipped ? ' on' : '') },
+      h('div', { class: 'shop-sample' }, shopSample(it, me)),
+      it.slot === 'title' ? null : h('b', { text: it.name }),
+      btn);
+  }
+
+  function shopBody(shop, me) {
+    var title = me.style && me.style.title;
+    var head = h('section', { class: 'card shop-head' },
+      h('div', { class: 'shop-me' }, avatar(me),
+        h('div', { class: 'body' },
+          h('b', { class: 'shop-name' }, h('em', { class: 'nm' + nickClass(me.style), text: me.name })),
+          title ? h('span', { class: 'title-chip', text: title }) : h('span', { text: 'Так тебя видит Сквад' }))),
+      h('div', { class: 'balance' },
+        h('span', { text: shop.founder ? 'Основателю всё бесплатно' : 'Баланс' }),
+        shop.founder ? null : h('b', null, String(shop.balance), h('small', { text: 'XP' }))),
+      h('p', { class: 'fine', text: 'Покупки тратят баланс, а не опыт: звание и место в топе не падают.' }));
+    return [head].concat(SLOTS.map(function (slot) {
+      return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: slot[1] }),
+        h('div', { class: 'shop-grid' }, shop.items.filter(function (i) { return i.slot === slot[0]; })
+          .map(function (it) { return shopItem(it, shop, me); })));
+    }));
+  }
+
+  // ---- polls --------------------------------------------------------------------
+
+  function votesWord(n) {
+    return n + ' ' + plural(n, 'голос', 'голоса', 'голосов');
+  }
+
+  function pollCard(p) {
+    var revealed = p.total != null;
+    var choosing = p.open && p.my == null;
+    var opts = p.options.map(function (o, i) {
+      if (choosing) {
+        return h('button', { class: 'poll-opt ripple', type: 'button', onclick: function (e) {
+          e.currentTarget.classList.add('picked');
+          act({ action: 'vote', poll: p.id, option: i }, null, rewarded('Голос принят'));
+        } }, o.text);
+      }
+      var pct = p.total ? Math.round((o.votes / p.total) * 100) : 0;
+      var fill = h('i', { class: 'poll-fill' });
+      fill.style.setProperty('--p', String(pct / 100));
+      return h('div', { class: 'poll-res' + (p.my === i ? ' mine' : '') }, fill,
+        h('span', { class: 'poll-text' }, p.my === i ? icon('check_circle_fill') : null, h('span', { text: o.text })),
+        h('b', { text: pct + '%' }));
+    });
+    return h('section', { class: 'card poll' },
+      cardHead('how_to_vote_fill', p.open ? 'primary' : 'muted', p.open ? 'Опрос Сквада' : 'Опрос завершён',
+        revealed ? votesWord(p.total) : '+' + state.data.rules.poll + ' XP за голос'),
+      h('p', { class: 'poll-q', text: p.question }),
+      h('div', { class: 'poll-opts' }, opts));
+  }
+
+  // ---- friends and birthday -------------------------------------------------------
+
+  function copyText(text) {
+    function done() { vibrate('light'); snackbar('Ссылка скопирована'); }
+    function fallback() {
+      var ta = h('textarea', { class: 'copy-buf', readonly: true });
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      var ok = false;
+      try { ok = document.execCommand('copy'); } catch (e) { /* not allowed */ }
+      ta.remove();
+      if (ok) done(); else snackbar(text);
+    }
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  }
+
+  function referralCard(r) {
+    var parts = [cardHead('person_add_fill', 'primary', 'Позови друга в Сквад', '+' + r.reward + ' XP тебе, +' + r.bonus + ' XP другу'),
+      h('p', { class: 'card-text', text: 'Друг вступает в канал по твоей личной ссылке, и Финя сразу начисляет XP. Засчитываются только новые участники.' })];
+    if (r.link) {
+      parts.push(h('div', { class: 'ref-link' }, h('span', { text: r.link.replace(/^https:\/\//, '') }),
+        h('button', { class: 'icon-btn ripple', type: 'button', 'aria-label': 'Скопировать ссылку', onclick: function () { copyText(r.link); } }, icon('content_copy'))));
+      parts.push(h('button', { class: 'btn-filled wide ripple', onclick: function () {
+        openLink('https://t.me/share/url?url=' + encodeURIComponent(r.link) + '&text=' + encodeURIComponent('Залетай в T.N.K.C SQUAD 🔥'));
+      } }, icon('send_fill'), 'Отправить другу'));
+    } else {
+      var get = h('button', { class: 'btn-filled wide ripple', onclick: function () {
+        act({ action: 'ref' }, get, function () { vibrate('success'); });
+      } }, icon('person_add_fill'), 'Получить ссылку');
+      parts.push(get);
+    }
+    if (r.count) {
+      parts.push(h('p', { class: 'ref-stat' }, 'Пришло по ссылке: ', h('b', { text: String(r.count) }), ' · ', h('b', { text: '+' + r.xp + ' XP' })));
+    }
+    return h('section', { class: 'card' }, parts);
+  }
+
+  function birthdayForm(b) {
+    var day = h('select', { class: 'field-input', 'aria-label': 'День' });
+    for (var n = 1; n <= 31; n++) day.appendChild(h('option', { value: String(n), text: String(n) }));
+    var month = h('select', { class: 'field-input', 'aria-label': 'Месяц' },
+      MONTHS_NOM.map(function (m, i) { return h('option', { value: String(i + 1), text: m }); }));
+    if (b.day != null) { day.value = String(b.day); month.value = String(b.month); }
+    var announceOn = b.announce;
+    var save = h('button', { class: 'btn-filled wide ripple', onclick: function () {
+      act({ action: 'birthday', day: Number(day.value), month: Number(month.value), announce: announceOn }, save,
+        function () { vibrate('success'); snackbar('День рождения сохранён'); });
+    } }, 'Сохранить');
+    return h('div', { class: 'bday-form' },
+      h('div', { class: 'bday-row' }, h('div', { class: 'field select' }, day), h('div', { class: 'field select grow' }, month)),
+      switchRow('Поздравить меня в чате', 'Финя напишет в обсуждениях Сквада', announceOn, function (v) { announceOn = v; }),
+      h('p', { class: 'fine', text: 'Дату можно менять раз в 30 дней.' }),
+      save);
+  }
+
+  function birthdayCard(b) {
+    var gift = state.data.rules.birthday;
+    var set = b.day != null;
+    var card = h('section', { class: 'card bday' + (b.today ? ' today' : '') },
+      cardHead('cake_fill', 'gold', b.today ? 'С днём рождения! 🎉' : 'День рождения',
+        set ? b.day + ' ' + MONTHS[b.month - 1] : 'В этот день Финя подарит +' + gift + ' XP'));
+    if (b.today) card.appendChild(h('p', { class: 'card-text', text: 'Сквад поздравляет! Подарок +' + gift + ' XP уже на счету.' }));
+    if (!set) {
+      card.appendChild(birthdayForm(b));
+      return card;
+    }
+    card.appendChild(switchRow('Поздравить меня в чате', 'Финя напишет в обсуждениях Сквада', b.announce, function (v) {
+      return act({ action: 'birthday', day: b.day, month: b.month, announce: v });
+    }));
+    if (b.editableAt) {
+      card.appendChild(h('p', { class: 'fine', text: 'Дату можно будет изменить с ' + pad(msk(b.editableAt).getUTCDate()) + '.' + pad(msk(b.editableAt).getUTCMonth() + 1) + '.' }));
+    } else {
+      var edit = h('button', { class: 'btn-text ripple', onclick: function () { edit.replaceWith(birthdayForm(b)); } }, 'Изменить дату');
+      card.appendChild(edit);
+    }
+    return card;
+  }
+
+  // ---- owner's club panel ---------------------------------------------------------
+
+  function openPollSheet() {
+    vibrate('light');
+    var content = h('div', { class: 'sheet-body' });
+    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
+    var scrim = h('div', { class: 'scrim' });
+    function close() {
+      scrim.classList.add('leave');
+      sheet.classList.add('leave');
+      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
+    }
+    scrim.addEventListener('click', close);
+    var question = h('textarea', { class: 'field-input', rows: '2', maxlength: '200', placeholder: 'Например, Во сколько делаем стрим?' });
+    var list = h('div', { class: 'poll-fields' });
+    function addOption() {
+      if (list.children.length >= 6) return;
+      list.appendChild(goodsField('Вариант ' + (list.children.length + 1),
+        h('input', { class: 'field-input', type: 'text', maxlength: '80', placeholder: 'Ответ' })));
+      more.hidden = list.children.length >= 6;
+    }
+    var more = h('button', { class: 'btn-text ripple', type: 'button', onclick: addOption }, icon('add'), 'Добавить вариант');
+    addOption();
+    addOption();
+    var create = h('button', { class: 'btn-filled wide ripple', type: 'button' }, 'Опубликовать');
+    create.addEventListener('click', function () {
+      var options = Array.prototype.map.call(list.querySelectorAll('input'), function (i) { return i.value.trim(); }).filter(Boolean);
+      act({ action: 'poll_create', question: question.value, options: options }, create, function () {
+        vibrate('success');
+        snackbar('Опрос открыт: его видят все во вкладке «Сквад»');
+        close();
+      });
+    });
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: 'Новый опрос' }),
+      goodsField('Вопрос', question), list, more,
+      h('p', { class: 'fine', text: 'Участники голосуют в Mini App и получают +' + state.data.rules.poll + ' XP. Результаты видны после голоса.' }),
+      create,
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+    document.body.appendChild(scrim);
+    document.body.appendChild(sheet);
+  }
+
+  function clubAdminCard(c) {
+    var a = c.admin || {};
+    function setting(key, title, sub) {
+      return switchRow(title, sub, a[key], function (v) { return act({ action: 'setting', key: key, value: v }); });
+    }
+    var preview = h('button', { class: 'btn-tonal ripple', onclick: function () {
+      act({ action: 'weekly_preview' }, preview, function () { snackbar('Итоги прошлой недели отправлены тебе в личку'); });
+    } }, icon('visibility_fill'), 'Предпросмотр итогов');
+    var polls = c.polls.map(function (p) {
+      var best = p.options.slice().sort(function (x, y) { return (y.votes || 0) - (x.votes || 0); })[0];
+      var close = p.open ? h('button', { class: 'btn-text ripple', onclick: function () {
+        confirmDialog('Закрыть опрос?', [p.question, 'Голосовать больше нельзя, результаты увидят все.'], function () {
+          return act({ action: 'poll_close', poll: p.id });
+        });
+      } }, 'Закрыть') : null;
+      return h('li', { class: 'item' },
+        h('div', { class: 'lead ' + (p.open ? 'primary' : 'muted') }, icon('how_to_vote_fill')),
+        h('div', { class: 'body' }, h('b', { text: p.question }),
+          h('span', { text: (p.open ? 'Идёт' : 'Закрыт') + ' · ' + votesWord(p.total || 0) + (p.total ? ' · лидер: ' + best.text : '') })),
+        close);
+    });
+    return h('section', { class: 'card club-admin' },
+      h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('celebration_fill')),
+        h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели и поздравления' }))),
+      h('div', { class: 'switches' },
+        setting('weekly', 'Итоги недели в канал', 'Понедельник, 12:00 МСК: топ-3 с бонусом XP'),
+        setting('welcome', 'Приветствие новичков', 'В обсуждениях, когда кто-то вступает'),
+        setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК')),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'btn-filled ripple', onclick: openPollSheet }, icon('add'), 'Новый опрос'), preview),
+      polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);
   }
 
   function viewBody() {
@@ -734,7 +1215,8 @@
     if (state.tab === 'admin') return adminBody();
     if (state.tab === 'top') return [topCard(d.top)];
     if (state.tab === 'ranks') return ranksCards(d.ranks, d.rules, d.me);
-    return [chart(d.chart), historyCard(d.history)];
+    if (state.tab === 'shop') return shopBody(d.club.shop, d.me);
+    return [dailyCard(d.club.daily), questsCard(d.club), chart(d.chart), historyCard(d.history)];
   }
 
   // ---- owner's rank panel -------------------------------------------------------
@@ -794,6 +1276,7 @@
       loadAdmin(true);
     });
     adminRoot = h('div', { class: 'admin' },
+      clubAdminCard(state.data.club),
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
@@ -1231,7 +1714,7 @@
       }, pill, t[1]);
       return { tab: t, btn: btn, pill: pill };
     });
-    return h('nav', { class: 'navbar', role: 'tablist' },
+    return h('nav', { class: 'navbar' + (tabs.length > 5 ? ' many' : ''), role: 'tablist' },
       h('div', { class: 'navbar-inner' }, dests.map(function (d) { return d.btn; })));
   }
 
@@ -1291,6 +1774,7 @@
     nav = navbar();
     document.body.appendChild(nav);
     checkRankUp(d.me);
+    announce(d.club.fresh);
   }
 
   // ---- data -----------------------------------------------------------------
