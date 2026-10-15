@@ -21,6 +21,7 @@ import { INFO_JPG_BASE64 } from './photo_data.js';
 import { explicitXpChatId, resolveXpChat, xpSourceChannelId } from './xpchat.js';
 import { handleAdminCallback } from './admin.js';
 import * as blacklist from './blacklist.js';
+import * as club from './club.js';
 import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
@@ -300,6 +301,10 @@ async function xpChatMatches(chatId) {
 async function activityMessage(message) {
   if (!['group', 'supergroup'].includes(message.chat.type)) return;
   if (!(await xpChatMatches(message.chat.id))) return;
+  if (message.new_chat_members) {
+    await club.welcome(message);
+    return;
+  }
   const award = await xp.comment(message, xpSourceChannelId());
   if (award) await notifyPromotion(message.from, award);
 }
@@ -541,6 +546,7 @@ export async function onChannelPost(message) {
 export async function onChatMember(event) {
   try {
     await blacklist.handleChatMember(event);
+    await club.handleJoin(event);
   } finally {
     await pump();
   }
@@ -572,6 +578,7 @@ export async function pump({ force = false } = {}) {
     if (!(await isMaintenance())) await relay.deliverDue(5000, 10);
     await blacklist.retryPending(5);
     await jobs.runPendingJobs(10000);
+    await club.tick();
   } catch (err) {
     await logError('pump', err);
   }

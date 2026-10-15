@@ -11,6 +11,10 @@ const DEFAULTS = {
   channel_broadcast_enabled: true,
   last_channel_post_id: null,
   xp_discussion_chat_id: null,
+  // Club switches in the owner's Mini App panel.
+  club_weekly: true,
+  club_welcome: true,
+  club_birthdays: true,
 };
 
 export async function getSetting(key) {

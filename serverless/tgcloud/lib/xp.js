@@ -50,9 +50,20 @@ function validInt(value, label, min = 0, max = Number.MAX_SAFE_INTEGER) {
   return value;
 }
 
+// Bonus XP (daily reward, quests, achievements, ...) from lib/club.js.
+// Stored in `events` with chat_id = 0 and message_id = the reward's key.
+export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly']);
+
 async function points(userId, start, end) {
   const row = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
     WHERE user_id = ${userId} AND earned_at >= ${start} AND earned_at < ${end}`);
+  return row ? row.s : 0;
+}
+
+// Comments and reactions only: the daily limit does not include bonuses.
+async function activityPoints(userId, start, end) {
+  const row = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
+    WHERE user_id = ${userId} AND kind IN ('comment', 'reaction') AND earned_at >= ${start} AND earned_at < ${end}`);
   return row ? row.s : 0;
 }
 
@@ -61,7 +72,7 @@ async function withActivity(row) {
   const ts = nowInt();
   return {
     ...row,
-    today: await points(row.user_id, dayStart(ts), ts + 1),
+    today: await activityPoints(row.user_id, dayStart(ts), ts + 1),
     week: await points(row.user_id, weekStart(ts), ts + 1),
   };
 }
@@ -258,7 +269,7 @@ export async function award(user, chatId, messageId, kind, timestamp) {
   const start = dayStart(timestamp);
   const end = start + 86400;
   let pts = kind === 'comment' ? COMMENT_XP : REACTION_XP;
-  const today = await points(user.id, start, end);
+  const today = await activityPoints(user.id, start, end);
   if (today + pts > DAILY_XP_LIMIT) pts = 0;
   if (total + pts > MAX_XP) pts = 0;
   if (kind === 'reaction') {
@@ -275,6 +286,33 @@ export async function award(user, chatId, messageId, kind, timestamp) {
     VALUES (${user.id}, ${chatId}, ${messageId}, ${kind}, ${pts}, ${timestamp})`);
   if (inserted.rowsAffected !== 1 || !pts) return null;
   await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${user.id}`);
+  const oldRank = rankFor(total, { manualRank })[0];
+  const newRank = rankFor(total + pts, { manualRank })[0];
+  return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
+}
+
+// Bonus XP, once per (kind, key). `user` is a Telegram user or a user ID of an
+// existing participant. Returns null when this reward was already given.
+export async function grant(user, kind, key, pts, timestamp = nowInt()) {
+  if (!BONUS_KINDS.has(kind)) throw new XpError(`Unknown bonus kind ${kind}`);
+  validInt(key, 'reward key', 0);
+  validInt(pts, 'points', 0, 10000);
+  const userId = typeof user === 'object' ? user.id : user;
+  validInt(userId, 'user_id', 1);
+  if (typeof user === 'object') {
+    if (user.is_bot) return null;
+    await upsertProfile(user);
+  } else {
+    await db.run(sql`INSERT OR IGNORE INTO profiles (user_id, name) VALUES (${userId}, ${String(userId)})`);
+  }
+  const row = await db.get(sql`SELECT xp, manual_rank FROM profiles WHERE user_id = ${userId}`);
+  const total = row.xp;
+  pts = Math.max(0, Math.min(pts, MAX_XP - total));
+  const inserted = await db.run(sql`INSERT OR IGNORE INTO events (user_id, chat_id, message_id, kind, points, earned_at)
+    VALUES (${userId}, 0, ${key}, ${kind}, ${pts}, ${Math.floor(timestamp)})`);
+  if (inserted.rowsAffected !== 1) return null;
+  if (pts) await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${userId}`);
+  const manualRank = row.manual_rank ?? null;
   const oldRank = rankFor(total, { manualRank })[0];
   const newRank = rankFor(total + pts, { manualRank })[0];
   return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
