@@ -19,18 +19,29 @@ export async function runningBroadcast() {
   return db.get(sql`SELECT id FROM jobs WHERE kind = 'broadcast' AND status = 'running' LIMIT 1`);
 }
 
+// → job id, or null while another broadcast is still running (one check-and-insert,
+// so a double tap on «Отправить всем» cannot start two broadcasts).
 export async function createBroadcast(text, reportChatId) {
   const payload = JSON.stringify({ text });
   const r = await db.run(sql`INSERT INTO jobs (kind, payload, status, report_chat_id, created_at)
-    VALUES ('broadcast', ${payload}, 'running', ${reportChatId}, ${nowInt()}) RETURNING id`);
-  return r.rows[0].id;
+    SELECT 'broadcast', ${payload}, 'running', ${reportChatId}, ${nowInt()}
+    WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'broadcast' AND status = 'running') RETURNING id`);
+  return r.rows.length ? r.rows[0].id : null;
 }
 
+// A redelivered channel_post must not send the post to every subscriber twice.
 export async function createPostJob(message, postUrl) {
   const payload = JSON.stringify({ chat_id: message.chat.id, message_id: message.message_id, post_url: postUrl });
   const r = await db.run(sql`INSERT INTO jobs (kind, payload, status, created_at)
-    VALUES ('post', ${payload}, 'running', ${nowInt()}) RETURNING id`);
-  return r.rows[0].id;
+    SELECT 'post', ${payload}, 'running', ${nowInt()}
+    WHERE NOT EXISTS (SELECT 1 FROM jobs WHERE kind = 'post' AND payload = ${payload}) RETURNING id`);
+  return r.rows.length ? r.rows[0].id : null;
+}
+
+// The post itself cannot be copied (deleted, or a service message): no subscriber will get it.
+function isSourceGone(err) {
+  const text = String((err && (err.description || err.message)) || '').toLowerCase();
+  return text.includes("can't be copied") || text.includes('message to copy not found');
 }
 
 async function claim(jobId) {
@@ -87,6 +98,11 @@ export async function runJob(jobId, budgetMs = SLICE_MS) {
           if (isRetryAfter(err)) {
             // A long flood wait: stop here and resume after it.
             retryAt = now() + (retryAfter(err) ?? 5) + 1;
+            break outer;
+          }
+          if (job.kind === 'post' && isSourceGone(err)) {
+            await logError(`post ${payload.message_id}`, err);
+            finished = true;
             break outer;
           }
           if (isUnreachableUser(err)) await markUserUnreachable(uid);

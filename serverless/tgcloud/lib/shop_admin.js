@@ -237,7 +237,7 @@ function promptView(p, field, cats = []) {
 const SAVED = 'Сохранено. На сайте обновится примерно через минуту.';
 
 function find(data, id) {
-  const p = data.products.find((x) => x.id === id);
+  const p = data.products.find((x) => String(x.id) === String(id));
   if (!p) throw new ShopError('Товар не найден: его уже удалили. Открой список заново.');
   return p;
 }
@@ -295,7 +295,7 @@ export async function handle(query, s, action) {
     } else if (cmd === 'dd') {
       const { data, result } = await updateShop(`удалён товар ${id}`, (d) => {
         const p = find(d, id);
-        d.products = d.products.filter((x) => x.id !== id);
+        d.products = d.products.filter((x) => String(x.id) !== String(id));
         return p;
       });
       if (result.image) await deleteFile(result.image);
@@ -514,7 +514,7 @@ export async function appHandle(user, input = {}) {
     const id = String(input.id || '');
     const { data, result } = await updateShop(`удалён товар ${id}`, (d) => {
       const p = find(d, id);
-      d.products = d.products.filter((x) => x.id !== id);
+      d.products = d.products.filter((x) => String(x.id) !== String(id));
       return p;
     });
     if (result.image) await deleteFile(result.image);

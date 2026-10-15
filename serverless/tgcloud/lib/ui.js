@@ -79,7 +79,7 @@ export async function channelNewsView() {
     const pinned = chat.pinned_message;
     if (pinned) {
       let body = String(pinned.text || pinned.caption || 'Закреплённый медиа-пост без текста.').trim();
-      if (body.length > 2800) body = body.slice(0, 2797) + '...';
+      if (body.length > 2800) body = truncate(body, 2797) + '...';
       return [
         `<b>📌 Закреплённый пост @THKC_SQUAD</b>\n\n${escapeHtml(body)}`,
         keyboard([
