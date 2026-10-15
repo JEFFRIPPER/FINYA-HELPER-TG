@@ -9,6 +9,7 @@ const short = (s, n = 160) => (s == null ? s : String(s).slice(0, n));
 export default async function (input = {}) {
   if (input.mode === 'env') return env();
   if (input.mode === 'hang') return hang(input.url);
+  if (input.mode === 'src') return src(input);
   const out = {
     env: {
       setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout,
@@ -81,5 +82,21 @@ async function hang(url) {
     return { url, status: r.status, ms: Date.now() - s };
   } catch (e) {
     return { url, err: short(e && e.message, 200), ms: Date.now() - s };
+  }
+}
+
+async function src({ name, match }) {
+  const res = await api.getUserProfileAudios({ user_id: OWNER_USER_ID, limit: 100 });
+  const a = ((res && res.audios) || []).find((x) => new RegExp(match, 'i').test(x.title || x.file_name || ''));
+  if (!a) return { name, match, err: 'no track' };
+  const track = { title: a.title || a.file_name, artist: a.performer || '', duration: a.duration || 0 };
+  const [, find] = SOURCES.find(([n]) => n === name);
+  const s = Date.now();
+  try {
+    const h = await find(track);
+    const kind = h ? (h.synced ? (/<\d/.test(h.synced) ? 'word' : 'line') : h.plain ? 'plain' : 'empty') : null;
+    return { name, t: track.title, ms: Date.now() - s, kind };
+  } catch (e) {
+    return { name, t: track.title, ms: Date.now() - s, err: short(e && e.message, 160) };
   }
 }

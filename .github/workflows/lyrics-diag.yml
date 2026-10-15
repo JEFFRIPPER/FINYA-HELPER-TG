@@ -23,11 +23,16 @@ jobs:
       - run: npx tgcloud fetch
       - name: Run diagnostic
         run: |
-          (time npx tgcloud run endpoints/zdiag '{ mode: "env" }') > d1.txt 2>&1 || true
-          (time npx tgcloud run endpoints/zdiag '{}') > d2.txt 2>&1 || true
-          (time npx tgcloud run endpoints/zdiag '{ mode: "hang", url: "https://httpbin.org/delay/12" }') > d3.txt 2>&1 || true
-          (time npx tgcloud run endpoints/zdiag '{ mode: "hang", url: "http://10.255.255.1/" }') > d4.txt 2>&1 || true
-          cat d1.txt d2.txt d3.txt d4.txt > diag.txt
+          for m in 'Перспективы' '^Run Run$' 'Что ты знаешь'; do
+            i=0
+            for s in 'Apple Music' 'Lyrics+' 'Musixmatch' 'LRCLIB' 'NetEase' 'QQ Music' 'Kugou' 'Deezer' 'LiriQo' 'Unison' 'Megalobiz' 'Genius' 'lyrics.ovh'; do
+              i=$((i+1))
+              ( (time npx tgcloud run endpoints/zdiag "{ mode: 'src', name: '$s', match: '$m' }") 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^< |✗|^real" | tr '\n' ' '; echo " [$s]" ) > "o_$i.txt" &
+            done
+            wait
+            cat o_*.txt >> diag.txt
+            rm -f o_*.txt
+          done
       # Logs and artifacts are not readable from where this is debugged; annotations are.
       - name: Publish as annotations
         if: always()
