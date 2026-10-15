@@ -26,7 +26,8 @@ function withTimeout(promise) {
   ]).finally(() => clearTimeout(timer));
 }
 
-const get = (url, headers = {}) => withTimeout(fetch(url, { headers: { 'User-Agent': UA, ...headers } }));
+const get = (url, headers = {}) => withTimeout(fetch(url, { headers: { 'User-Agent': UA, ...headers } }))
+  .then((res) => { console.log('[get] ' + res.status + ' ' + url.slice(0, 110)); return res; }, (err) => { console.log('[get] ERR ' + (err && err.message) + ' ' + url.slice(0, 110)); throw err; });
 
 async function getJson(url, headers) {
   const res = await get(url, headers);

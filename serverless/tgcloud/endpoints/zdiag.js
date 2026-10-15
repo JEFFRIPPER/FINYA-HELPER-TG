@@ -10,6 +10,12 @@ export default async function (input = {}) {
   if (input.mode === 'env') return env();
   if (input.mode === 'hang') return hang(input.url);
   if (input.mode === 'src') return src(input);
+  if (input.mode === 'list') {
+    const res = await api.getUserProfileAudios({ user_id: OWNER_USER_ID, limit: 100 });
+    const list = ((res && res.audios) || []).map((a) => `${a.performer || ''} — ${a.title || a.file_name} (${a.duration})`);
+    console.log('LIST ' + list.join(' | '));
+    return { n: list.length };
+  }
   const out = {
     env: {
       setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout,
