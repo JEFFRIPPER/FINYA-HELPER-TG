@@ -622,7 +622,7 @@
           h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
         h('div', { class: 'trail', text: r.score + ' XP' }));
     }))) : h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' });
-    var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Неделя начинается в понедельник по Москве.' }) : null;
+    var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Считаются комментарии и реакции. Неделя начинается в понедельник по Москве.' }) : null;
     return [body, note];
   }
 
@@ -661,7 +661,7 @@
       h('li', null, icon('favorite_fill'), h('span', { text: '+' + rules.reaction + ' XP за реакцию в обсуждениях, до ' + rules.dailyReactions + ' в день.' })),
       h('li', null, icon('local_fire_department_fill'), h('span', { text: 'Не больше ' + me.dailyLimit + ' XP в день за комментарии и реакции, по Москве.' })),
       h('li', null, icon('redeem_fill'), h('span', { text: 'Сверху лимита: награда дня, квесты недели, ачивки, +' + rules.poll + ' XP за голос в опросе, +' + rules.referral + ' XP за друга и +' + rules.birthday + ' XP в день рождения.' })),
-      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
+      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели по комментариям и реакциям получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
     return [achievementsCard(state.data.club),
       h('section', { class: 'card' }, h('h3', { text: 'Звания' }), h('ul', { class: 'list' }, withDividers(items))),
       h('section', { class: 'card' }, h('h3', { text: 'Как получить XP' }), how)];
