@@ -26,17 +26,14 @@ jobs:
       - run: npx tgcloud fetch
       - name: Run diagnostic
         run: |
-          npx tgcloud run endpoints/zdiag "{ mode: 'list' }" 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -o "LIST .*" > diag.txt || true
-          for m in 'Перспективы' 'Что ты знаешь'; do
-            i=0
-            for s in 'Apple Music' 'Lyrics+' 'Musixmatch' 'LRCLIB' 'NetEase' 'QQ Music' 'Kugou' 'Deezer' 'LiriQo' 'Unison' 'Megalobiz' 'Genius' 'lyrics.ovh'; do
-              i=$((i+1))
-              ( (time npx tgcloud run endpoints/zdiag "{ mode: 'src', name: '$s', match: '$m' }") 2>&1 | sed 's/\x1b\[[0-9;]*m//g' | grep -E "^< |✗|^real|\[get\]" | tr '\n' ' '; echo " [$s]" ) > "o_$i.txt" &
-            done
-            wait
-            cat o_*.txt >> diag.txt
-            rm -f o_*.txt
-          done
+          npx tgcloud run endpoints/zdiag "{ mode: 'list' }" 2>&1 | grep -o "LIST .*" > diag.txt || true
+          i=0
+          while IFS= read -r u; do
+            i=$((i+1))
+            ( npx tgcloud run endpoints/zdiag "{ mode: 'raw', url: '$u' }" 2>&1 | grep -E "RAW|BODY" ) > "o_$i.txt" &
+          done < ../diag/urls.txt
+          wait
+          cat o_*.txt >> diag.txt
       # Logs and artifacts are not readable from where this is debugged: the
       # result is committed to this temporary branch instead.
       - name: Save the result to the branch

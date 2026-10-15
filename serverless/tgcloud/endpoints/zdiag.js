@@ -10,10 +10,23 @@ export default async function (input = {}) {
   if (input.mode === 'env') return env();
   if (input.mode === 'hang') return hang(input.url);
   if (input.mode === 'src') return src(input);
+  if (input.mode === 'raw') {
+    const s0 = Date.now();
+    try {
+      const r = await fetch(input.url, { method: input.method || 'GET', headers: { 'User-Agent': 'FINYA-HELPER (https://github.com/JEFFRIPPER/FINYA-HELPER-TG)', ...(input.headers || {}) } });
+      const body = await r.text();
+      console.log('RAW ' + r.status + ' ' + (Date.now() - s0) + 'ms ' + input.url.slice(0, 90));
+      for (let i = 0; i < Math.min(body.length, 1600); i += 400) console.log('BODY ' + body.slice(i, i + 400).replace(/\s+/g, ' '));
+      return { status: r.status };
+    } catch (e) {
+      console.log('RAW ERR ' + (e && e.message) + ' ' + input.url.slice(0, 90));
+      return { err: true };
+    }
+  }
   if (input.mode === 'list') {
     const res = await api.getUserProfileAudios({ user_id: OWNER_USER_ID, limit: 100 });
     const list = ((res && res.audios) || []).map((a) => `${a.performer || ''} — ${a.title || a.file_name} (${a.duration})`);
-    console.log('LIST ' + list.join(' | '));
+    for (let i = 0; i < list.length; i += 10) console.log('LIST ' + list.slice(i, i + 10).join(' | '));
     return { n: list.length };
   }
   const out = {

@@ -1,0 +1,8 @@
+https://lyrics.paxsenix.org/apple-music/lyrics?id=6814517141&v=2
+https://api.liriqo-alfarrizi.workers.dev/v1/lrc?title=%D0%9F%D0%B5%D1%80%D1%81%D0%BF%D0%B5%D0%BA%D1%82%D0%B8%D0%B2%D1%8B&artist=KiloEmali&duration=154
+https://music.163.com/api/song/lyric?id=2084401817&lv=1
+https://genius.com/api/search/multi?q=MORGENSHTERN%20%D0%A2%D0%B0%D0%BD%D1%86%D1%83%D0%B9&per_page=5
+https://lrclib.net/api/search?q=MORGENSHTERN%20%D0%A2%D0%B0%D0%BD%D1%86%D1%83%D0%B9
+https://itunes.apple.com/search?term=MORGENSHTERN%20%D0%A2%D0%B0%D0%BD%D1%86%D1%83%D0%B9&entity=song&limit=3&country=ru
+https://lyricsplus.binimum.org/v2/lyrics/get?title=%D0%A2%D0%B0%D0%BD%D1%86%D1%83%D0%B9&artist=MORGENSHTERN&duration=225&source=apple,lyricsplus,musixmatch,spotify,musixmatch-word
+https://unison.boidu.dev/lyrics?song=%D0%A2%D0%B0%D0%BD%D1%86%D1%83%D0%B9&artist=MORGENSHTERN&duration=225
