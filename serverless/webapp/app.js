@@ -1272,7 +1272,7 @@
       });
       k.box.replaceChildren.apply(k.box, k.rows);
     } else if (music.lyricsWait && music.cur >= 0) {
-      k.box.replaceChildren(h('div', { class: 'k-wait' }, h('i'), h('i'), h('i'), h('i'), h('p', { text: 'Ищу текст в 13 источниках…' })));
+      k.box.replaceChildren(h('div', { class: 'k-wait' }, h('i'), h('i'), h('i'), h('i'), h('p', { text: 'Ищу текст во всех источниках…' })));
     } else {
       k.box.replaceChildren(h('p', { class: 'k-plain', text: music.lyricsErr ? 'Текст не загрузился. Попробуй ещё раз позже.' : music.plain || 'Текста для этого трека не нашлось.' }));
     }
