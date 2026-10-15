@@ -96,7 +96,16 @@ export async function editOrSend(query, text, replyMarkup) {
     if (message.photo && text.length <= 1024) {
       await api.editMessageCaption({ chat_id: message.chat.id, message_id: message.message_id, caption: text, ...params });
     } else if (message.photo) {
-      await api.sendMessage({ chat_id: message.chat.id, text, ...params });
+      // Too long for a caption: the text replaces the photo menu instead of piling up below it.
+      const sent = await api.sendMessage({ chat_id: message.chat.id, text, ...params });
+      if (message.chat.type === 'private') {
+        try {
+          await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
+        } catch {
+          // Older than 48 hours: it stays.
+        }
+      }
+      return sent;
     } else {
       await api.editMessageText({ chat_id: message.chat.id, message_id: message.message_id, text, ...params });
     }

@@ -40,7 +40,7 @@ export function rankKeyboard() {
     [btn('Участники', 'users'), btn('Найти участника', 'find')],
     [btn('Звания и пороги', 'ranks')],
     [btn('Настройка учёта XP', 'setup')],
-    [menuButton('⬅️ Админ-панель', { callback_data: 'admin:menu' })],
+    [menuButton('⬅️ Участники', { callback_data: 'admin:sec:people' })],
   ]);
 }
 

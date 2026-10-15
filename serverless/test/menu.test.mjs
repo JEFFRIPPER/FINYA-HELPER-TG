@@ -13,7 +13,7 @@ test('/start uploads the photo once, then reuses its file_id', async () => {
   assert.ok(first.photo instanceof InputFile);
   assert.equal(first.photo.bytes.length, 72432);
   assert.equal(first.photo.bytes[0], 0xff); // JPEG magic
-  assert.match(first.caption, /Выбери раздел/);
+  assert.match(first.caption, /Профиле Фини/);
   await onMessage(privateMessage(user(1), '/start'));
   const second = mock.called('sendPhoto')[1].params;
   assert.equal(second.photo, 'PHOTO_FILE_ID');
@@ -35,8 +35,14 @@ test('custom emoji icons stay on menu buttons', async () => {
   const mock = await setup();
   await onCallbackQuery(callback(user(3), 'home'));
   const rows = mock.called('editMessageText')[0].params.reply_markup.inline_keyboard;
-  assert.deepEqual(rows[0][0], { text: 'Инфо', callback_data: 'info', icon_custom_emoji_id: '6021620268697393273' });
-  assert.deepEqual(rows[0][1], { text: '📢 Новости', callback_data: 'news' });
+  // Three buttons, each with a custom emoji icon.
+  assert.equal(rows.flat().length, 3);
+  assert.ok(rows.flat().every((b) => b.icon_custom_emoji_id));
+  assert.deepEqual(rows[1][1], { text: 'Ещё', callback_data: 'more', icon_custom_emoji_id: '6021620268697393273' });
+  await onCallbackQuery(callback(user(3), 'more'));
+  const more = mock.called('editMessageText')[1].params.reply_markup.inline_keyboard.flat();
+  assert.ok(more.every((b) => b.icon_custom_emoji_id));
+  assert.deepEqual(more[0], { text: 'Новости', callback_data: 'news', icon_custom_emoji_id: '5870687545888607770' });
 });
 
 test('commands addressed to another bot are ignored', async () => {

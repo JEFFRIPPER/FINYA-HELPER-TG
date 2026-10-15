@@ -136,7 +136,7 @@ async function reportFinished(job, ok, failed, payload) {
       chat_id: job.report_chat_id,
       text: boldHtml(`✅ Рассылка завершена.\nДоставлено: ${ok}\nОшибок: ${failed}`),
       parse_mode: 'HTML',
-      reply_markup: await adminKeyboard(),
+      reply_markup: await adminKeyboard('posts'),
     });
   } catch (err) {
     await logError('broadcast.report', err);

@@ -1839,9 +1839,18 @@
           err && err.type === 'ENDPOINT_ERROR' ? err.message : 'Проверь интернет и попробуй ещё раз.', true);
         return;
       }
+      if (!state.data) state.tab = startTab(data);
       state.data = data;
       render();
     });
+  }
+
+  // ?tab=squad from the bot's «Все ссылки Сквада» (or ?tab=admin) opens that tab first.
+  function startTab(data) {
+    var tab = null;
+    try { tab = new URLSearchParams(window.location.search).get('tab'); } catch (e) { /* old WebView */ }
+    var known = TABS.some(function (t) { return t[0] === tab; }) || (tab === 'admin' && data.admin);
+    return known ? tab : state.tab;
   }
 
   document.addEventListener('pointerdown', ripple);
