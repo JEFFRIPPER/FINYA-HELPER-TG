@@ -5,7 +5,7 @@ import musicEndpoint from '../tgcloud/endpoints/music.js';
 import { OWNER_USER_ID } from '../tgcloud/lib/config.js';
 import { sql } from 'sdk/db';
 import { CHUNK_BYTES, handle } from '../tgcloud/lib/music.js';
-import { findLyrics, ttmlToLrc } from '../tgcloud/lib/lyrics.js';
+import { cleanTrack, findLyrics, ttmlToLrc } from '../tgcloud/lib/lyrics.js';
 import { base64ToBytes, utf8Encode, bytesToBase64, nowInt } from '../tgcloud/lib/util.js';
 import { checkErrors, setup, user } from './helpers.mjs';
 
@@ -206,6 +206,56 @@ test('lyrics: sources run in parallel, a hung one never blocks the answer', asyn
   found = await findLyrics(TRACK, [['Never', never], ['Line', line], ['Word', word]], { grace: 500, deadline: 5000 });
   assert.equal(found.source, 'Word', 'a word-synced answer within the grace time wins');
   assert.equal(await findLyrics(TRACK, [['Never', never]], { grace: 20, deadline: 50 }), null);
+});
+
+test('lyrics: names are cleaned of YouTube-style noise before searching', () => {
+  const c = (title, artist) => { const t = cleanTrack({ title, artist, duration: 1 }); return `${t.artist} | ${t.title}`; };
+  assert.equal(c('Что ты знаешь обо мне', 'КАТЕРИНА - Topic'), 'КАТЕРИНА | Что ты знаешь обо мне');
+  assert.equal(c('Вороны (Официальная премьера трека)', 'Jamik'), 'Jamik | Вороны');
+  assert.equal(c('Вороны (REMIX)', 'Jamik'), 'Jamik | Вороны (REMIX)');
+  assert.equal(c('FACE – Антидепрессант (prod. by Vessels)', 'Face Music'), 'FACE | Антидепрессант');
+  assert.equal(c('Выросли не там(prod by Arako Beats)', 'В АККУРАТ'), 'В АККУРАТ | Выросли не там');
+  assert.equal(c('Hurt [Official Music Video]', 'Oliver Tree'), 'Oliver Tree | Hurt');
+  assert.equal(c('Житность, GSPD - Мальчик на девятке 2 [muzskil.com]', ''), 'Житность, GSPD | Мальчик на девятке 2');
+  assert.equal(c('Я люблю Винтаж.mp3', ''), ' | Я люблю Винтаж');
+  assert.equal(c('Run Run - Remix', 'Anel Renaldi'), 'Anel Renaldi | Run Run - Remix');
+});
+
+test('lyrics: Apple Music answers in the new Paxsenix shape, LRCLIB is asked again after 429', async () => {
+  let lrclib = 0;
+  fetchMock.handler = (url) => {
+    if (url.startsWith('https://itunes.apple.com/search')) {
+      assert.match(url, /term=%D0%9A%D0%90%D0%A2%D0%95%D0%A0%D0%98%D0%9D%D0%90%20/, 'no "- Topic" in the search');
+      return { json: { results: [{ trackId: 6814517141, trackName: 'Что ты знаешь обо мне', trackTimeMillis: 161000 }] } };
+    }
+    if (url.startsWith('https://lyrics.paxsenix.org/apple-music/lyrics?id=6814517141')) {
+      return { json: { provider: 'apple_music', syncType: 'Line', lyrics: [
+        { timestamp: 10652, endtime: 12094, text: [{ text: 'Раз, два, три', timestamp: 10652, endtime: 12094, part: false }], background: false },
+        { timestamp: 13210, endtime: 15884, text: [{ text: 'Овации, аплодисменты', timestamp: 13210, endtime: 15884, part: false }], background: false },
+      ] } };
+    }
+    if (url.startsWith('https://lrclib.net/api/get')) {
+      lrclib += 1;
+      return lrclib === 1 ? { status: 429, json: { name: 'RateLimited' } } : notFound();
+    }
+    return notFound();
+  };
+  const found = await findLyrics({ title: 'Что ты знаешь обо мне', artist: 'КАТЕРИНА - Topic', duration: 161 });
+  assert.deepEqual(found, { synced: '[00:10.65]Раз, два, три\n[00:13.21]Овации, аплодисменты', plain: null, source: 'Apple Music' });
+  assert.equal(lrclib, 2, 'a rate-limited request is made once more');
+});
+
+test('lyrics: Lyrics+ takes the first mirror that has the song', async () => {
+  fetchMock.handler = (url) => {
+    if (url.startsWith('https://lyricsplus.binimum.org')) return { status: 404, json: { error: { message: 'Lyrics not found in sources: musixmatch' } } };
+    if (url.startsWith('https://lyricsplus-seven.vercel.app/v2/lyrics/get')) {
+      return { json: { type: 'Line', lyrics: [{ time: 61000, duration: 1500, text: 'Танцуй' }] } };
+    }
+    if (url.includes('lyricsplus') || url.includes('lyrics-plus')) return { status: 502, text: 'bad gateway' };
+    return notFound();
+  };
+  const found = await findLyrics(TRACK);
+  assert.deepEqual(found, { synced: '[01:01.00]Танцуй', plain: null, source: 'Lyrics+' });
 });
 
 test('lyrics: the isolate has no timers, the search still answers', async () => {

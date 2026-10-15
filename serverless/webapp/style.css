@@ -82,10 +82,17 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 
 .icon { width: 24px; height: 24px; flex: none; fill: currentColor; }
 
+/* In Telegram's full-screen mode the status bar and Telegram's own buttons sit
+   over the page: --tg-*-safe-area-inset-* say how much (0 otherwise). */
+:root {
+  --inset-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
+  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
+}
+
 main {
   max-width: 600px;
   margin: 0 auto;
-  padding: 12px 16px calc(100px + env(safe-area-inset-bottom));
+  padding: calc(12px + var(--inset-top)) 16px calc(100px + var(--inset-bottom));
 }
 
 /* ---- Material 3 ripple ---------------------------------------------------- */
@@ -436,7 +443,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: var(--inset-bottom);
   animation: rise var(--dur-long) var(--ease-emph-decel) both;
 }
 .navbar-inner { display: flex; width: 100%; max-width: 600px; }
@@ -942,7 +949,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   border-bottom: 0;
   background: linear-gradient(180deg, #1d0509, #0d0204 40%);
   box-shadow: 0 -20px 60px -10px rgba(220, 0, 40, 0.45);
-  padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+  padding: 0 16px calc(20px + var(--inset-bottom));
   animation: sheet-in 400ms var(--ease-emph-decel) both;
 }
 .sheet.leave { animation: sheet-out 250ms var(--ease-emph-accel) forwards; }
@@ -1027,7 +1034,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .snackbar {
   position: fixed;
   left: 50%;
-  bottom: calc(96px + env(safe-area-inset-bottom));
+  bottom: calc(96px + var(--inset-bottom));
   z-index: 70;
   max-width: calc(100vw - 32px);
   padding: 14px 16px;
@@ -1227,12 +1234,13 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   transition: transform 600ms var(--ease-emph-decel), opacity 450ms linear, filter 450ms linear;
 }
 .pl.on { opacity: 1; transform: none; filter: none; color: rgba(255, 236, 239, 0.42); }
-.pl.status { color: var(--text-2); font-size: 14px; font-weight: 500; }
-.pl.status.wait {
-  background: linear-gradient(90deg, var(--text-2) 30%, #fff 50%, var(--text-2) 70%) 0 0 / 300% 100%;
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: text-shine 1.6s linear infinite;
+.peek-status {
+  position: absolute; inset: 0; margin: 0; padding: 0 4px; display: flex; align-items: center; justify-content: center;
+  text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text-2);
 }
+.peek-status[hidden] { display: none; }
+.peek-status.wait { animation: status-breathe 1.4s ease-in-out infinite; }
+@keyframes status-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @keyframes text-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
 /* Words of the current line: waiting ones are soft, sung ones glow, the one
@@ -1315,7 +1323,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   to { transform: translate(6vw, -5vh) rotate(160deg) scale(1.12); }
 }
 .k-head, .k-lines, .k-foot { position: relative; z-index: 1; }
-.k-head { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top)) 12px 8px 16px; }
+.k-head { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top), calc(8px + var(--inset-top))) 12px 8px 16px; }
 .k-head .cover { width: 48px; height: 48px; border-radius: 12px; }
 .k-head .cover .icon { width: 24px; height: 24px; }
 .k-head .body { flex: 1; min-width: 0; }
@@ -1350,7 +1358,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .k-wait i:nth-child(3) { width: 58%; animation-delay: 240ms; }
 .k-wait i:nth-child(4) { width: 80%; animation-delay: 360ms; }
 .k-wait p { margin: 6px 0 0; color: var(--text-2); }
-.k-foot { padding: 4px 20px max(16px, env(safe-area-inset-bottom)); }
+.k-foot { padding: 4px 20px max(16px, calc(8px + var(--inset-bottom))); }
 .k-foot .seek-wrap { margin-top: 0; }
 .k-controls { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 4px; }
 .k-src { margin: 6px 0 0; min-height: 16px; text-align: center; font-size: 12px; line-height: 16px; color: var(--text-2); opacity: 0.7; }
