@@ -1394,3 +1394,22 @@ em.nm { font-style: normal; }
 /* ---- navigation with six destinations (the owner's) ------------------------------------- */
 .navbar.many .dest { font-size: 11px; letter-spacing: 0.2px; }
 .navbar.many .dest .pill { width: 52px; }
+
+/* ---- bug hunt, October 2026 ------------------------------------------------------------ */
+/* A redraw after an action (claim, vote) must not replay the entrance growth. */
+.quiet .col i, .quiet .poll-fill { animation: none; }
+/* Narrow phones (320 px): every destination fits, labels are not cut. */
+.dest { min-width: 0; }
+@media (max-width: 360px) {
+  .dest { font-size: 11px; letter-spacing: 0; }
+  .dest .pill { width: 52px; }
+  .navbar.many .dest .pill { width: 44px; }
+  .navbar.many .dest { font-size: 10px; letter-spacing: 0; }
+}
+/* Title names in the shop wrap instead of «НОЧНОЙ ДО…». */
+.shop-sample .title-chip { white-space: normal; text-align: center; overflow-wrap: anywhere; }
+/* «В сторис» / «Служу Скваду!» stay on one line each. */
+.celebrate-actions { flex-wrap: wrap; justify-content: center; }
+.celebrate-actions > * { white-space: nowrap; }
+/* Long switch names («Поздравления с днём рождения») wrap on narrow phones. */
+.switch-row .body b, .switch-row .body span { white-space: normal; }
