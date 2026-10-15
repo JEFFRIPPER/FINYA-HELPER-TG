@@ -268,7 +268,11 @@ test('moderation: admins mute, warn and ban by reply; members and admins are pro
   await say(bad, 'мут', replyTo(user(6)));
   assert.match(lastSent(api), /только админы/);
   assert.equal(api.called('restrictChatMember').length, 0);
-  await say(admin, 'мут 30м спам', replyTo(bad));
+  // Jokes are not commands: the first line holds only the time, the reason goes below.
+  await say(admin, 'мут тебе', replyTo(bad));
+  await say(admin, 'бан бы тебе за такое 😂', replyTo(bad));
+  assert.equal(api.called('restrictChatMember').length + api.called('banChatMember').length, 0);
+  await say(admin, 'мут 30м\nспам', replyTo(bad));
   const r = api.called('restrictChatMember')[0].params;
   assert.equal(r.user_id, 5);
   assert.equal(r.permissions.can_send_messages, false);
@@ -279,7 +283,7 @@ test('moderation: admins mute, warn and ban by reply; members and admins are pro
   await say(admin, 'мут', replyTo(OWNER));
   assert.equal(api.called('restrictChatMember').length, 1);
   // Three warns end in a day of mute.
-  await say(admin, 'варн флуд', replyTo(bad));
+  await say(admin, 'варн\nфлуд', replyTo(bad));
   await say(admin, 'варн', replyTo(bad));
   assert.match(lastSent(api), /варн \(2\/3\)/);
   await say(admin, 'варны', replyTo(bad));
@@ -308,13 +312,30 @@ test('moderation without rights says what to fix', async () => {
 });
 
 test('duration words', () => {
-  assert.deepEqual(moder.parseDuration('30м спам'), { seconds: 1800, rest: 'спам' });
-  assert.deepEqual(moder.parseDuration('2 дня'), { seconds: 2 * 86400, rest: '' });
-  assert.deepEqual(moder.parseDuration('15'), { seconds: 900, rest: '' });
-  assert.deepEqual(moder.parseDuration('1 час за мат'), { seconds: 3600, rest: 'за мат' });
-  assert.deepEqual(moder.parseDuration('флуд'), { seconds: null, rest: 'флуд' });
-  assert.equal(moder.parseDuration('9999д').seconds, moder.MAX_MUTE);
+  const D = 86400;
+  assert.equal(moder.parseDuration('30м'), 1800);
+  assert.equal(moder.parseDuration('2 дня'), 2 * D);
+  assert.equal(moder.parseDuration('15'), 900);
+  assert.equal(moder.parseDuration('1 неделя'), 7 * D);
+  assert.equal(moder.parseDuration('2 мес'), 60 * D);
+  assert.equal(moder.parseDuration('1 год'), moder.MAX_MUTE);
+  assert.equal(moder.parseDuration('9999д'), moder.MAX_MUTE);
+  assert.equal(moder.parseDuration(''), null);
+  assert.equal(moder.parseDuration('тебе'), undefined);
+  assert.equal(moder.parseDuration('5 попугаев'), undefined);
+  assert.deepEqual(moder.parseCommandArgs('мут', '@vasya 1д\nза мат'), { seconds: D, reason: 'за мат' });
+  assert.deepEqual(moder.parseCommandArgs('бан', '\nспам'), { seconds: null, reason: 'спам' });
+  assert.equal(moder.parseCommandArgs('бан', 'бы тебе'), null);
   assert.equal(moder.fmtDuration(90 * 60), '1 ч 30 мин');
+});
+
+test('forwarded messages in a burst are not a flood', async () => {
+  const api = await setup(withAdmins([]));
+  const ts = nowInt();
+  for (let i = 0; i < 10; i++) {
+    await say(user(5), 'пересланное ' + i, { date: ts, forward_origin: { type: 'hidden_user', sender_user_name: 'X', date: ts } });
+  }
+  assert.equal(api.called('restrictChatMember').length, 0);
 });
 
 test('antiflood mutes once for a burst, not for a slow chat', async () => {
@@ -349,14 +370,75 @@ test('captcha: a newcomer is muted until «Я не бот», then welcomed; sile
   await onCallbackQuery(groupButton(nick, 'cap:7'));
   assert.equal(api.called('restrictChatMember').at(-1).params.permissions.can_send_messages, true);
   assert.match(lastSent(api), /Добро пожаловать в Сквад, <b>Ник<\/b>/);
-  // Somebody who never presses is kicked by pump() after five minutes.
-  await onMessage(join(user(9)));
+});
+
+// getChatMember answers from a status map; the bot itself is an admin.
+function statusApi(statuses) {
+  return {
+    getChatMember: (p) => {
+      const st = statuses[p.user_id] || 'member';
+      if (st === 'muted') return { status: 'restricted', is_member: true, can_send_messages: false, user: { id: p.user_id } };
+      return { status: st, user: { id: p.user_id }, can_restrict_members: st === 'administrator' };
+    },
+  };
+}
+const joinOf = (u) => groupMessage(DISCUSSION, u, undefined, { new_chat_members: [u] });
+const afterCaptcha = async () => {
   const later = nowInt() + moder.CAPTCHA_TTL + 1;
   Date.now = () => later * 1000;
   await pump({ force: true });
+};
+
+test('captcha: silence means a kick by pump()', async () => {
+  const statuses = { 9: 'member' };
+  const api = await setup(statusApi(statuses));
+  await onMessage(joinOf(user(9)));
+  assert.equal(sent(api).at(-1).params.reply_parameters.message_id > 0, true);
+  statuses[9] = 'muted';
+  await afterCaptcha();
   assert.equal(api.called('banChatMember')[0].params.user_id, 9);
   assert.equal(api.called('unbanChatMember')[0].params.user_id, 9);
   assert.equal((await db.get("SELECT COUNT(*) AS c FROM captcha WHERE status = 'pending'")).c, 0);
+});
+
+test('captcha never lifts an admin\'s ban or mute', async () => {
+  const statuses = { 10: 'administrator' };
+  const api = await setup(statusApi(statuses));
+  const admin = user(10);
+  // A spammer banned before pressing stays banned.
+  await onMessage(joinOf(user(9)));
+  await say(admin, 'бан', replyTo(user(9)));
+  statuses[9] = 'kicked';
+  await onChatMember({
+    chat: DISCUSSION, from: admin, date: nowInt(),
+    old_chat_member: { status: 'restricted', is_member: true, user: user(9) }, new_chat_member: { status: 'kicked', user: user(9) },
+  });
+  await afterCaptcha();
+  assert.equal(api.called('unbanChatMember').length, 0);
+  // A muted member who leaves and rejoins gets no button that would unmute them.
+  Date.now = realNow;
+  statuses[8] = 'muted';
+  const before = api.called('restrictChatMember').length;
+  await onMessage(joinOf(user(8)));
+  assert.equal(api.called('restrictChatMember').length, before);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM captcha WHERE user_id = 8')).c, 0);
+  // Let in by an admin's «размут» before the button: no kick later.
+  statuses[7] = 'member';
+  await onMessage(joinOf(user(7)));
+  await say(admin, 'размут', replyTo(user(7)));
+  statuses[7] = 'member';
+  await afterCaptcha();
+  assert.equal(api.called('banChatMember').filter((c) => c.params.user_id === 7).length, 0);
+});
+
+test('captcha: leaving before pressing lifts the check\'s mute', async () => {
+  const statuses = {};
+  const api = await setup(statusApi(statuses));
+  await onMessage(joinOf(user(9)));
+  statuses[9] = 'muted';
+  await onMessage(groupMessage(DISCUSSION, user(9), undefined, { left_chat_member: user(9) }));
+  assert.equal(api.called('restrictChatMember').at(-1).params.permissions.can_send_messages, true);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM captcha')).c, 0);
 });
 
 test('private chat: фарм and кто я work, chat tops point to the chat', async () => {

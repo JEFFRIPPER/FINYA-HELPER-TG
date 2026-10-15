@@ -362,8 +362,8 @@ async function textMessage(message, s) {
   }
 
   if (!s.awaiting_feedback) {
-    // «фарм», «кто я», «браки»… work in the private chat too.
-    await chat.handleText(message);
+    // «фарм», «кто я», «браки»… work in the private chat too, except during maintenance.
+    if (!(await isMaintenance()) || isAdminUser(message.from)) await chat.handleText(message);
     return;
   }
   delete s.awaiting_feedback;
@@ -411,14 +411,16 @@ async function xpChatMatches(chatId) {
 
 // A message in a Squad chat: commands in words, members and protection (lib/chat.js), then XP.
 async function squadMessage(message, command) {
-  if (!(await xpChatMatches(message.chat.id))) return;
+  let squad = false;
   let result = { handled: false, checking: [] };
   try {
-    result = await chat.onSquadMessage(message, { command });
+    squad = await xpChatMatches(message.chat.id);
+    if (squad) result = await chat.onSquadMessage(message, { command });
   } catch (err) {
+    // A failure here must not stop /rank and other commands below.
     await logError('chat', err);
   }
-  if (result.handled) return;
+  if (!squad || result.handled) return;
   try {
     if (message.new_chat_members) {
       // Newcomers with the «Я не бот» check are greeted once they pass it.

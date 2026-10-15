@@ -69,29 +69,43 @@ async function shielded(chatId, userId) {
 // ---- durations ------------------------------------------------------------------
 
 const UNITS = [
-  [/^(с|сек|секунд[аы]?)$/, 1],
-  [/^(м|мин|минут[аы]?|минуту)$/, MIN],
+  [/^(с|сек|секунд[аыу]?)$/, 1],
+  [/^(м|мин|минут[аыу]?)$/, MIN],
   [/^(ч|час|часа|часов)$/, HOUR],
   [/^(д|дн|день|дня|дней|сут|сутки|суток)$/, DAY],
-  [/^(н|нед|неделю|недели|недель)$/, 7 * DAY],
+  [/^(н|нед|неделя|неделю|недели|недель)$/, 7 * DAY],
+  [/^(мес|месяц|месяца|месяцев)$/, 30 * DAY],
+  [/^(г|год|года|лет)$/, 365 * DAY],
 ];
 
-// «30м», «1 ч», «2 дня», «15» (minutes) → { seconds, rest }; no number → the default.
+// «30м», «1 ч», «2 недели», «15» (minutes) → seconds; '' → null (the default);
+// anything else → undefined: «мут тебе» is talk, not a command.
 export function parseDuration(text) {
-  const t = String(text || '').trim();
-  const m = /^(\d{1,4})\s*([a-zа-яё]*)\s*(.*)$/i.exec(t);
-  if (!m) return { seconds: null, rest: t };
-  const n = Number(m[1]);
-  const unitText = m[2].toLowerCase().replace(/ё/g, 'е');
+  const t = String(text || '').trim().toLowerCase().replace(/ё/g, 'е');
+  if (!t) return null;
+  const m = /^(\d{1,4})\s*([а-яa-z]*)\.?$/.exec(t);
+  if (!m || !Number(m[1])) return undefined;
   let unit = MIN;
-  let rest = m[3];
-  if (unitText) {
-    const found = UNITS.find(([re]) => re.test(unitText));
-    if (found) unit = found[1];
-    else rest = (m[2] + ' ' + m[3]).trim();
+  if (m[2]) {
+    const found = UNITS.find(([re]) => re.test(m[2]));
+    if (!found) return undefined;
+    unit = found[1];
   }
-  if (!n) return { seconds: null, rest };
-  return { seconds: Math.min(MAX_MUTE, Math.max(MIN, n * unit)), rest };
+  return Math.min(MAX_MUTE, Math.max(MIN, Number(m[1]) * unit));
+}
+
+// The text after «мут/бан/…», Iris style: the first line holds only the time (for «мут»)
+// and @mentions; the reason goes on the next line. → { seconds, reason }, or null when
+// the first line has anything else («бан бы тебе за такое» is a joke, not a ban).
+export function parseCommandArgs(verb, args) {
+  const [first, ...lines] = String(args || '').split('\n');
+  const head = first.replace(/@\w{3,32}/g, ' ').trim();
+  const reason = lines.join(' ').replace(/\s+/g, ' ').trim();
+  if (verb === 'мут') {
+    const seconds = parseDuration(head);
+    return seconds === undefined ? null : { seconds, reason };
+  }
+  return head ? null : { seconds: null, reason };
 }
 
 export function fmtDuration(seconds) {
@@ -139,26 +153,29 @@ export async function kick(chatId, userId) {
 
 const unmuteKeyboard = (userId) => keyboard([[button('🔊 Снять мут', { callback_data: `mod:unmute:${userId}` })]]);
 
-// «мут 1ч спам», «бан», «варн флуд»… as a reply. → { text, markup } for the chat.
-export async function act(chatId, actor, target, verb, args) {
+// «мут 1ч», «бан», «варн»… as a reply, the reason on the next line. `parsed` comes from
+// parseCommandArgs. → { text, markup } for the chat.
+export async function act(chatId, actor, target, verb, parsed) {
   if (!(await canModerate(chatId, actor.id))) throw new ModError('Это могут только админы чата.');
   const guard = ['мут', 'бан', 'кик', 'варн'].includes(verb) ? await shielded(chatId, target.id) : null;
   if (guard) throw new ModError(guard);
   const who = mention(target.id, target.name);
   const by = mention(actor.id, actor.name);
   const reasonLine = (r) => (r ? `\nПричина: ${escapeHtml(truncate(r, 200))}` : '');
+  const args = parsed.reason;
   if (verb === 'мут') {
-    const { seconds, rest } = parseDuration(args);
-    const time = seconds || DEFAULT_MUTE;
+    const time = parsed.seconds || DEFAULT_MUTE;
     await mute(chatId, target.id, time);
-    return { text: `🔇 ${who} получает мут на ${fmtDuration(time)}.${reasonLine(rest)}\nВыдал админ: ${by}`, markup: unmuteKeyboard(target.id) };
+    return { text: `🔇 ${who} получает мут на ${fmtDuration(time)}.${reasonLine(args)}\nВыдал админ: ${by}`, markup: unmuteKeyboard(target.id) };
   }
   if (verb === 'размут') {
     await unmute(chatId, target.id);
+    await dropCaptcha(chatId, target.id);
     return { text: `🔊 ${who} снова может писать.` };
   }
   if (verb === 'бан') {
     await ban(chatId, target.id);
+    await dropCaptcha(chatId, target.id);
     return { text: `⛔ ${who} получает бан.${reasonLine(args)}\nВыдал админ: ${by}` };
   }
   if (verb === 'разбан') {
@@ -167,6 +184,7 @@ export async function act(chatId, actor, target, verb, args) {
   }
   if (verb === 'кик') {
     await kick(chatId, target.id);
+    await dropCaptcha(chatId, target.id);
     return { text: `👢 ${who} вылетает из чата.${reasonLine(args)}` };
   }
   if (verb === 'варн') return warn(chatId, actor, target, args);
@@ -218,7 +236,8 @@ export async function checkFlood(message) {
   const u = message.from;
   if (!u || u.is_bot || message.sender_chat || u.id === OWNER_USER_ID) return null;
   // An album arrives as one message per photo: that is not a flood.
-  if (message.media_group_id || message.new_chat_members || message.left_chat_member) return null;
+  // Forwarding several messages at once is one action too.
+  if (message.media_group_id || message.forward_origin || message.new_chat_members || message.left_chat_member) return null;
   if (!(await getSetting('chat_antiflood'))) return null;
   const chatId = message.chat.id;
   const ts = Math.floor(message.date || nowInt());
@@ -248,17 +267,20 @@ const userName = (u) => [u.first_name, u.last_name].filter(Boolean).join(' ') ||
 
 // A newcomer can't write until they press the button; nobody presses → kicked.
 // → true while the newcomer has a check to pass (the welcome waits for it).
-export async function onJoin(chat, user) {
+// `replyTo`: the join service message, so the button shows up where they joined.
+export async function onJoin(chat, user, replyTo = null) {
   if (!user || user.is_bot || user.id === OWNER_USER_ID) return false;
   if (!(await getSetting('chat_captcha'))) return false;
-  const ts = nowInt();
+  const existing = await db.get(sql`SELECT status FROM captcha WHERE chat_id = ${chat.id} AND user_id = ${user.id}`);
   // The join arrives twice (service message and chat_member): one check for both.
+  if (existing) return existing.status === 'pending';
+  // Someone muted before (a mute, warns, flood) who comes back stays muted: the
+  // button would lift that mute.
+  const m = await memberOf(chat.id, user.id);
+  if (m && m.status === 'restricted' && m.can_send_messages === false) return false;
   const r = await db.run(sql`INSERT OR IGNORE INTO captcha (chat_id, user_id, message_id, status, created_at)
-    VALUES (${chat.id}, ${user.id}, NULL, 'pending', ${ts})`);
-  if (r.rowsAffected !== 1) {
-    const row = await db.get(sql`SELECT status FROM captcha WHERE chat_id = ${chat.id} AND user_id = ${user.id}`);
-    return Boolean(row) && row.status === 'pending';
-  }
+    VALUES (${chat.id}, ${user.id}, NULL, 'pending', ${nowInt()})`);
+  if (r.rowsAffected !== 1) return true;
   try {
     await mute(chat.id, user.id, null);
   } catch (err) {
@@ -266,20 +288,42 @@ export async function onJoin(chat, user) {
     if (!(err instanceof ModError)) throw err;
     return false; // No rights: no check rather than a newcomer stuck forever.
   }
-  const sent = await api.sendMessage({
+  const params = {
     chat_id: chat.id, parse_mode: 'HTML',
     text: boldHtml(`🛡 ${mention(user.id, userName(user))}, привет! Нажми кнопку ниже за ${fmtDuration(CAPTCHA_TTL)}, ` +
       'чтобы писать в чат. Иначе Финя решит, что ты бот.'),
     reply_markup: keyboard([[button('✅ Я не бот', { callback_data: `cap:${user.id}` })]]),
-  });
+  };
+  if (replyTo) params.reply_parameters = { message_id: replyTo, allow_sending_without_reply: true };
+  const sent = await api.sendMessage(params);
   await db.run(sql`UPDATE captcha SET message_id = ${sent && sent.message_id ? sent.message_id : null}
     WHERE chat_id = ${chat.id} AND user_id = ${user.id}`);
   return true;
 }
 
-// Leaving clears the check, so coming back asks again.
-export async function onLeave(chatId, userId) {
-  await db.run(sql`DELETE FROM captcha WHERE chat_id = ${chatId} AND user_id = ${userId} AND status = 'passed'`);
+// An admin let the newcomer in, banned or kicked them: the check is over.
+async function dropCaptcha(chatId, userId) {
+  const r = await db.run(sql`DELETE FROM captcha WHERE chat_id = ${chatId} AND user_id = ${userId}
+    AND status = 'pending' RETURNING message_id`);
+  if (r.rowsAffected) await dropMessage(chatId, r.rows[0].message_id);
+}
+
+// Leaving clears the check, so coming back asks again. Whoever leaves before pressing
+// gets the check's mute lifted (a ban stays): otherwise they would come back muted for good.
+export async function onLeave(chatId, userId, { banned = false } = {}) {
+  const r = await db.run(sql`DELETE FROM captcha WHERE chat_id = ${chatId} AND user_id = ${userId} RETURNING status, message_id`);
+  const row = r.rows && r.rows[0];
+  if (!row || row.status !== 'pending') return;
+  await dropMessage(chatId, row.message_id);
+  if (banned) return;
+  // The service message may come before the ban's chat_member update: ask Telegram.
+  const m = await memberOf(chatId, userId);
+  if (!m || m.status !== 'restricted') return;
+  try {
+    await unmute(chatId, userId);
+  } catch {
+    // No rights any more: nothing to undo then.
+  }
 }
 
 async function dropMessage(chatId, messageId) {
@@ -328,12 +372,15 @@ export async function tick(deadlineLeftMs) {
     const claimed = await db.run(sql`DELETE FROM captcha WHERE chat_id = ${r.chat_id} AND user_id = ${r.user_id}
       AND status = 'pending' RETURNING user_id`);
     if (claimed.rowsAffected !== 1) continue;
+    await dropMessage(r.chat_id, r.message_id);
+    // Only someone still sitting muted by the check goes: a ban or an admin's unmute stays.
+    const m = await memberOf(r.chat_id, r.user_id);
+    if (!m || m.status !== 'restricted' || m.is_member === false) continue;
     try {
       await kick(r.chat_id, r.user_id);
     } catch (err) {
       await logError('captcha.kick', err);
     }
-    await dropMessage(r.chat_id, r.message_id);
   }
 }
 
@@ -351,6 +398,7 @@ export async function unmuteButton(query, userId) {
     await answer(query, err.message, true);
     return;
   }
+  await dropCaptcha(chatId, userId);
   await answer(query, 'Мут снят');
   try {
     await api.editMessageReplyMarkup({ chat_id: chatId, message_id: query.message.message_id, reply_markup: keyboard([]) });

@@ -197,7 +197,8 @@ async function plusRep(message, target) {
   if (!target || target.isBot || target.id === from.id) return;
   const n = await social.plus(message.chat.id, message.message_id, from.id, target.id);
   if (n == null) return;
-  await say(message, `❤️ ${mention(from.id, fullName(from))} ➜ ${mention(target.id, target.name)}\nРепутация +1, теперь ${n}`);
+  // «Спасибо» is common: the confirmation goes away, the reputation stays.
+  await say(message, `❤️ ${mention(from.id, fullName(from))} ➜ ${mention(target.id, target.name)}\nРепутация +1, теперь ${n}`, { temp: true });
 }
 
 // ---- marriages -------------------------------------------------------------------
@@ -331,7 +332,8 @@ function helpText(owner) {
     '💍 брак (ответом) · развод · браки\n' +
     '🤗 обнять, поцеловать, ударить… (ответом) · рп — все действия\n' +
     '🔮 Финя, кто… · Финя, инфа… · Финя, выбери А или Б · Финя, вопрос?\n\n' +
-    '🛡 Админам (ответом): мут 1ч причина · размут · бан · разбан · кик · варн · снять варн · варны';
+    '🛡 Админам (ответом): мут 1ч · размут · бан · разбан · кик · варн · снять варн · варны. ' +
+    'Причину пиши с новой строки.';
   if (owner) {
     text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд вкл/выкл · капча вкл/выкл';
   }
@@ -384,7 +386,7 @@ async function address(text) {
   return [false, t];
 }
 
-const MOD_VERBS = /^(мут|размут|бан|разбан|кик|варн|снять варн)(?:\s+([\s\S]*))?$/iu;
+const MOD_VERBS = /^(мут|размут|бан|разбан|кик|варн|снять\s+варн)(?:[ \t]+([\s\S]*)|\n([\s\S]*))?$/iu;
 
 // → true when the message was a command for Финя.
 export async function handleText(message) {
@@ -477,10 +479,11 @@ export async function handleText(message) {
     return true;
   }
   const mod = MOD_VERBS.exec(rest.trim());
-  if (mod && target) {
+  const parsed = mod && target ? moder.parseCommandArgs(norm(mod[1]), mod[2] || (mod[3] ? '\n' + mod[3] : '')) : null;
+  if (parsed) {
     const verb = norm(mod[1]);
     try {
-      const out = await moder.act(message.chat.id, self, target, verb, (mod[2] || '').trim());
+      const out = await moder.act(message.chat.id, self, target, verb, parsed);
       await say(message, out.text, { markup: out.markup });
     } catch (err) {
       if (!(err instanceof moder.ModError)) throw err;
@@ -510,7 +513,7 @@ export async function onSquadMessage(message, { command = false } = {}) {
   await members.track(message);
   const checking = [];
   for (const u of message.new_chat_members || []) {
-    if (members.isPerson(u) && (await moder.onJoin(message.chat, u))) checking.push(u.id);
+    if (members.isPerson(u) && (await moder.onJoin(message.chat, u, message.message_id))) checking.push(u.id);
   }
   if (message.left_chat_member) await moder.onLeave(message.chat.id, message.left_chat_member.id);
   if (await moder.checkFlood(message)) return { handled: false, checking };
@@ -524,7 +527,7 @@ export async function onSquadChatMember(event) {
   const old = event.old_chat_member && event.old_chat_member.status;
   if (!m || !members.isPerson(m.user)) return;
   if (m.status === 'member' && ['left', 'kicked'].includes(old)) await moder.onJoin(event.chat, m.user);
-  if (['left', 'kicked'].includes(m.status)) await moder.onLeave(event.chat.id, m.user.id);
+  if (['left', 'kicked'].includes(m.status)) await moder.onLeave(event.chat.id, m.user.id, { banned: m.status === 'kicked' });
 }
 
 // ---- buttons -------------------------------------------------------------------------

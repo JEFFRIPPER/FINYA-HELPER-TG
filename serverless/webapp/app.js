@@ -459,7 +459,7 @@
   function marriageChip(m) {
     if (!m) return null;
     return h('span', { class: 'love-chip', title: 'Брак в чате Сквада' }, icon('favorite_fill'),
-      h('span', { text: m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }));
+      h('span', { text: 'Пара: ' + m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }));
   }
 
   // «+» in the chat.
@@ -1218,7 +1218,7 @@
     });
     return h('section', { class: 'card club-admin' },
       h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('celebration_fill')),
-        h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели и поздравления' }))),
+        h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели, поздравления и защита чатов' }))),
       h('div', { class: 'switches' },
         setting('weekly', 'Итоги недели в канал', 'Понедельник, 12:00 МСК: топ-3 с бонусом XP'),
         setting('welcome', 'Приветствие новичков', 'В обсуждениях, когда кто-то вступает'),
