@@ -82,17 +82,10 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
 
 .icon { width: 24px; height: 24px; flex: none; fill: currentColor; }
 
-/* In Telegram's full-screen mode the status bar and Telegram's own buttons sit
-   over the page: --tg-*-safe-area-inset-* say how much (0 otherwise). */
-:root {
-  --inset-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
-  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px));
-}
-
 main {
   max-width: 600px;
   margin: 0 auto;
-  padding: calc(12px + var(--inset-top)) 16px calc(100px + var(--inset-bottom));
+  padding: 12px 16px calc(100px + env(safe-area-inset-bottom));
 }
 
 /* ---- Material 3 ripple ---------------------------------------------------- */
@@ -439,11 +432,11 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   z-index: 10;
   display: flex;
   justify-content: center;
-  /* Nearly opaque, so no backdrop-filter: it would re-blur the page under the bar
-     on every frame of scrolling for no visible difference. */
   background: linear-gradient(180deg, rgba(14, 3, 5, 0.97), rgba(9, 2, 3, 0.99));
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
-  padding-bottom: var(--inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
   animation: rise var(--dur-long) var(--ease-emph-decel) both;
 }
 .navbar-inner { display: flex; width: 100%; max-width: 600px; }
@@ -949,7 +942,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   border-bottom: 0;
   background: linear-gradient(180deg, #1d0509, #0d0204 40%);
   box-shadow: 0 -20px 60px -10px rgba(220, 0, 40, 0.45);
-  padding: 0 16px calc(20px + var(--inset-bottom));
+  padding: 0 16px calc(20px + env(safe-area-inset-bottom));
   animation: sheet-in 400ms var(--ease-emph-decel) both;
 }
 .sheet.leave { animation: sheet-out 250ms var(--ease-emph-accel) forwards; }
@@ -1034,7 +1027,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .snackbar {
   position: fixed;
   left: 50%;
-  bottom: calc(96px + var(--inset-bottom));
+  bottom: calc(96px + env(safe-area-inset-bottom));
   z-index: 70;
   max-width: calc(100vw - 32px);
   padding: 14px 16px;
@@ -1103,266 +1096,3 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .btn-filled.wide .cpi { width: 22px; height: 22px; }
 .btn-filled.wide .cpi circle { stroke: #fff; }
 .goods-del { display: flex; margin: 8px auto 0; }
-
-/* ---- owner's music player ------------------------------------------------------ */
-.player {
-  position: relative;
-  overflow: hidden;
-  overflow: clip; /* never scrolled by scrollIntoView, unlike hidden */
-  background:
-    radial-gradient(120% 90% at 0% 0%, rgba(255, 34, 64, 0.18), transparent 60%),
-    var(--surface);
-  border-color: var(--line-strong);
-  transition: box-shadow var(--dur-long) var(--ease-standard);
-}
-.player > :not(.p-amb-box) { position: relative; z-index: 1; }
-.p-amb-box { position: absolute; inset: 0; z-index: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
-.player.playing { box-shadow: 0 0 32px -8px var(--glow); }
-/* Ambient light: the cover, blurred, slowly turning behind the card while it plays.
-   The blur is baked into a tiny canvas (app.js paintGlow): the GPU only turns it. */
-.p-amb {
-  position: absolute; inset: -40%; opacity: 0;
-  background: radial-gradient(closest-side, rgba(255, 30, 60, 0.55), transparent);
-  transition: opacity 900ms var(--ease-standard);
-}
-.glow { position: absolute; inset: 0; width: 100%; height: 100%; will-change: transform; }
-.glow[hidden] { display: none; }
-.p-amb .glow { animation: amb-turn 26s linear infinite paused; }
-.player.playing .p-amb { opacity: 0.3; }
-.player.playing .p-amb .glow { animation-play-state: running; }
-@keyframes amb-turn { to { transform: rotate(360deg); } }
-.player-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px 8px 0; }
-.player .kicker {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12px; line-height: 16px; font-weight: 700; letter-spacing: 1.6px; text-transform: uppercase; color: #ff6b7d;
-}
-/* Equalizer bars: dance while playing, settle when paused. */
-.eqb { display: inline-flex; align-items: flex-end; gap: 2px; width: 18px; height: 14px; }
-.eqb i {
-  flex: 1; height: 100%; border-radius: 2px; background: var(--red); transform-origin: 50% 100%;
-  transform: scaleY(0.25); transition: transform var(--dur-long) var(--ease-emph-decel);
-  box-shadow: 0 0 6px var(--glow);
-}
-.playing .eqb i { animation: eqb 900ms ease-in-out infinite alternate; }
-.playing .eqb i:nth-child(2) { animation-duration: 640ms; animation-delay: -300ms; }
-.playing .eqb i:nth-child(3) { animation-duration: 1100ms; animation-delay: -700ms; }
-.playing .eqb i:nth-child(4) { animation-duration: 760ms; animation-delay: -150ms; }
-@keyframes eqb { 0% { transform: scaleY(0.2); } 50% { transform: scaleY(1); } 100% { transform: scaleY(0.45); } }
-.icon-btn {
-  flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0;
-  border: 0; border-radius: 50%; background: none; color: var(--text);
-  transition: transform var(--dur-short) var(--ease-standard);
-}
-.icon-btn:active { transform: scale(0.88); }
-.icon-btn .icon { width: 24px; height: 24px; fill: currentColor; }
-.player-row { display: flex; align-items: center; gap: 14px; }
-.player .cover, .karaoke .cover {
-  position: relative; flex: none; width: 64px; height: 64px; border-radius: 14px; overflow: hidden;
-  display: grid; place-items: center;
-  background: linear-gradient(160deg, #4a0a14, #160406);
-  box-shadow: 0 0 0 1px var(--line-strong), 0 8px 20px -8px rgba(0, 0, 0, 0.8);
-  transition: transform var(--dur-long) var(--ease-emph-decel), border-radius var(--dur-long) var(--ease-emph-decel);
-}
-.player .cover img, .karaoke .cover img { width: 100%; height: 100%; object-fit: cover; animation: cover-in 520ms var(--ease-emph-decel) both; }
-@keyframes cover-in { from { opacity: 0; transform: scale(1.18); filter: blur(8px); } }
-.player .cover .icon, .karaoke .cover .icon { width: 30px; height: 30px; fill: var(--red); filter: drop-shadow(0 0 8px var(--glow)); }
-.player.playing .cover { animation: cover-pulse 2.4s ease-in-out infinite; }
-.player.loading .cover { transform: scale(0.92); border-radius: 22px; }
-@keyframes cover-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px var(--line-strong), 0 0 12px -2px var(--glow-soft); }
-  50% { box-shadow: 0 0 0 1px var(--line-strong), 0 0 26px 0 var(--glow); }
-}
-.player-row .body { flex: 1; min-width: 0; }
-.p-title { display: block; font-size: 16px; line-height: 22px; font-weight: 500; overflow-wrap: anywhere; }
-.player-row .body span.p-artist { display: block; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Shared axis: the next track slides in from the right, the previous one from the left. */
-.p-info.swap-next > * { animation: info-next 460ms var(--ease-emph-decel) both; }
-.p-info.swap-prev > * { animation: info-prev 460ms var(--ease-emph-decel) both; }
-.p-info.swap-next > :nth-child(2), .p-info.swap-prev > :nth-child(2) { animation-delay: 50ms; }
-@keyframes info-next { from { opacity: 0; transform: translateX(28px); } }
-@keyframes info-prev { from { opacity: 0; transform: translateX(-28px); } }
-.fab {
-  position: relative; flex: none; display: grid; place-items: center;
-  width: 56px; height: 56px; padding: 0; border: 0; border-radius: 18px;
-  background: linear-gradient(180deg, #ff3a55, var(--red-deep)); color: #fff;
-  box-shadow: 0 6px 18px -6px var(--glow), 0 0 0 1px rgba(255, 255, 255, 0.08) inset;
-  transition: border-radius var(--dur-long) var(--ease-emph-decel), transform var(--dur-short) var(--ease-standard), box-shadow var(--dur-long) linear;
-}
-.fab .icon { width: 28px; height: 28px; fill: #fff; }
-.fab .icon.pop { animation: icon-pop 360ms var(--ease-emph-decel); }
-@keyframes icon-pop { from { opacity: 0; transform: scale(0.4) rotate(-90deg); } }
-.playing .play { border-radius: 50%; box-shadow: 0 0 24px -2px var(--glow), 0 0 0 1px rgba(255, 255, 255, 0.08) inset; }
-.fab:active { transform: scale(0.92); }
-.load-ring {
-  position: absolute; inset: 0; border-radius: inherit; opacity: 0; pointer-events: none;
-  background: conic-gradient(var(--on-container) calc(var(--p, 0) * 1%), transparent 0);
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-          mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  transition: opacity var(--dur-short) linear;
-}
-.loading .load-ring { opacity: 1; }
-.loading .play .icon { animation: breathe-icon 1s ease-in-out infinite; }
-@keyframes breathe-icon { 50% { opacity: 0.4; } }
-.seek-wrap { margin-top: 14px; }
-.seek {
-  -webkit-appearance: none; appearance: none; display: block; width: 100%; height: 20px; margin: 0;
-  background: transparent; cursor: pointer; --fill: 0%; touch-action: pan-y;
-}
-.seek::-webkit-slider-runnable-track {
-  height: 6px; border-radius: 3px;
-  background: linear-gradient(90deg, var(--red) var(--fill), rgba(255, 64, 84, 0.18) var(--fill));
-  box-shadow: 0 0 10px -2px var(--glow-soft);
-}
-.seek::-moz-range-track { height: 6px; border-radius: 3px; background: rgba(255, 64, 84, 0.18); }
-.seek::-moz-range-progress { height: 6px; border-radius: 3px; background: var(--red); }
-.seek::-webkit-slider-thumb {
-  -webkit-appearance: none; width: 4px; height: 20px; margin-top: -7px; border-radius: 2px;
-  background: #fff; box-shadow: 0 0 10px var(--glow); transition: transform var(--dur-short) var(--ease-standard);
-}
-.seek:active::-webkit-slider-thumb { transform: scaleX(1.6) scaleY(1.15); }
-.seek::-moz-range-thumb { width: 4px; height: 20px; border: 0; border-radius: 2px; background: #fff; }
-.times { display: flex; justify-content: space-between; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.controls { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
-
-/* Three lines of lyrics in the card: the list glides, the sung words light up. */
-.lyric-peek {
-  position: relative; flex: 1; min-width: 0; height: 84px; overflow: hidden; cursor: pointer; -webkit-user-select: none; user-select: none;
-  -webkit-mask: linear-gradient(transparent, #000 24%, #000 76%, transparent);
-          mask: linear-gradient(transparent, #000 24%, #000 76%, transparent);
-}
-.peek-track { position: absolute; top: 0; left: 0; right: 0; transition: transform 700ms var(--ease-emph-decel); will-change: transform; }
-.pl {
-  margin: 0; padding: 3px 2px; text-align: center; font-size: 15px; line-height: 21px; font-weight: 700;
-  color: rgba(248, 233, 234, 0.3); transform: scale(0.84);
-  transition: transform 600ms var(--ease-emph-decel), color 450ms linear;
-}
-.pl.on { transform: none; color: rgba(255, 236, 239, 0.42); }
-.peek-status {
-  position: absolute; inset: 0; margin: 0; padding: 0 4px; display: flex; align-items: center; justify-content: center;
-  text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text-2);
-}
-.peek-status[hidden] { display: none; }
-.peek-status.wait { animation: status-breathe 1.4s ease-in-out infinite; }
-@keyframes status-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
-@keyframes text-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
-
-/* Words of the current line: waiting ones are dim, sung ones glow, the one being
-   sung fills from left to right (--p is its progress, 0…1). The fill starts and
-   ends at exactly the dim and the white colour, so switching state is seamless:
-   a colour transition from transparent here made every word blink when it ended.
-   No filter or transform per word either (each became a GPU layer), and the glow
-   is not animated: a text-shadow transition lays the page out on every frame. */
-.wd { white-space: nowrap; }
-.w { display: inline-block; transition: color 300ms linear; }
-.on .w.now {
-  color: transparent; transition: none;
-  background-image: linear-gradient(90deg, #fff calc(var(--p, 0) * 140% - 40%), rgba(255, 236, 239, 0.42) calc(var(--p, 0) * 140%));
-  -webkit-background-clip: text; background-clip: text;
-}
-.on .w.done { color: #fff; text-shadow: 0 0 16px var(--glow); transition: none; }
-.gap .dots { display: inline-flex; gap: 6px; padding: 6px 0; }
-.gap .dots i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.5; }
-.gap.on .dots i { background: #fff; animation: dot-breathe 1.2s ease-in-out infinite; box-shadow: 0 0 10px var(--glow); }
-.gap.on .dots i:nth-child(2) { animation-delay: 160ms; }
-.gap.on .dots i:nth-child(3) { animation-delay: 320ms; }
-@keyframes dot-breathe { 0%, 100% { transform: scale(0.7); opacity: 0.45; } 50% { transform: scale(1.15); opacity: 1; } }
-
-.queue { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
-.queue summary {
-  display: flex; align-items: center; gap: 8px; min-height: 40px; cursor: pointer; list-style: none;
-  font-size: 14px; color: var(--text-2);
-}
-.queue summary::-webkit-details-marker { display: none; }
-.queue summary .icon { width: 20px; height: 20px; fill: var(--red); }
-.queue[open] ol { animation: rise var(--dur-long) var(--ease-emph-decel) both; }
-.queue ol { list-style: none; margin: 0; padding: 0; }
-.q-item {
-  display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 6px 8px; border-radius: 12px;
-  transition: background-color var(--dur-medium) linear;
-}
-.q-item.on { background: rgba(255, 30, 60, 0.12); }
-.q-n { display: grid; place-items: center; width: 20px; color: var(--text-2); font-variant-numeric: tabular-nums; }
-.q-n .eqb { display: none; }
-.q-item.on .q-n > span { display: none; }
-.q-item.on .q-n .eqb { display: inline-flex; width: 16px; }
-.q-t { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.q-t b, .q-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.q-t b { font-weight: 500; }
-.q-item.on .q-t b { color: #fff; text-shadow: 0 0 12px var(--glow); }
-.q-t small { color: var(--text-2); font-size: 12px; }
-.q-d { color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
-
-/* Full-screen lyrics. The screen grows out of the card (clip-path), the text
-   glides as one layer, the finger can browse it. */
-.karaoke {
-  position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; overflow: hidden; overflow: clip;
-  background: #070203;
-  transition: clip-path 520ms var(--ease-emph-decel);
-}
-.karaoke > * { opacity: 0; transition: opacity 260ms linear 120ms; }
-.karaoke.open > * { opacity: 1; }
-.karaoke.leave { transition: clip-path 400ms var(--ease-emph-accel), opacity 400ms var(--ease-emph-accel); opacity: 0; }
-.karaoke.leave > * { transition-delay: 0ms; transition-duration: 160ms; }
-.k-bg {
-  position: absolute; inset: -60px; z-index: 0;
-  background: radial-gradient(80% 60% at 50% 30%, #2a030a, #030101 70%);
-}
-.k-bg .glow { animation: bg-drift 28s ease-in-out infinite alternate paused; }
-.karaoke.playing .k-bg .glow, .karaoke.playing .k-shape { animation-play-state: running; }
-@keyframes bg-drift { to { transform: scale(1.22) rotate(10deg) translate(-4%, 3%); } }
-.k-shapes { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.k-shape {
-  position: absolute; width: 42vw; max-width: 240px; fill: rgba(255, 40, 70, 0.09);
-  animation: shape-float 24s ease-in-out infinite alternate paused;
-}
-.k-shape.s1 { top: 8%; left: -10%; }
-.k-shape.s2 { top: 38%; right: -14%; width: 50vw; animation-duration: 30s; animation-delay: -8s; fill: rgba(255, 60, 90, 0.07); }
-.k-shape.s3 { bottom: 14%; left: 6%; width: 26vw; animation-duration: 20s; animation-delay: -4s; }
-.k-shape.s4 { top: -6%; right: 10%; width: 30vw; animation-duration: 34s; animation-delay: -12s; fill: rgba(255, 90, 110, 0.06); }
-@keyframes shape-float {
-  from { transform: translate(0, 0) rotate(0deg) scale(1); }
-  to { transform: translate(6vw, -5vh) rotate(160deg) scale(1.12); }
-}
-.k-head, .k-lines, .k-foot { position: relative; z-index: 1; }
-.k-head { display: flex; align-items: center; gap: 12px; padding: max(16px, env(safe-area-inset-top), calc(8px + var(--inset-top))) 12px 8px 16px; }
-.k-head .cover { width: 48px; height: 48px; border-radius: 12px; }
-.k-head .cover .icon { width: 24px; height: 24px; }
-.k-head .body { flex: 1; min-width: 0; }
-.k-head b { display: block; font-size: 17px; line-height: 22px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k-head span { display: block; color: var(--text-2); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k-lines {
-  flex: 1; min-height: 0; overflow: hidden; overflow: clip; touch-action: none; -webkit-user-select: none; user-select: none;
-  -webkit-mask: linear-gradient(transparent, #000 14%, #000 56%, rgba(0, 0, 0, 0.5) 84%, transparent);
-          mask: linear-gradient(transparent, #000 14%, #000 56%, rgba(0, 0, 0, 0.5) 84%, transparent);
-}
-.k-lines.plain { overflow-y: auto; touch-action: pan-y; scrollbar-width: none; -webkit-user-select: text; user-select: text; }
-.k-lines::-webkit-scrollbar { display: none; }
-.k-track { position: relative; transition: transform 860ms cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
-.k-lines.free .k-track { transition: none; }
-.k-line {
-  margin: 0; padding: 7px 24px; font-size: 27px; line-height: 35px; font-weight: 800; letter-spacing: -0.2px;
-  color: rgba(248, 233, 234, 0.3); cursor: pointer; transform-origin: 24px 50%; transform: scale(0.94);
-  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1), color 400ms linear;
-}
-.k-line.on { transform: none; color: rgba(255, 236, 239, 0.42); }
-.k-line.past { color: rgba(248, 233, 234, 0.45); }
-
-/* Under the full-screen lyrics the page is neither drawn nor animated. */
-.k-cover #app, .k-cover .backdrop { visibility: hidden; }
-.k-cover #app *, .k-cover .backdrop i { animation-play-state: paused !important; }
-.k-plain { margin: 0; padding: 24px; white-space: pre-line; font-size: 18px; line-height: 28px; color: var(--text); }
-.k-wait { display: grid; gap: 14px; padding: 18vh 24px 0; }
-.k-wait i {
-  display: block; height: 28px; border-radius: 14px;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 30%, rgba(255, 50, 80, 0.2) 50%, rgba(255, 255, 255, 0.04) 70%) 0 0 / 300% 100%;
-  animation: text-shine 1.4s linear infinite;
-}
-.k-wait i:nth-child(1) { width: 72%; }
-.k-wait i:nth-child(2) { width: 90%; animation-delay: 120ms; }
-.k-wait i:nth-child(3) { width: 58%; animation-delay: 240ms; }
-.k-wait i:nth-child(4) { width: 80%; animation-delay: 360ms; }
-.k-wait p { margin: 6px 0 0; color: var(--text-2); }
-.k-foot { padding: 4px 20px max(16px, calc(8px + var(--inset-bottom))); }
-.k-foot .seek-wrap { margin-top: 0; }
-.k-controls { display: flex; align-items: center; justify-content: center; gap: 28px; margin-top: 4px; }
-.k-src { margin: 6px 0 0; min-height: 16px; text-align: center; font-size: 12px; line-height: 16px; color: var(--text-2); opacity: 0.7; }

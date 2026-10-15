@@ -52,7 +52,7 @@ export const api = new Proxy({}, {
   },
 });
 
-// Tests set `fetchMock.handler(url, opts)` and return { status, json | text, headers }.
+// Tests set `fetchMock.handler(url, opts)` and return { status, json }.
 export const fetchMock = {
   calls: [],
   handler: null,
@@ -69,9 +69,8 @@ export async function fetch(url, opts = {}) {
   const status = r.status ?? 200;
   return {
     status, ok: status >= 200 && status < 300, url,
-    headers: { get: (k) => (r.headers || {})[k.toLowerCase()] ?? null },
     async json() { if (r.json === undefined) throw new SyntaxError('no body'); return r.json; },
-    async text() { return r.text ?? JSON.stringify(r.json ?? ''); },
+    async text() { return JSON.stringify(r.json ?? ''); },
   };
 }
 fetch.body = {
