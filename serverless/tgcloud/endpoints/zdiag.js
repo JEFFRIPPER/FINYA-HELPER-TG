@@ -2,7 +2,7 @@
 import { api, db, fetch } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from '../lib/config.js';
-import { SOURCES, findLyrics } from '../lib/lyrics.js';
+import { SOURCES, cleanTrack, findLyrics } from '../lib/lyrics.js';
 
 const short = (s, n = 160) => (s == null ? s : String(s).slice(0, n));
 
@@ -10,6 +10,18 @@ export default async function (input = {}) {
   if (input.mode === 'env') return env();
   if (input.mode === 'hang') return hang(input.url);
   if (input.mode === 'src') return src(input);
+  if (input.mode === 'find') {
+    const res = await api.getUserProfileAudios({ user_id: OWNER_USER_ID, limit: 100 });
+    const a = ((res && res.audios) || []).find((x) => new RegExp(input.match, 'i').test(x.title || x.file_name || ''));
+    if (!a) return { match: input.match, err: 'no track' };
+    const track = { title: a.title || a.file_name, artist: a.performer || '', duration: a.duration || 0 };
+    const s0 = Date.now();
+    const f = await findLyrics(track);
+    const c = cleanTrack(track);
+    console.log('FIND ' + JSON.stringify({ q: c.artist + ' | ' + c.title, ms: Date.now() - s0, source: f && f.source,
+      kind: f ? (f.synced ? (/<\d/.test(f.synced) ? 'word' : 'line') : 'plain') : null, head: f && String(f.synced || f.plain).slice(0, 70).replace(/\n/g, ' / ') }));
+    return { ok: true };
+  }
   if (input.mode === 'raw') {
     const s0 = Date.now();
     try {
