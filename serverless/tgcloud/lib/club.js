@@ -148,12 +148,14 @@ async function achievementStats(userId, base) {
     counts[r.kind] = r.c;
   }
   const bought = await db.get(sql`SELECT COUNT(*) AS c FROM purchases WHERE user_id = ${userId}`);
+  // Every friend counts, also those past the weekly XP limit.
+  const invited = await db.get(sql`SELECT COUNT(*) AS c FROM referrals WHERE referrer_id = ${userId}`);
   return {
     ...base,
     comments: counts.comment || 0,
     reactions: counts.reaction || 0,
     podium: counts.weekly || 0,
-    referrals: counts.referral || 0,
+    referrals: invited.c,
     polls: counts.poll || 0,
     quests: counts.quest || 0,
     birthday: counts.birthday || 0,
@@ -170,11 +172,12 @@ async function achievementsView(userId, base) {
   const fresh = [];
   for (const a of ACHIEVEMENTS) {
     if (unlocked.has(a.code) || stats[a.stat] < a.goal) continue;
+    // XP first (once per key): a call cut off in between must not leave the badge without its XP.
+    await xp.grant(userId, 'achievement', a.n, a.xp, ts);
     const inserted = await db.run(sql`INSERT OR IGNORE INTO achievements (user_id, code, unlocked_at)
       VALUES (${userId}, ${a.code}, ${ts})`);
     if (inserted.rowsAffected !== 1) continue;
     unlocked.set(a.code, ts);
-    await xp.grant(userId, 'achievement', a.n, a.xp, ts);
     fresh.push(a.code);
   }
   return {
@@ -327,9 +330,14 @@ export async function vote(user, pollId, option) {
   if (!poll) throw new ClubError('Опрос не найден.');
   if (poll.status !== 'open') throw new ClubError('Опрос уже закрыт.');
   if (option < 0 || option >= parseOptions(poll.options).length) throw new ClubError('Неверный вариант.');
+  // The poll may close between the check above and this insert.
   const r = await db.run(sql`INSERT OR IGNORE INTO poll_votes (poll_id, user_id, option, voted_at)
-    VALUES (${pollId}, ${user.id}, ${option}, ${nowInt()})`);
-  if (r.rowsAffected !== 1) throw new ClubError('Твой голос в этом опросе уже учтён.');
+    SELECT ${pollId}, ${user.id}, ${option}, ${nowInt()}
+    WHERE EXISTS (SELECT 1 FROM polls WHERE id = ${pollId} AND status = 'open')`);
+  if (r.rowsAffected !== 1) {
+    const voted = await db.get(sql`SELECT 1 AS x FROM poll_votes WHERE poll_id = ${pollId} AND user_id = ${user.id}`);
+    throw new ClubError(voted ? 'Твой голос в этом опросе уже учтён.' : 'Опрос уже закрыт.');
+  }
   return xp.grant(user, 'poll', pollId, POLL_XP);
 }
 
@@ -460,12 +468,14 @@ export async function handleJoin(event) {
   const left = await db.get(sql`SELECT 1 AS x FROM blacklist WHERE chat_id = ${SQUAD_CHANNEL_ID} AND user_id = ${user.id}`);
   if (left) return;
   const ts = nowInt();
-  const thisWeek = await db.get(sql`SELECT COUNT(*) AS c FROM referrals
-    WHERE referrer_id = ${referrerId} AND points > 0 AND joined_at >= ${weekStart(ts)}`);
-  const pts = thisWeek.c < REFERRALS_PER_WEEK ? REFERRAL_XP : 0;
+  // The weekly cap is counted inside the insert, so joins arriving together cannot pass it.
   const r = await db.run(sql`INSERT OR IGNORE INTO referrals (referred_id, referrer_id, joined_at, points)
-    VALUES (${user.id}, ${referrerId}, ${ts}, ${pts})`);
+    SELECT ${user.id}, ${referrerId}, ${ts},
+      CASE WHEN (SELECT COUNT(*) FROM referrals WHERE referrer_id = ${referrerId} AND points > 0
+        AND joined_at >= ${weekStart(ts)}) < ${REFERRALS_PER_WEEK} THEN ${REFERRAL_XP} ELSE 0 END
+    RETURNING points`);
   if (r.rowsAffected !== 1) return;
+  const pts = r.rows[0].points;
   await xp.grant(user, 'invited', 0, INVITED_XP, ts);
   if (!pts) return;
   await xp.grant(referrerId, 'referral', user.id, pts, ts);
@@ -500,7 +510,9 @@ async function claimSlot(key, gap) {
 export async function welcome(message) {
   const people = (message.new_chat_members || []).filter((u) => u && !u.is_bot);
   if (!people.length || !(await getSetting('club_welcome'))) return;
-  if (!(await claimSlot('welcome_at', WELCOME_GAP))) return;
+  const chatId = message.chat.id;
+  // Per chat: a greeting in one group must not silence or delete one in another.
+  if (!(await claimSlot(`welcome_at:${chatId}`, WELCOME_GAP))) return;
   const names = people.slice(0, 5).map((u) => `<b>${escapeHtml(truncate(fullName(u), 40))}</b>`).join(', ');
   const text = `👋 Добро пожаловать в Сквад, ${names}!\n\n` +
     'Здесь обсуждают посты @THKC_SQUAD. Пиши комментарии и ставь реакции: за них Финя даёт XP, ' +
@@ -512,11 +524,11 @@ export async function welcome(message) {
     reply_markup: await profileButton('👤 Профиль и награды'),
   });
   // Only the newest greeting stays, so a wave of joins doesn't flood the chat.
-  const previous = await getSetting('welcome_last');
-  await setSetting('welcome_last', sent && sent.message_id ? { chat: message.chat.id, id: sent.message_id } : null);
-  if (previous && previous.chat === message.chat.id) {
+  const previous = await getSetting(`welcome_last:${chatId}`);
+  await setSetting(`welcome_last:${chatId}`, sent && sent.message_id ? sent.message_id : null);
+  if (previous) {
     try {
-      await api.deleteMessage({ chat_id: previous.chat, message_id: previous.id });
+      await api.deleteMessage({ chat_id: chatId, message_id: previous });
     } catch {
       // Too old or already deleted.
     }
@@ -538,7 +550,7 @@ async function weekSummary(start) {
   const end = start + 7 * DAY;
   const top = await db.all(sql`SELECT p.user_id, p.name, SUM(e.points) AS score FROM events e
     JOIN profiles p ON p.user_id = e.user_id
-    WHERE e.earned_at >= ${start} AND e.earned_at < ${end} AND e.points > 0 AND e.kind != 'weekly'
+    WHERE e.earned_at >= ${start} AND e.earned_at < ${end} AND e.points > 0 AND e.kind IN ('comment', 'reaction')
     GROUP BY p.user_id ORDER BY score DESC, p.user_id LIMIT 3`);
   const stats = await db.get(sql`SELECT
       SUM(CASE WHEN kind = 'comment' AND points > 0 THEN 1 ELSE 0 END) AS comments,
@@ -575,13 +587,21 @@ async function weeklyTick(ts) {
   if (won.rowsAffected !== 1 || !(await getSetting('club_weekly'))) return;
   const s = await weekSummary(weekStart(ts) - 7 * DAY);
   if (!s.top.length) return;
-  for (let i = 0; i < s.top.length; i++) {
-    await xp.grant(s.top[i].user_id, 'weekly', week - 1, WEEKLY_BONUS[i], ts);
+  try {
+    // Bonuses are once per week key, so a retry after a failed post doesn't pay twice.
+    for (let i = 0; i < s.top.length; i++) {
+      await xp.grant(s.top[i].user_id, 'weekly', week - 1, WEEKLY_BONUS[i], ts);
+    }
+    await api.sendMessage({
+      chat_id: SQUAD_CHANNEL_ID, text: summaryText(s), parse_mode: 'HTML',
+      reply_markup: await profileButton('👤 Мой профиль у Фини'),
+    });
+  } catch (err) {
+    // Not posted: give the week back so the next pump tries again.
+    await db.run(sql`UPDATE settings SET value = ${String(week - 1)}
+      WHERE key = 'weekly_summary_week' AND value = ${String(week)}`);
+    throw err;
   }
-  await api.sendMessage({
-    chat_id: SQUAD_CHANNEL_ID, text: summaryText(s), parse_mode: 'HTML',
-    reply_markup: await profileButton('👤 Мой профиль у Фини'),
-  });
 }
 
 // ---- birthday greetings --------------------------------------------------------
@@ -595,12 +615,30 @@ async function birthdayTick(ts) {
   const won = await db.run(sql`UPDATE settings SET value = ${String(day)}
     WHERE key = 'birthday_day' AND CAST(value AS INTEGER) < ${day}`);
   if (won.rowsAffected !== 1) return;
+  // 29 February only joins on the 28th of a common year (filtered before LIMIT).
+  const leapDay = date.month === 2 && date.day === 28 && !isLeap(date.year) ? 1 : 0;
   const rows = await db.all(sql`SELECT b.user_id, b.day, b.month, b.announce, p.name FROM birthdays b
     JOIN profiles p ON p.user_id = b.user_id
-    WHERE (b.month = ${date.month} AND b.day = ${date.day}) OR (b.month = 2 AND b.day = 29)
+    WHERE (b.month = ${date.month} AND b.day = ${date.day}) OR (${leapDay} = 1 AND b.month = 2 AND b.day = 29)
     ORDER BY b.user_id LIMIT 50`);
   const today = rows.filter((r) => isBirthday(r, date));
   if (!today.length) return;
+  // The group greeting goes first: personal messages below may run out of call time.
+  const named = today.filter((r) => r.announce).slice(0, 10);
+  const chatId = named.length && (await getSetting('club_birthdays')) ? await resolveXpChat() : null;
+  if (chatId) {
+    const names = named.map((r) => `<b>${escapeHtml(truncate(r.name, 35))}</b>`).join(', ');
+    try {
+      await api.sendMessage({
+        chat_id: chatId, parse_mode: 'HTML',
+        text: `🎂 Сегодня день рождения у ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
+          'Отметь свой день рождения в профиле.',
+        reply_markup: await profileButton('🎁 Мой профиль'),
+      });
+    } catch (err) {
+      await logError('club.birthdays', err);
+    }
+  }
   for (const r of today) {
     const gift = await xp.grant(r.user_id, 'birthday', date.year, BIRTHDAY_XP, ts);
     if (gift) {
@@ -608,17 +646,6 @@ async function birthdayTick(ts) {
         await profileButton());
     }
   }
-  const named = today.filter((r) => r.announce).slice(0, 10);
-  if (!named.length || !(await getSetting('club_birthdays'))) return;
-  const chatId = await resolveXpChat();
-  if (!chatId) return;
-  const names = named.map((r) => `<b>${escapeHtml(truncate(r.name, 35))}</b>`).join(', ');
-  await api.sendMessage({
-    chat_id: chatId, parse_mode: 'HTML',
-    text: `🎂 Сегодня день рождения у ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
-      'Отметь свой день рождения в профиле.',
-    reply_markup: await profileButton('🎁 Мой профиль'),
-  });
 }
 
 // Runs from pump(); each part guards itself, so it posts at most once.

@@ -140,7 +140,7 @@ export async function handleAdminCallback(query, s, action) {
     } else {
       const chunks = items.map((item) => {
         const who = item.username || item.first_name || item.user_id;
-        return `<b>${escapeHtml(String(who))}</b>\n${escapeHtml(truncate(item.text, 700))}`;
+        return `<b>${escapeHtml(String(who))}</b>\n${escapeHtml(truncate(item.text, 350))}`;
       });
       text = '<b>📬 Последние обращения</b>\n\n' + chunks.join('\n\n────────\n\n');
     }
@@ -158,14 +158,16 @@ export async function handleAdminCallback(query, s, action) {
     delete s.broadcast_pending;
     if (!pending || now() - pending.time > BROADCAST_CONFIRM_SECONDS) {
       text = '<b>Подтверждение устарело. Нажми «Рассылка» и отправь текст заново.</b>';
-    } else if (await jobs.runningBroadcast()) {
-      s.broadcast_pending = pending;
-      text = '<b>Предыдущая рассылка ещё идёт. Дождись сообщения об итогах и повтори.</b>';
     } else {
-      const st = await userStats();
       const jobId = await jobs.createBroadcast(pending.text, query.from.id);
-      s.run_job = jobId; // started by the callback handler after this edit
-      text = `<b>📣 Рассылка запущена. Получателей: ${st.total}.\nИтог пришлю отдельным сообщением.</b>`;
+      if (!jobId) {
+        s.broadcast_pending = pending;
+        text = '<b>Предыдущая рассылка ещё идёт. Дождись сообщения об итогах и повтори.</b>';
+      } else {
+        const st = await userStats();
+        s.run_job = jobId; // started by the callback handler after this edit
+        text = `<b>📣 Рассылка запущена. Получателей: ${st.total}.\nИтог пришлю отдельным сообщением.</b>`;
+      }
     }
   } else if (action === 'broadcast_continue') {
     text = '<b>📣 Продолжаю рассылку. Итог пришлю отдельным сообщением.</b>';

@@ -622,7 +622,7 @@
           h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
         h('div', { class: 'trail', text: r.score + ' XP' }));
     }))) : h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' });
-    var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Неделя начинается в понедельник по Москве.' }) : null;
+    var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Считаются комментарии и реакции. Неделя начинается в понедельник по Москве.' }) : null;
     return [body, note];
   }
 
@@ -661,7 +661,7 @@
       h('li', null, icon('favorite_fill'), h('span', { text: '+' + rules.reaction + ' XP за реакцию в обсуждениях, до ' + rules.dailyReactions + ' в день.' })),
       h('li', null, icon('local_fire_department_fill'), h('span', { text: 'Не больше ' + me.dailyLimit + ' XP в день за комментарии и реакции, по Москве.' })),
       h('li', null, icon('redeem_fill'), h('span', { text: 'Сверху лимита: награда дня, квесты недели, ачивки, +' + rules.poll + ' XP за голос в опросе, +' + rules.referral + ' XP за друга и +' + rules.birthday + ' XP в день рождения.' })),
-      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
+      h('li', null, icon('trophy_fill'), h('span', { text: 'Топ-3 недели по комментариям и реакциям получают +' + rules.weekly.join(' / +') + ' XP, итоги выходят в канале по понедельникам.' })));
     return [achievementsCard(state.data.club),
       h('section', { class: 'card' }, h('h3', { text: 'Звания' }), h('ul', { class: 'list' }, withDividers(items))),
       h('section', { class: 'card' }, h('h3', { text: 'Как получить XP' }), how)];
@@ -786,14 +786,14 @@
 
   // Runs a club action. The endpoint answers with the whole profile, so the
   // screen is redrawn in place; resolves to the new data or null.
-  function act(input, btn, done) {
+  function act(input, btn, done, keepView) {
     if (busy) return Promise.resolve(null);
     busy = true;
     var label = btn ? Array.prototype.slice.call(btn.childNodes) : null;
     if (btn) { btn.disabled = true; btn.replaceChildren(loader()); }
     return api('club', input).then(function (data) {
       busy = false;
-      refresh(data);
+      refresh(data, keepView);
       if (done) done(data);
       return data;
     }, function (err) {
@@ -806,8 +806,9 @@
   }
 
   // Redraws the hero and the current screen from new data without entrance
-  // animations; the XP counts on from the old value.
-  function refresh(data) {
+  // animations; the XP counts on from the old value. keepView leaves the
+  // screen as is (a switch that already shows its new state).
+  function refresh(data, keepView) {
     var old = state.data;
     state.data = data;
     prevXp = old.me.xp;
@@ -818,7 +819,9 @@
     if (state.tab === 'admin' && adminRoot) {
       var card = adminRoot.querySelector('.club-admin');
       if (card) card.replaceWith(clubAdminCard(data.club));
-    } else {
+    } else if (!keepView) {
+      // Charts and poll bars keep still: they already grew on the first show.
+      view.classList.add('quiet');
       view.replaceChildren.apply(view, viewBody());
     }
     checkRankUp(data.me);
@@ -914,7 +917,7 @@
         act({ action: 'daily' }, btn, rewarded('Награда дня'));
       } }, icon('redeem_fill'), 'Забрать +' + d.rewards[d.step] + ' XP');
     }
-    var sub = d.run ? 'Серия: ' + d.run + ' ' + plural(d.run, 'день', 'дня', 'дней') + ' подряд' : 'Заходи каждый день: 7-й день самый щедрый';
+    var sub = d.run ? 'Серия: ' + d.run + ' ' + plural(d.run, 'день', 'дня', 'дней') + ' подряд' : '7-й день подряд: +' + d.rewards[d.rewards.length - 1] + ' XP';
     return h('section', { class: 'card daily' + (d.claimed ? '' : ' ready') },
       cardHead('redeem_fill', 'gold', 'Награда дня', sub),
       h('div', { class: 'days' }, cells), btn);
@@ -1036,8 +1039,11 @@
     var opts = p.options.map(function (o, i) {
       if (choosing) {
         return h('button', { class: 'poll-opt ripple', type: 'button', onclick: function (e) {
-          e.currentTarget.classList.add('picked');
-          act({ action: 'vote', poll: p.id, option: i }, null, rewarded('Голос принят'));
+          var opt = e.currentTarget;
+          opt.classList.add('picked');
+          act({ action: 'vote', poll: p.id, option: i }, null, rewarded('Голос принят')).then(function (d) {
+            if (!d) opt.classList.remove('picked');
+          });
         } }, o.text);
       }
       var pct = p.total ? Math.round((o.votes / p.total) * 100) : 0;
@@ -1092,7 +1098,8 @@
     return h('section', { class: 'card' }, parts);
   }
 
-  function birthdayForm(b) {
+  // inCard: the card above already has the "congratulate me" switch.
+  function birthdayForm(b, inCard) {
     var day = h('select', { class: 'field-input', 'aria-label': 'День' });
     for (var n = 1; n <= 31; n++) day.appendChild(h('option', { value: String(n), text: String(n) }));
     var month = h('select', { class: 'field-input', 'aria-label': 'Месяц' },
@@ -1100,12 +1107,12 @@
     if (b.day != null) { day.value = String(b.day); month.value = String(b.month); }
     var announceOn = b.announce;
     var save = h('button', { class: 'btn-filled wide ripple', onclick: function () {
-      act({ action: 'birthday', day: Number(day.value), month: Number(month.value), announce: announceOn }, save,
+      act({ action: 'birthday', day: Number(day.value), month: Number(month.value), announce: inCard ? b.announce : announceOn }, save,
         function () { vibrate('success'); snackbar('День рождения сохранён'); });
     } }, 'Сохранить');
     return h('div', { class: 'bday-form' },
       h('div', { class: 'bday-row' }, h('div', { class: 'field select' }, day), h('div', { class: 'field select grow' }, month)),
-      switchRow('Поздравить меня в чате', 'Финя напишет в обсуждениях Сквада', announceOn, function (v) { announceOn = v; }),
+      inCard ? null : switchRow('Поздравить меня в чате', 'Финя напишет в обсуждениях Сквада', announceOn, function (v) { announceOn = v; }),
       h('p', { class: 'fine', text: 'Дату можно менять раз в 30 дней.' }),
       save);
   }
@@ -1122,12 +1129,16 @@
       return card;
     }
     card.appendChild(switchRow('Поздравить меня в чате', 'Финя напишет в обсуждениях Сквада', b.announce, function (v) {
-      return act({ action: 'birthday', day: b.day, month: b.month, announce: v });
+      b.announce = v;
+      return act({ action: 'birthday', day: b.day, month: b.month, announce: v }, null, null, true).then(function (d) {
+        if (!d) b.announce = !v;
+        return d;
+      });
     }));
     if (b.editableAt) {
       card.appendChild(h('p', { class: 'fine', text: 'Дату можно будет изменить с ' + pad(msk(b.editableAt).getUTCDate()) + '.' + pad(msk(b.editableAt).getUTCMonth() + 1) + '.' }));
     } else {
-      var edit = h('button', { class: 'btn-text ripple', onclick: function () { edit.replaceWith(birthdayForm(b)); } }, 'Изменить дату');
+      var edit = h('button', { class: 'btn-text ripple', onclick: function () { edit.replaceWith(birthdayForm(b, true)); } }, 'Изменить дату');
       card.appendChild(edit);
     }
     return card;
@@ -1136,16 +1147,10 @@
   // ---- owner's club panel ---------------------------------------------------------
 
   function openPollSheet() {
-    vibrate('light');
     var content = h('div', { class: 'sheet-body' });
-    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
-    var scrim = h('div', { class: 'scrim' });
-    function close() {
-      scrim.classList.add('leave');
-      sheet.classList.add('leave');
-      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
-    }
-    scrim.addEventListener('click', close);
+    var close = openSheet(content);
+    if (!close) return;
+    vibrate('light');
     var question = h('textarea', { class: 'field-input', rows: '2', maxlength: '200', placeholder: 'Например, Во сколько делаем стрим?' });
     var list = h('div', { class: 'poll-fields' });
     function addOption() {
@@ -1172,8 +1177,6 @@
       h('p', { class: 'fine', text: 'Участники голосуют в Mini App и получают +' + state.data.rules.poll + ' XP. Результаты видны после голоса.' }),
       create,
       h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
-    document.body.appendChild(scrim);
-    document.body.appendChild(sheet);
   }
 
   function clubAdminCard(c) {
@@ -1224,7 +1227,7 @@
   var admin = { query: '', items: [], page: 0, pages: 1, total: 0, members: 0, ranks: [], loaded: false, seq: 0 };
   var adminRoot = null;
   // Products of the SQUAD SHOP: Финя commits them to the site's repository.
-  var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '' };
+  var goods = { items: [], loaded: false, failed: false, connected: true, help: '', base: '', seq: 0 };
 
   function api(name, input) {
     return new Promise(function (resolve, reject) {
@@ -1283,7 +1286,8 @@
       h('section', { class: 'card list-card goods-card' }));
     drawAdmin();
     drawGoods();
-    loadGoods();
+    // The list comes from GitHub: once per session, «Обновить» reloads it.
+    if (!goods.loaded) loadGoods();
     if (!admin.loaded) loadAdmin(true);
     return [adminRoot];
   }
@@ -1291,6 +1295,7 @@
   // ---- SQUAD SHOP products ------------------------------------------------
 
   function takeGoods(data) {
+    goods.seq++; // a list request still on its way is older than this
     goods.items = data.items || [];
     goods.connected = data.connected !== false;
     goods.help = data.help || '';
@@ -1300,12 +1305,15 @@
   }
 
   function loadGoods() {
+    var seq = ++goods.seq;
     goods.loaded = false;
     drawGoods();
     api('shop', { action: 'list' }).then(function (data) {
+      if (seq !== goods.seq) return;
       takeGoods(data);
       drawGoods();
     }, function (err) {
+      if (seq !== goods.seq) return;
       goods.loaded = true;
       goods.failed = true;
       drawGoods();
@@ -1387,18 +1395,12 @@
   }
 
   function openGood(p) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
     vibrate('light');
     var isNew = !p;
     p = p || { name: '', stars: 0, price: 0, desc: '', tag: '', gold: false, hidden: false, image: '' };
-    var content = h('div', { class: 'sheet-body' });
-    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
-    var scrim = h('div', { class: 'scrim' });
-    function close() {
-      scrim.classList.add('leave');
-      sheet.classList.add('leave');
-      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
-    }
-    scrim.addEventListener('click', close);
 
     var photo = null;      // new photo picked here: { type, data, url }
     var dropPhoto = false;
@@ -1490,8 +1492,6 @@
         toggle('Скрыть с витрины', function () { return hidden; }, function (v) { hidden = v; })),
       save, del,
       h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
-    document.body.appendChild(scrim);
-    document.body.appendChild(sheet);
   }
 
   function loadAdmin(reset) {
@@ -1555,18 +1555,10 @@
 
   // Bottom sheet with one member: rank, XP and the audit history.
   function openMember(id) {
-    vibrate('light');
     var content = h('div', { class: 'sheet-body' }, h('div', { class: 'state small' }, loader()));
-    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
-    var scrim = h('div', { class: 'scrim' });
-    function close() {
-      scrim.classList.add('leave');
-      sheet.classList.add('leave');
-      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
-    }
-    scrim.addEventListener('click', close);
-    document.body.appendChild(scrim);
-    document.body.appendChild(sheet);
+    var close = openSheet(content);
+    if (!close) return;
+    vibrate('light');
     api('ranks', { action: 'user', id: id }).then(function (c) { drawMember(content, c, close); },
       function (err) { content.replaceChildren(h('p', { class: 'empty', text: errorText(err) })); });
   }
@@ -1646,7 +1638,7 @@
       'Звание: ' + c.rank.roman + ' → ' + (roman ? rankName(roman) : rankName(c.auto.roman) + ' (авто)'),
       'XP не меняется: ' + c.xp,
     ], function () {
-      return apply(content, close, { action: 'rank', id: c.id, roman: roman, op: opId() });
+      return apply(content, close, { action: 'rank', id: c.id, roman: roman, op: opId() }, c.rank.roman);
     });
   }
 
@@ -1657,13 +1649,19 @@
       'XP: ' + c.xp + ' → ' + after + ' (' + signed(after - c.xp) + ')',
       c.manual ? 'Звание ручное и не изменится.' : 'Звание пересчитается по XP.',
     ], function () {
-      return apply(content, close, { action: 'xp', id: c.id, delta: delta, op: opId() });
+      return apply(content, close, { action: 'xp', id: c.id, delta: delta, op: opId() }, c.rank.roman);
     });
   }
 
-  function apply(content, close, input) {
+  function apply(content, close, input, wasRoman) {
     return api('ranks', input).then(function (c) {
       drawMember(content, c, close);
+      if (wasRoman !== c.rank.roman) {
+        admin.ranks = admin.ranks.map(function (r) {
+          var delta = (r.roman === c.rank.roman ? 1 : 0) - (r.roman === wasRoman ? 1 : 0);
+          return delta ? Object.assign({}, r, { count: Math.max(0, r.count + delta) }) : r;
+        });
+      }
       admin.items = admin.items.map(function (it) {
         return it.id === c.id ? { id: c.id, name: c.name, username: c.username, xp: c.xp, rank: c.rank, manual: c.manual, founder: c.founder } : it;
       });
@@ -1678,6 +1676,8 @@
 
   // Material 3 basic dialog: title, supporting lines, Cancel / Confirm.
   function confirmDialog(title, lines, onConfirm) {
+    // A double tap must not open a second dialog that repeats the action.
+    if (document.querySelector('.dialog:not(.leave)')) return;
     var scrim = h('div', { class: 'scrim top' });
     var ok = h('button', { class: 'btn-filled ripple' }, 'Подтвердить');
     var box = h('div', { class: 'dialog', role: 'alertdialog', 'aria-modal': 'true' },
@@ -1685,7 +1685,11 @@
       lines.map(function (l, i) { return h('p', { class: i ? '' : 'who-line', text: l }); }),
       h('div', { class: 'dialog-actions' },
         h('button', { class: 'btn-text ripple', onclick: close }, 'Отмена'), ok));
+    var closed = false;
     function close() {
+      if (closed) return;
+      closed = true;
+      popBack(close);
       scrim.classList.add('leave');
       box.classList.add('leave');
       setTimeout(function () { scrim.remove(); box.remove(); }, reduceMotion ? 0 : 200);
@@ -1699,6 +1703,48 @@
     scrim.addEventListener('click', close);
     document.body.appendChild(scrim);
     document.body.appendChild(box);
+    pushBack(close);
+  }
+
+  // Telegram's back button closes the top sheet or dialog, not the whole app.
+  var backStack = [];
+  function onBack() {
+    var top = backStack[backStack.length - 1];
+    if (top) top();
+  }
+  function pushBack(close) {
+    backStack.push(close);
+    if (backStack.length !== 1 || !tg || !tg.BackButton) return;
+    try { tg.BackButton.onClick(onBack); tg.BackButton.show(); } catch (e) { /* older Telegram */ }
+  }
+  function popBack(close) {
+    var i = backStack.indexOf(close);
+    if (i < 0) return;
+    backStack.splice(i, 1);
+    if (backStack.length || !tg || !tg.BackButton) return;
+    try { tg.BackButton.offClick(onBack); tg.BackButton.hide(); } catch (e) { /* older Telegram */ }
+  }
+
+  // Bottom sheet around `content`. → its close(), or null when one is already
+  // open (a double tap on a row must not stack two sheets).
+  function openSheet(content) {
+    if (document.querySelector('.sheet:not(.leave)')) return null;
+    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
+    var scrim = h('div', { class: 'scrim' });
+    var closed = false;
+    function close() {
+      if (closed) return;
+      closed = true;
+      popBack(close);
+      scrim.classList.add('leave');
+      sheet.classList.add('leave');
+      setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
+    }
+    scrim.addEventListener('click', close);
+    document.body.appendChild(scrim);
+    document.body.appendChild(sheet);
+    pushBack(close);
+    return close;
   }
 
   // ---- navigation bar -------------------------------------------------------
@@ -1725,6 +1771,7 @@
   }
 
   function pageBody() {
+    view.classList.remove('quiet');
     view.replaceChildren.apply(view, viewBody());
     return ownPage(state.tab) ? [view] : [me, view];
   }

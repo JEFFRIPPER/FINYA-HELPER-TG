@@ -202,7 +202,7 @@ export async function leaderboard({ weekly = false, limit = 10 } = {}) {
   if (weekly) {
     const ts = nowInt();
     return db.all(sql`SELECT p.*, SUM(e.points) AS score FROM profiles p JOIN events e ON e.user_id = p.user_id
-      WHERE e.earned_at >= ${weekStart(ts)} AND e.earned_at <= ${ts}
+      WHERE e.earned_at >= ${weekStart(ts)} AND e.earned_at <= ${ts} AND e.kind IN ('comment', 'reaction')
       GROUP BY p.user_id HAVING score > 0 ORDER BY score DESC, p.user_id LIMIT ${limit}`);
   }
   return db.all(sql`SELECT *, xp AS score FROM profiles WHERE xp > 0
@@ -268,23 +268,24 @@ export async function award(user, chatId, messageId, kind, timestamp) {
   if (seen) return null;
   const start = dayStart(timestamp);
   const end = start + 86400;
-  let pts = kind === 'comment' ? COMMENT_XP : REACTION_XP;
-  const today = await activityPoints(user.id, start, end);
-  if (today + pts > DAILY_XP_LIMIT) pts = 0;
-  if (total + pts > MAX_XP) pts = 0;
-  if (kind === 'reaction') {
-    const c = await db.get(sql`SELECT COUNT(*) AS c FROM events WHERE user_id = ${user.id} AND kind = 'reaction'
-      AND points > 0 AND earned_at >= ${start} AND earned_at < ${end}`);
-    if (c.c >= DAILY_REACTION_LIMIT) pts = 0;
-  } else {
-    const latest = await db.get(sql`SELECT MAX(earned_at) AS m FROM events WHERE user_id = ${user.id}
-      AND kind = 'comment' AND points > 0`);
-    if (latest && latest.m != null && timestamp - latest.m < COMMENT_COOLDOWN) pts = 0;
-  }
+  const pts = kind === 'comment' ? COMMENT_XP : REACTION_XP;
   // The primary key makes a redelivered update a no-op even under concurrency.
   const inserted = await db.run(sql`INSERT OR IGNORE INTO events (user_id, chat_id, message_id, kind, points, earned_at)
-    VALUES (${user.id}, ${chatId}, ${messageId}, ${kind}, ${pts}, ${timestamp})`);
-  if (inserted.rowsAffected !== 1 || !pts) return null;
+    VALUES (${user.id}, ${chatId}, ${messageId}, ${kind}, 0, ${timestamp})`);
+  if (inserted.rowsAffected !== 1) return null;
+  // Limits are checked inside one UPDATE, so parallel updates cannot all pass them.
+  const limit = kind === 'reaction'
+    ? sql`(SELECT COUNT(*) FROM events WHERE user_id = ${user.id} AND kind = 'reaction' AND points > 0
+        AND earned_at >= ${start} AND earned_at < ${end}) < ${DAILY_REACTION_LIMIT}`
+    : sql`NOT EXISTS (SELECT 1 FROM events WHERE user_id = ${user.id} AND kind = 'comment' AND points > 0
+        AND earned_at > ${timestamp - COMMENT_COOLDOWN})`;
+  const granted = await db.run(sql`UPDATE events SET points = ${pts}
+    WHERE user_id = ${user.id} AND chat_id = ${chatId} AND message_id = ${messageId} AND kind = ${kind}
+      AND (SELECT COALESCE(SUM(points), 0) FROM events WHERE user_id = ${user.id}
+        AND kind IN ('comment', 'reaction') AND earned_at >= ${start} AND earned_at < ${end}) + ${pts} <= ${DAILY_XP_LIMIT}
+      AND (SELECT xp FROM profiles WHERE user_id = ${user.id}) + ${pts} <= ${MAX_XP}
+      AND ${limit}`);
+  if (granted.rowsAffected !== 1) return null;
   await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${user.id}`);
   const oldRank = rankFor(total, { manualRank })[0];
   const newRank = rankFor(total + pts, { manualRank })[0];

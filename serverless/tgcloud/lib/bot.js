@@ -30,6 +30,17 @@ import * as relay from './relay.js';
 import * as xp from './xp.js';
 
 const PUMP_INTERVAL_SECONDS = 30;
+// The platform cuts a call off after ~30 s; everything one update does must fit in this.
+const CALL_BUDGET_MS = 24000;
+
+const leftMs = (deadline) => deadline - Date.now();
+
+// Channel service messages (pin, new title or photo, video chat…) are not posts to copy.
+const POST_CONTENT = [
+  'text', 'photo', 'video', 'animation', 'audio', 'document', 'voice', 'video_note', 'sticker', 'poll',
+  'location', 'venue', 'contact', 'dice', 'paid_media', 'story', 'giveaway', 'giveaway_winners', 'checklist',
+];
+const isContentPost = (message) => POST_CONTENT.some((key) => message[key] != null);
 
 // ---- start photo -----------------------------------------------------------
 
@@ -82,6 +93,11 @@ async function adminCommand(message, s) {
 }
 
 async function cancelCommand(message, s) {
+  if (s.awaiting_feedback && message.chat.type === 'private') {
+    delete s.awaiting_feedback;
+    await replyBold(message, 'Отменено. Обратная связь не отправлена.', backHomeKeyboard());
+    return;
+  }
   if (!rankAdmin.allowed(message.from, message.chat)) return;
   rankAdmin.clear(s, { allActions: true });
   shopAdmin.clear(s);
@@ -90,7 +106,7 @@ async function cancelCommand(message, s) {
 
 // /shopkey <GitHub key> lets Финя edit the SQUAD SHOP products (/admin → Товары).
 async function shopKeyCommand(message, s, args) {
-  if (!rankAdmin.allowed(message.from, message.chat)) return;
+  if (!isAdminUser(message.from)) return;
   const key = args[0] || '';
   if (key) {
     try {
@@ -98,6 +114,12 @@ async function shopKeyCommand(message, s, args) {
     } catch {
       // Too old or already gone: the key still works, the owner can delete it by hand.
     }
+  }
+  if (!rankAdmin.allowed(message.from, message.chat)) {
+    if (key) {
+      await reply(message, 'Ключ GitHub присылай только мне в личку. Этот ключ был виден в чате: лучше перевыпусти его.');
+    }
+    return;
   }
   if (!shopAdmin.isKey(key)) {
     await replyBold(message, (key ? 'Это не похоже на ключ GitHub.\n\n' : '') + escapeHtml(shopAdmin.KEY_HELP));
@@ -244,7 +266,7 @@ async function textMessage(message, s) {
       }
       // Nothing goes out until the owner confirms: one stray message must not reach every user.
       s.broadcast_pending = { text, time: now() };
-      const preview = escapeHtml(text.slice(0, 600)) + (text.length > 600 ? '…' : '');
+      const preview = escapeHtml(truncate(text, 600)) + (Array.from(text).length > 600 ? '…' : '');
       await replyBold(message, `📣 Подтверди рассылку\n\nПолучателей: ${await userCount()}\n\n${preview}`, keyboard([[
         button('Отправить всем', { callback_data: 'admin:broadcast_send' }),
         button('Отмена', { callback_data: 'admin:broadcast_cancel' }),
@@ -262,7 +284,7 @@ async function textMessage(message, s) {
     try {
       await api.sendMessage({
         chat_id: OWNER_USER_ID,
-        text: boldHtml(`📬 Новый фидбек от ${escapeHtml(String(who))}:\n\n${escapeHtml(text.slice(0, 3500))}`),
+        text: boldHtml(`📬 Новый фидбек от ${escapeHtml(String(who))}:\n\n${escapeHtml(truncate(text, 3500))}`),
         parse_mode: 'HTML',
       });
     } catch {
@@ -310,13 +332,14 @@ async function activityMessage(message) {
 }
 
 export async function onMessageReaction(event) {
+  const deadline = Date.now() + CALL_BUDGET_MS;
   try {
     if (!event || !['group', 'supergroup'].includes(event.chat.type)) return;
     if (!(await xpChatMatches(event.chat.id))) return;
     const award = await xp.reaction(event);
     if (award) await notifyPromotion(event.user, award);
   } finally {
-    await pump();
+    await pump({ deadline });
   }
 }
 
@@ -348,6 +371,7 @@ const COMMANDS = {
 };
 
 export async function onMessage(message) {
+  const deadline = Date.now() + CALL_BUDGET_MS;
   try {
     if (['group', 'supergroup'].includes(message.chat.type)) {
       try {
@@ -381,7 +405,7 @@ export async function onMessage(message) {
       await withSession(message.from.id, (s) => textMessage(message, s));
     }
   } finally {
-    await pump();
+    await pump({ deadline });
   }
 }
 
@@ -405,10 +429,10 @@ async function button_(query, s) {
     await editOrSend(query, '🛠 <b>Бот временно на техработах.</b>', backHomeKeyboard());
     return;
   }
-  if (data.startsWith('xp:')) {
-    delete s.awaiting_feedback;
-    delete s.admin_action;
-  }
+  // Any other button leaves the "type your text" modes: a stray message later must not
+  // become feedback to the owner or replace the channel news.
+  if (data !== 'feedback') delete s.awaiting_feedback;
+  if (!data.startsWith('admin:')) delete s.admin_action;
 
   let text;
   let kb;
@@ -479,6 +503,7 @@ async function button_(query, s) {
 }
 
 export async function onCallbackQuery(query) {
+  const deadline = Date.now() + CALL_BUDGET_MS;
   let runJobId = null;
   let runPending = false;
   try {
@@ -489,18 +514,18 @@ export async function onCallbackQuery(query) {
       delete s.run_job;
       delete s.run_pending_jobs;
     });
-    if (runJobId || runPending) await continueBroadcast(query.from.id, runJobId);
+    if (runJobId || runPending) await continueBroadcast(query.from.id, runJobId, leftMs(deadline) - 4000);
   } finally {
-    await pump();
+    await pump({ deadline });
   }
 }
 
 // Sends a slice of the owner's broadcast; if it did not finish, says so.
-async function continueBroadcast(ownerChatId, jobId) {
+async function continueBroadcast(ownerChatId, jobId, budgetMs) {
   if (jobId) {
-    if (await jobs.runJob(jobId)) return;
+    if (await jobs.runJob(jobId, budgetMs)) return;
   } else {
-    await jobs.runPendingJobs();
+    await jobs.runPendingJobs(budgetMs);
   }
   const running = await jobs.runningBroadcast();
   if (!running) return;
@@ -523,8 +548,9 @@ function isSquadChannel(chat) {
 }
 
 export async function onChannelPost(message) {
+  const deadline = Date.now() + CALL_BUDGET_MS;
   try {
-    if (!message || !isSquadChannel(message.chat)) return;
+    if (!message || !isSquadChannel(message.chat) || !isContentPost(message)) return;
     // Group delivery is independent of personal subscribers and their toggle.
     const username = String(message.chat.username || SQUAD_CHANNEL_USERNAME).replace(/^@/, '');
     const postUrl = `https://t.me/${username}/${message.message_id}`;
@@ -532,23 +558,24 @@ export async function onChannelPost(message) {
     if ((await getSetting('last_channel_post_id')) !== message.message_id) {
       await setSetting('last_channel_post_id', message.message_id);
     }
-    if (!(await isMaintenance())) await relay.deliverDue(8000);
+    if (!(await isMaintenance())) await relay.deliverDue(Math.min(8000, leftMs(deadline) - 12000));
     if (!(await getSetting('channel_broadcast_enabled'))) return;
     const sub = await db.get(sql`SELECT 1 AS x FROM users WHERE subscribed = 1 LIMIT 1`);
     if (!sub) return;
     await jobs.createPostJob(message, postUrl);
-    await jobs.runPendingJobs();
+    await jobs.runPendingJobs(Math.min(15000, leftMs(deadline) - 4000));
   } finally {
-    await pump();
+    await pump({ deadline });
   }
 }
 
 export async function onChatMember(event) {
+  const deadline = Date.now() + CALL_BUDGET_MS;
   try {
     await blacklist.handleChatMember(event);
     await club.handleJoin(event);
   } finally {
-    await pump();
+    await pump({ deadline });
   }
 }
 
@@ -570,16 +597,32 @@ async function ensureMenuButton() {
 }
 
 // Retries and unfinished sends: what asyncio loops did on the old server.
-export async function pump({ force = false } = {}) {
+// Each step is separate: one failing step must not stop the others for good.
+export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_MS } = {}) {
+  // Too little time left in this call: the next update picks the work up.
+  if (leftMs(deadline) < 6000) return;
   try {
     if (!force && !(await acquirePump())) return;
-    await ensureMenuButton();
-    await relay.sweepStale();
-    if (!(await isMaintenance())) await relay.deliverDue(5000, 10);
-    await blacklist.retryPending(5);
-    await jobs.runPendingJobs(10000);
-    await club.tick();
   } catch (err) {
     await logError('pump', err);
+    return;
+  }
+  const steps = [
+    ['pump.menu', () => ensureMenuButton()],
+    ['pump.relay', async () => {
+      await relay.sweepStale();
+      if (!(await isMaintenance())) await relay.deliverDue(Math.min(5000, leftMs(deadline) - 12000), 10);
+    }],
+    ['pump.blacklist', () => blacklist.retryPending(5)],
+    ['club.tick', () => club.tick()],
+    ['pump.jobs', () => jobs.runPendingJobs(Math.min(10000, leftMs(deadline) - 2000))],
+  ];
+  for (const [where, step] of steps) {
+    if (leftMs(deadline) < 2000) break;
+    try {
+      await step();
+    } catch (err) {
+      await logError(where, err);
+    }
   }
 }

@@ -250,12 +250,12 @@ test('welcome: one greeting for newcomers in the discussion group, the old one i
   // Within 15 seconds the next wave is not greeted again.
   await onMessage(joined(user(8)));
   assert.equal(api.called('sendMessage').length, 1);
-  await db.run("UPDATE settings SET value = '0' WHERE key = 'welcome_at'");
+  await db.run("UPDATE settings SET value = '0' WHERE key LIKE 'welcome_at:%'");
   await onMessage(joined(user(9)));
   assert.equal(api.called('sendMessage').length, 2);
   assert.equal(api.called('deleteMessage').length, 1);
   // Bots and other groups are ignored; the owner can switch it off.
-  await db.run("UPDATE settings SET value = '0' WHERE key = 'welcome_at'");
+  await db.run("UPDATE settings SET value = '0' WHERE key LIKE 'welcome_at:%'");
   await onMessage(joined({ id: 55, is_bot: true, first_name: 'bot' }));
   await onMessage(groupMessage({ id: -5, type: 'supergroup' }, user(10), undefined, { new_chat_members: [user(10)] }));
   await setSetting('club_welcome', false);
