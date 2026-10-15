@@ -734,7 +734,7 @@
   // Tracks from the owner's Telegram profile music. The card is built once and
   // reused between tabs, so the music keeps playing while you move around.
   var music = { tracks: null, failed: false, cur: -1, audio: null, urls: {}, order: [], pending: {}, progress: {},
-    lyrics: {}, lyricsPending: {}, lyricsWait: false, covers: {}, loading: null, lines: null, plain: null, source: null, line: -1,
+    lyrics: {}, lyricsPending: {}, lyricsWait: false, lyricsErr: false, covers: {}, loading: null, lines: null, plain: null, source: null, line: -1,
     prefetched: false, el: null, ui: null, raf: 0, karaoke: null, k: null };
   var MUSIC_KEEP = 3; // decoded tracks kept in memory
   var MUSIC_PREFETCH = 25; // seconds before the end when the next track starts loading
@@ -880,7 +880,7 @@
         return music.lyrics[t.id];
       }, function () {
         delete music.lyricsPending[t.id];
-        return null;
+        return { error: true }; // not kept: asked again next time
       });
     }
     return music.lyricsPending[t.id];
@@ -915,6 +915,7 @@
     music.line = -1;
     music.prefetched = false;
     music.lyricsWait = true;
+    music.lyricsErr = false;
     var token = {};
     music.loading = token;
     if (!auto) vibrate('light');
@@ -925,13 +926,15 @@
     loadCover(t).then(function () { if (music.cur === i) drawMusicCover(); });
     loadLyrics(t).then(function (ly) {
       if (music.cur !== i) return;
+      music.lyricsErr = !!(ly && ly.error);
+      if (music.lyricsErr) ly = null;
       var lines = ly && ly.synced ? parseLrc(ly.synced) : null;
       music.lyricsWait = false;
       music.lines = lines && lines.length ? lines : null;
       music.plain = !music.lines && ly ? ly.plain || null : null;
       music.source = ly ? ly.source : null;
       renderLyrics();
-      if (list.length > 1) loadLyrics(list[(i + 1) % list.length]); // the search runs while this one plays
+      if (list.length > 1 && !music.lyricsErr) loadLyrics(list[(i + 1) % list.length]); // the search runs while this one plays
     });
     music.progress[t.id] = function (p) { if (music.loading === token) setMusicLoad(p); };
     loadAudio(t).then(function (url) {
@@ -1043,7 +1046,8 @@
     ui.tCur = h('span', { class: 't-cur', text: '0:00' });
     ui.tDur = h('span', { class: 't-dur', text: '0:00' });
     ui.track = h('div', { class: 'peek-track' });
-    ui.peek = h('div', { class: 'lyric-peek', onclick: openKaraoke }, ui.track);
+    ui.status = h('p', { class: 'peek-status' });
+    ui.peek = h('div', { class: 'lyric-peek', onclick: openKaraoke }, ui.track, ui.status);
     ui.items = list.map(function (x, i) {
       return h('li', { class: 'q-item ripple', onclick: function () { playTrack(i); } },
         h('span', { class: 'q-n' }, h('span', { text: String(i + 1) }), eqBars()),
@@ -1181,6 +1185,7 @@
   function lyricStatus() {
     if (music.cur < 0) return 'Нажми ▶, чтобы послушать';
     if (music.lyricsWait) return 'Ищу текст…';
+    if (music.lyricsErr) return 'Текст не загрузился, попробуй позже';
     if (music.plain) return 'Текст без таймингов: открой на весь экран';
     return 'Текста для этого трека нет';
   }
@@ -1189,13 +1194,11 @@
   function renderLyrics() {
     var ui = music.ui;
     if (ui) {
-      if (music.lines) {
-        ui.rows = music.lines.map(function (l) { return lineEl(l, 'pl'); });
-      } else {
-        ui.rows = null;
-        ui.status = h('p', { class: 'pl on status' + (music.lyricsWait && music.cur >= 0 ? ' wait' : ''), text: lyricStatus() });
-      }
-      ui.track.replaceChildren.apply(ui.track, ui.rows || [ui.status]);
+      ui.rows = music.lines ? music.lines.map(function (l) { return lineEl(l, 'pl'); }) : null;
+      ui.track.replaceChildren.apply(ui.track, ui.rows || []);
+      ui.status.hidden = !!ui.rows;
+      ui.status.className = 'peek-status' + (music.lyricsWait && music.cur >= 0 ? ' wait' : '');
+      ui.status.textContent = ui.rows ? '' : lyricStatus();
     }
     if (music.k) renderKaraokeLines();
     music.line = -2;
@@ -1221,8 +1224,9 @@
     var ui = music.ui;
     if (!ui) return;
     var rows = ui.rows;
-    var target = rows ? rows[Math.max(0, i)] : ui.status;
-    if (rows) rows.forEach(function (r, j) { r.classList.toggle('on', j === i); r.classList.toggle('past', j < i); });
+    if (!rows) return;
+    var target = rows[Math.max(0, i)];
+    rows.forEach(function (r, j) { r.classList.toggle('on', j === i); r.classList.toggle('past', j < i); });
     if (!target || !ui.peek.clientHeight) return;
     var y = ui.peek.clientHeight / 2 - (target.offsetTop + target.offsetHeight / 2);
     ui.track.style.transform = 'translateY(' + y.toFixed(1) + 'px)';
@@ -1268,9 +1272,9 @@
       });
       k.box.replaceChildren.apply(k.box, k.rows);
     } else if (music.lyricsWait && music.cur >= 0) {
-      k.box.replaceChildren(h('div', { class: 'k-wait' }, h('i'), h('i'), h('i'), h('i'), h('p', { text: 'Ищу текст в 13 источниках…' })));
+      k.box.replaceChildren(h('div', { class: 'k-wait' }, h('i'), h('i'), h('i'), h('i'), h('p', { text: 'Ищу текст во всех источниках…' })));
     } else {
-      k.box.replaceChildren(h('p', { class: 'k-plain', text: music.plain || 'Текста для этого трека не нашлось.' }));
+      k.box.replaceChildren(h('p', { class: 'k-plain', text: music.lyricsErr ? 'Текст не загрузился. Попробуй ещё раз позже.' : music.plain || 'Текста для этого трека не нашлось.' }));
     }
     k.src.textContent = music.source ? 'Текст: ' + music.source : '';
   }

@@ -12,7 +12,13 @@ const GRACE_MS = 1500; // after a line-synced hit, how long to wait for a word-s
 const DEADLINE_MS = 9000; // the whole search
 const MAX_CHARS = 60000;
 
+// The serverless isolate has no timers at all (setTimeout and clearTimeout are
+// not defined), so there a request ends when the platform ends it and the
+// search ends on what the sources answer, not on a clock.
+const hasTimers = () => typeof setTimeout === 'function' && typeof clearTimeout === 'function';
+
 function withTimeout(promise) {
+  if (!hasTimers()) return promise;
   let timer;
   return Promise.race([
     promise,
@@ -20,7 +26,13 @@ function withTimeout(promise) {
   ]).finally(() => clearTimeout(timer));
 }
 
-const get = (url, headers = {}) => withTimeout(fetch(url, { headers: { 'User-Agent': UA, ...headers } }));
+const fetchGet = (url, headers) => withTimeout(fetch(url, { headers: { 'User-Agent': UA, ...headers } }));
+
+// Many bots share the platform's address, so a rate limit is asked once more.
+async function get(url, headers = {}) {
+  const res = await fetchGet(url, headers);
+  return res.status === 429 ? fetchGet(url, headers) : res;
+}
 
 async function getJson(url, headers) {
   const res = await get(url, headers);
@@ -40,6 +52,22 @@ const q = (params) => Object.entries(params)
 const norm = (s) => String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 const query = (artist, title) => `${artist || ''} ${title}`.trim();
+
+// Profile audios are often tagged like YouTube uploads: "Вороны (Официальная
+// премьера трека)", "FACE – Антидепрессант (prod. by Vessels)", "КАТЕРИНА - Topic".
+// The noise goes before searching; a remix or a version stays in the title.
+const NOISE = /\s*[([][^)\]]*(official|audio|video|visuali[sz]er|lyrics?|премьер|клип|prod|mood|muzskil|\.(com|net|ru))[^)\]]*[)\]]/gi;
+
+export function cleanTrack({ title, artist, duration }) {
+  let t = String(title || '').replace(/\.(mp3|m4a|flac|ogg|opus|wav)$/i, '').replace(NOISE, '').replace(/\s+prod\.?\s.*$/i, '').trim();
+  let a = String(artist || '').replace(/\s*-\s*topic$/i, '').replace(/vevo$/i, '').replace(/^<unknown>$/i, '').trim();
+  const m = t.match(/^(.+?)\s+[–—-]\s+(.+)$/); // "Artist – Title" inside the title
+  if (m && (!a || norm(a).includes(norm(m[1])) || norm(m[1]).includes(norm(a)))) {
+    a = m[1].trim();
+    t = m[2].trim();
+  }
+  return { title: t || String(title || ''), artist: a, duration };
+}
 
 // A candidate fits when the title matches and the length is within 5 seconds.
 function fits(track, title, duration) {
@@ -208,9 +236,9 @@ async function paxsenix({ title, artist, duration }) {
     .find((s) => fits({ title: s.trackName, duration: s.trackTimeMillis / 1000 }, title, duration));
   if (!song) return null;
   const data = await getJson(`https://lyrics.paxsenix.org/apple-music/lyrics?${q({ id: song.trackId, v: 2 })}`);
-  const content = (data && Array.isArray(data.content) && data.content) || [];
-  if (!content.length) return null;
-  const lines = scaled(content.map((l) => {
+  const content = (data && (Array.isArray(data.lyrics) ? data.lyrics : data.content)) || [];
+  if (!Array.isArray(content) || !content.length) return null;
+  const lines = scaled(content.filter((l) => !l.background).map((l) => {
     const parts = Array.isArray(l.text) ? l.text : [{ text: String(l.text || ''), timestamp: l.timestamp, endtime: l.endtime }];
     return {
       start: l.timestamp, end: l.endtime,
@@ -230,31 +258,26 @@ const LYRICS_PLUS = [
   'https://lyrics-plus-backend.vercel.app',
 ];
 
+async function lyricsPlusFrom(base, params) {
+  const res = await get(`${base}/v2/lyrics/get?${q(params)}`);
+  const data = res.ok ? await res.json() : null;
+  const list = (data && Array.isArray(data.lyrics) && data.lyrics) || [];
+  if (!list.length) throw new Error(`${base}: ${res.status}`);
+  const byWord = /word|syllable/i.test(String(data.type || ''));
+  const lines = scaled(list.map((l) => {
+    const parts = (byWord && Array.isArray(l.syllabus) ? l.syllabus : [])
+      .filter((x) => !x.isBackground)
+      .map((x) => ({ start: x.time, end: Number(x.time) + Number(x.duration || 0), text: String(x.text || '') }));
+    return { start: l.time, end: Number(l.time) + Number(l.duration || 0), text: l.text, words: alignWords(l.text, parts) };
+  }));
+  return { synced: toLrc(lines) };
+}
+
+// Mirrors differ in which sources they can reach, so all are asked at once.
 async function lyricsPlus({ title, artist, duration }) {
   const params = { title, artist: artist || '', source: 'apple,lyricsplus,musixmatch,spotify,musixmatch-word' };
   if (duration) params.duration = Math.round(duration);
-  for (const base of LYRICS_PLUS) {
-    let res;
-    try {
-      res = await get(`${base}/v2/lyrics/get?${q(params)}`);
-    } catch (err) {
-      continue; // mirror is down
-    }
-    if (res.status === 404) return null;
-    if (!res.ok) continue;
-    const data = await res.json();
-    const list = (data && Array.isArray(data.lyrics) && data.lyrics) || [];
-    if (!list.length) return null;
-    const byWord = /word|syllable/i.test(String(data.type || ''));
-    const lines = scaled(list.map((l) => {
-      const parts = (byWord && Array.isArray(l.syllabus) ? l.syllabus : [])
-        .filter((s) => !s.isBackground)
-        .map((s) => ({ start: s.time, end: Number(s.time) + Number(s.duration || 0), text: String(s.text || '') }));
-      return { start: l.time, end: Number(l.time) + Number(l.duration || 0), text: l.text, words: alignWords(l.text, parts) };
-    }));
-    return { synced: toLrc(lines) };
-  }
-  return null;
+  return Promise.any(LYRICS_PLUS.map((base) => lyricsPlusFrom(base, params))).catch(() => null);
 }
 
 // Musixmatch desktop app API: an anonymous token, then search and subtitles.
@@ -327,16 +350,6 @@ async function kugou({ title, artist, duration }) {
   return isSynced(text) ? { synced: text } : null;
 }
 
-async function qqMusic({ title, artist, duration }) {
-  const headers = { Referer: 'https://y.qq.com/' };
-  const found = await getJson(`https://c.y.qq.com/soso/fcgi-bin/client_search_cp?${q({ w: query(artist, title), format: 'json', p: 1, n: 10 })}`, headers);
-  const list = (found && found.data && found.data.song && found.data.song.list) || [];
-  const song = list.find((s) => fits({ title: s.songname, duration: s.interval }, title, duration));
-  if (!song) return null;
-  const lrc = await getJson(`https://c.y.qq.com/lyric/fcgi-bin/fcg_query_lyric_new.fcg?${q({ songmid: song.songmid, format: 'json', nobase64: 1 })}`, headers);
-  return synced(lrc && lrc.lyric);
-}
-
 // Deezer serves lyrics (from LyricFind) through its web gateway with an
 // anonymous session: getUserData hands out the token and the session cookie.
 async function deezer({ title, artist, duration }) {
@@ -356,14 +369,6 @@ async function deezer({ title, artist, duration }) {
   return r.LYRICS_TEXT ? { plain: r.LYRICS_TEXT } : null;
 }
 
-// LiriQo: one endpoint over Apple Music, QQ, KuGou, NetEase, YouTube Music and others.
-async function liriqo({ title, artist, duration }) {
-  const params = { title, artist: artist || '' };
-  if (duration) params.duration = Math.round(duration);
-  const text = await getText(`https://api.liriqo-alfarrizi.workers.dev/v1/lrc?${q(params)}`);
-  return isSynced(text) ? { synced: text } : null;
-}
-
 // Unison: the Better Lyrics community database (TTML, LRC or plain).
 async function unison({ title, artist, duration }) {
   const params = { song: title, artist: artist || '' };
@@ -378,29 +383,11 @@ async function unison({ title, artist, duration }) {
   return synced(d.lyrics);
 }
 
-async function megalobiz({ title, artist }) {
-  const html = await getText(`https://www.megalobiz.com/search/all?${q({ qry: query(artist, title), 'searchButton.x': 0, 'searchButton.y': 0 })}`);
-  if (!html) return null;
-  const re = /<a\b[^>]*href="(\/lrc\/maker\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
-  let m;
-  let href = null;
-  while ((m = re.exec(html))) {
-    if (norm(textOf(m[2])).includes(norm(title))) { href = m[1]; break; }
-  }
-  if (!href) return null;
-  const id = href.split('.').pop().replace(/\W/g, '');
-  const page = await getText(`https://www.megalobiz.com${href}`);
-  const start = page ? page.search(new RegExp(`<div\\b[^>]*id="lrc_${id}_details"`)) : -1;
-  const el = start >= 0 ? elementAt(page, start, 'div') : null;
-  const text = el && textOf(el.inner).trim();
-  return isSynced(text) ? { synced: text } : null;
-}
-
 // Genius has no timings, but the widest coverage of Russian rap: a plain fallback.
 async function genius({ title, artist }) {
   const found = await getJson(`https://genius.com/api/search/multi?${q({ q: query(artist, title), per_page: 5 })}`);
   const sections = (found && found.response && found.response.sections) || [];
-  const hits = sections.filter((s) => s.type === 'song').flatMap((s) => s.hits || []);
+  const hits = sections.flatMap((s) => (s.hits || []).filter((h) => s.type === 'song' || h.type === 'song'));
   const hit = hits.map((h) => h.result).find((r) => r && r.url && fits({ title: r.title }, title));
   if (!hit) return null;
   const html = await getText(hit.url);
@@ -425,21 +412,20 @@ async function lyricsOvh({ title, artist }) {
   return text ? { plain: text } : null;
 }
 
-// Order breaks ties between answers of the same kind.
+// Order breaks ties between answers of the same kind. The number is the best a
+// source can give (2 word-synced, 1 line-synced, 0 plain): the search stops
+// waiting for a source once something at least as good is found.
 export const SOURCES = [
-  ['Apple Music', paxsenix],
-  ['Lyrics+', lyricsPlus],
-  ['Musixmatch', musixmatch],
-  ['LRCLIB', lrclib],
-  ['NetEase', netease],
-  ['QQ Music', qqMusic],
-  ['Kugou', kugou],
-  ['Deezer', deezer],
-  ['LiriQo', liriqo],
-  ['Unison', unison],
-  ['Megalobiz', megalobiz],
-  ['Genius', genius],
-  ['lyrics.ovh', lyricsOvh],
+  ['Apple Music', paxsenix, 2],
+  ['Lyrics+', lyricsPlus, 2],
+  ['Musixmatch', musixmatch, 2],
+  ['LRCLIB', lrclib, 1],
+  ['NetEase', netease, 1],
+  ['Kugou', kugou, 1],
+  ['Deezer', deezer, 1],
+  ['Unison', unison, 2],
+  ['Genius', genius, 0],
+  ['lyrics.ovh', lyricsOvh, 0],
 ];
 
 function rank(hit) {
@@ -449,42 +435,51 @@ function rank(hit) {
 }
 
 // → { synced, plain, source } or null. All sources run in parallel; errors of
-// one source never stop the others. Returns as soon as a word-synced answer
-// comes, a moment after the first line-synced one, or at the deadline.
-export function findLyrics(track, sources = SOURCES, { grace = GRACE_MS, deadline = DEADLINE_MS } = {}) {
+// one source never stop the others. The search ends once no source still
+// running can beat the best answer so far. Where timers exist it also ends a
+// moment after the first line-synced answer and at the deadline.
+export function findLyrics(track, sources = SOURCES, { grace = GRACE_MS, deadline = DEADLINE_MS, timers = hasTimers() } = {}) {
+  track = cleanTrack(track);
   return new Promise((resolve) => {
     const hits = new Array(sources.length).fill(null);
-    let pending = sources.length;
+    const settled = new Array(sources.length).fill(false);
     let done = false;
     let graceTimer = null;
     let deadlineTimer = null;
+    const best = () => {
+      let b = -1;
+      hits.forEach((h, i) => { if (rank(h) > (b < 0 ? -1 : rank(hits[b]))) b = i; });
+      return b;
+    };
     const finish = () => {
       if (done) return;
       done = true;
-      clearTimeout(graceTimer);
-      clearTimeout(deadlineTimer);
-      let best = -1;
-      hits.forEach((h, i) => { if (rank(h) > (best < 0 ? -1 : rank(hits[best]))) best = i; });
-      if (best < 0) return resolve(null);
-      const h = hits[best];
-      const name = sources[best][0];
+      if (timers) {
+        clearTimeout(graceTimer);
+        clearTimeout(deadlineTimer);
+      }
+      const b = best();
+      if (b < 0) return resolve(null);
+      const h = hits[b];
+      const name = sources[b][0];
       resolve(rank(h) > 0
         ? { synced: h.synced.slice(0, MAX_CHARS), plain: null, source: name }
         : { synced: null, plain: String(h.plain).slice(0, MAX_CHARS), source: name });
     };
-    deadlineTimer = setTimeout(finish, deadline);
-    if (!pending) finish();
+    if (timers) deadlineTimer = setTimeout(finish, deadline);
+    if (!sources.length) finish();
     sources.forEach(([name, find], i) => {
       Promise.resolve()
         .then(() => find(track))
         .catch((err) => { console.warn(`[lyrics] ${name}: ${err && err.message}`); return null; })
         .then((hit) => {
           hits[i] = hit || null;
-          pending -= 1;
+          settled[i] = true;
           if (done) return;
-          const r = rank(hit);
-          if (r === 2 || pending === 0) finish();
-          else if (r === 1 && !graceTimer) graceTimer = setTimeout(finish, grace);
+          const b = best();
+          const r = b < 0 ? -1 : rank(hits[b]);
+          if (sources.every(([, , most = 2], j) => settled[j] || most <= r)) finish();
+          else if (r === 1 && timers && !graceTimer) graceTimer = setTimeout(finish, grace);
         });
     });
   });
