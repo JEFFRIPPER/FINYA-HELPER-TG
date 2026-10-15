@@ -698,6 +698,25 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .insignia.mini { height: 40px; filter: drop-shadow(0 0 6px rgba(255, 30, 60, 0.35)); }
 .item.locked .insignia.mini { filter: grayscale(0.8) brightness(0.7); }
 
+/* ---- marriage and reputation from the chat ----------------------------------- */
+.love-chip, .rep-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  max-width: 100%;
+  padding: 5px 12px 5px 8px;
+  line-height: 20px;
+  border-radius: 8px;
+  font-weight: 500;
+  letter-spacing: 0.1px;
+}
+.love-chip > span, .rep-chip > span { min-width: 0; overflow-wrap: anywhere; }
+.love-chip { border: 1px solid rgba(255, 92, 150, 0.45); background: rgba(255, 60, 130, 0.12); color: #ffd0e2; }
+.love-chip .icon { flex: none; width: 18px; height: 18px; fill: #ff5c96; filter: drop-shadow(0 0 6px rgba(255, 92, 150, 0.7)); }
+.rep-chip { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text-2); }
+.rep-chip .icon { flex: none; width: 18px; height: 18px; fill: var(--gold); }
+
 /* ---- streak ------------------------------------------------------------------ */
 .streak-chip {
   display: inline-flex;

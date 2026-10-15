@@ -6,6 +6,7 @@ import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
 import { getSetting, trackUser } from './store.js';
 import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
+import * as chat from './chat.js';
 import * as club from './club.js';
 
 const HISTORY_LIMIT = 30;
@@ -139,6 +140,7 @@ export async function profileData(user) {
     };
   }
   const participants = await db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`);
+  const social = await chat.profileExtras(user.id);
   return {
     me: {
       name: truncate(fullName(user), 100),
@@ -155,6 +157,9 @@ export async function profileData(user) {
       streak: streakNow,
       rival: await rival(p),
       style: await club.myStyle(user.id),
+      // Reputation and marriage from the chats («+», «брак»).
+      rep: social.rep,
+      marriage: social.marriage,
     },
     admin: founder,
     chart: await chart(user.id, ts),
@@ -164,6 +169,7 @@ export async function profileData(user) {
     rules: {
       comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT,
       poll: club.POLL_XP, referral: club.REFERRAL_XP, birthday: club.BIRTHDAY_XP, weekly: club.WEEKLY_BONUS,
+      farm: xp.FARM_MAX, farmRare: xp.FARM_RARE_MAX, farmHours: xp.FARM_COOLDOWN / 3600,
     },
     squad: await squad(),
     club: clubView,

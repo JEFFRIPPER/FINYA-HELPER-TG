@@ -240,3 +240,108 @@ export const autodelete = table('autodelete', {
   pk: primaryKey({ columns: [t.chat_id, t.message_id] }),
   due: index('autodelete_due').on(t.delete_at),
 }));
+
+// ---- Финя в чате: участники, актив, репутация, браки, РП, модерация ------------
+
+// Who is in each Squad chat. Names refresh on every message; leaving drops a member
+// from tops and «кто сегодня…» until they come back.
+export const chat_members = table('chat_members', {
+  chat_id: integer('chat_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  name: text('name').notNull(),
+  username: text('username').notNull().default(''),
+  status: text('status').notNull().default('member'),
+  first_seen: integer('first_seen').notNull(),
+  last_active: integer('last_active').notNull().default(0),
+  msgs: integer('msgs').notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
+  byActive: index('chat_members_by_active').on(t.chat_id, t.status, t.last_active),
+  byUsername: index('chat_members_by_username').on(t.username),
+}));
+
+// Messages per member per Moscow day (day = days since 1970 in MSK).
+export const chat_activity = table('chat_activity', {
+  chat_id: integer('chat_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  day: integer('day').notNull(),
+  msgs: integer('msgs').notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.day, t.user_id] }),
+}));
+
+export const reputation = table('reputation', {
+  user_id: integer('user_id').primaryKey(),
+  points: integer('points').notNull().default(0),
+  given: integer('given').notNull().default(0),
+});
+
+// The «+» messages already counted, so a redelivered update adds nothing.
+export const rep_votes = table('rep_votes', {
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id').notNull(),
+  from_id: integer('from_id').notNull(),
+  to_id: integer('to_id').notNull(),
+  at: integer('at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.message_id] }),
+  byTime: index('rep_votes_by_time').on(t.at),
+}));
+
+// A marriage is two rows, one per spouse; the primary key keeps everyone in one marriage.
+export const spouses = table('spouses', {
+  user_id: integer('user_id').primaryKey(),
+  partner_id: integer('partner_id').notNull(),
+  since: integer('since').notNull(),
+});
+
+export const proposals = table('proposals', {
+  from_id: integer('from_id').notNull(),
+  to_id: integer('to_id').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id'),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.from_id, t.to_id] }),
+}));
+
+// RP actions the owner added («+рп пощекотать = щекочет 🤭»).
+export const rp_actions = table('rp_actions', {
+  cmd: text('cmd').primaryKey(),
+  action: text('action').notNull(),
+  created_at: integer('created_at').notNull(),
+});
+
+export const warns = table('warns', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chat_id: integer('chat_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  by_id: integer('by_id').notNull(),
+  reason: text('reason').notNull().default(''),
+  at: integer('at').notNull(),
+}, (t) => ({
+  byUser: index('warns_by_user').on(t.chat_id, t.user_id, t.at),
+}));
+
+// Messages in the current flood window of each member.
+export const flood = table('flood', {
+  chat_id: integer('chat_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  window_start: integer('window_start').notNull(),
+  count: integer('count').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
+}));
+
+// Newcomers who still have to press «Я не бот».
+export const captcha = table('captcha', {
+  chat_id: integer('chat_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  message_id: integer('message_id'),
+  // pending → passed; a passed row stops a late duplicate join update from asking again.
+  status: text('status').notNull().default('pending'),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
+  due: index('captcha_due').on(t.status, t.created_at),
+}));

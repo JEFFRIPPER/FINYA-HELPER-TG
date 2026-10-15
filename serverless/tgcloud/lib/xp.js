@@ -52,7 +52,7 @@ function validInt(value, label, min = 0, max = Number.MAX_SAFE_INTEGER) {
 
 // Bonus XP (daily reward, quests, achievements, ...) from lib/club.js.
 // Stored in `events` with chat_id = 0 and message_id = the reward's key.
-export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly']);
+export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly', 'farm']);
 
 async function points(userId, start, end) {
   const row = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
@@ -313,6 +313,40 @@ export async function grant(user, kind, key, pts, timestamp = nowInt()) {
     VALUES (${userId}, 0, ${key}, ${kind}, ${pts}, ${Math.floor(timestamp)})`);
   if (inserted.rowsAffected !== 1) return null;
   if (pts) await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${userId}`);
+  const manualRank = row.manual_rank ?? null;
+  const oldRank = rankFor(total, { manualRank })[0];
+  const newRank = rankFor(total + pts, { manualRank })[0];
+  return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
+}
+
+// «фарм» in the chat: random XP once per FARM_COOLDOWN, outside the daily limit.
+export const FARM_COOLDOWN = 4 * 3600;
+export const FARM_MAX = 100;
+export const FARM_RARE_MAX = 200;
+export const FARM_RARE_CHANCE = 0.1;
+
+export function farmRoll(random = Math.random) {
+  if (random() < FARM_RARE_CHANCE) return FARM_MAX + 1 + Math.floor(random() * (FARM_RARE_MAX - FARM_MAX));
+  return 1 + Math.floor(random() * FARM_MAX);
+}
+
+// → the award, or { wait } seconds until the next farm. The cooldown is checked
+// inside the insert, so parallel messages cannot farm twice.
+export async function farm(user, pts, ts = nowInt()) {
+  if (!user || user.is_bot) return null;
+  validInt(pts, 'points', 1, FARM_RARE_MAX);
+  await upsertProfile(user);
+  const row = await db.get(sql`SELECT xp, manual_rank FROM profiles WHERE user_id = ${user.id}`);
+  const total = row.xp;
+  pts = Math.min(pts, MAX_XP - total);
+  const inserted = await db.run(sql`INSERT OR IGNORE INTO events (user_id, chat_id, message_id, kind, points, earned_at)
+    SELECT ${user.id}, 0, ${ts}, 'farm', ${pts}, ${ts}
+    WHERE NOT EXISTS (SELECT 1 FROM events WHERE user_id = ${user.id} AND kind = 'farm' AND earned_at > ${ts - FARM_COOLDOWN})`);
+  if (inserted.rowsAffected !== 1) {
+    const last = await db.get(sql`SELECT MAX(earned_at) AS at FROM events WHERE user_id = ${user.id} AND kind = 'farm'`);
+    return { wait: Math.max(1, (last && last.at ? last.at : ts) + FARM_COOLDOWN - ts) };
+  }
+  if (pts) await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${user.id}`);
   const manualRank = row.manual_rank ?? null;
   const oldRank = rankFor(total, { manualRank })[0];
   const newRank = rankFor(total + pts, { manualRank })[0];

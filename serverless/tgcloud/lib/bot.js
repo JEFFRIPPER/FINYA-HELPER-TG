@@ -8,8 +8,8 @@ import {
   answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, isRetryAfter, keyboard, reply, replyBold,
 } from './tg.js';
 import {
-  addFeedback, getSetting, getUser, isAdminUser, isMaintenance, logError, setSetting, setSubscribed,
-  trackUser, userCount, withSession,
+  addFeedback, deleteLater, getSetting, getUser, GROUP_REPLY_TTL, isAdminUser, isMaintenance, logError, setSetting,
+  setSubscribed, trackUser, userCount, withSession,
 } from './store.js';
 import {
   adminKeyboard, backHomeKeyboard, backMoreKeyboard, channelNewsView, channelSubscriptionKeyboard, channelSubscriptionText,
@@ -21,6 +21,7 @@ import { INFO_JPG_BASE64 } from './photo_data.js';
 import { explicitXpChatId, resolveXpChat, xpSourceChannelId } from './xpchat.js';
 import { handleAdminCallback } from './admin.js';
 import * as blacklist from './blacklist.js';
+import * as chat from './chat.js';
 import * as club from './club.js';
 import * as importer from './importer.js';
 import * as jobs from './jobs.js';
@@ -84,18 +85,13 @@ async function tidyPrivate(message, s, sent) {
   }
 }
 
-export const GROUP_REPLY_TTL = 120;
+export { GROUP_REPLY_TTL };
 
 // /rank and /top in a group: the command and the answer disappear after a while.
 async function cleanUpLater(message, sent) {
   if (!['group', 'supergroup'].includes(message.chat.type)) return;
-  const at = now() + GROUP_REPLY_TTL;
   try {
-    for (const id of [message.message_id, sent && sent.message_id]) {
-      if (!id) continue;
-      await db.run(sql`INSERT OR IGNORE INTO autodelete (chat_id, message_id, delete_at)
-        VALUES (${message.chat.id}, ${id}, ${Math.floor(at)})`);
-    }
+    await deleteLater(message.chat.id, [message.message_id, sent && sent.message_id]);
   } catch (err) {
     // The reply is already out; a failed clean-up must not make Telegram resend the update.
     await logError('autodelete', err);
@@ -365,21 +361,24 @@ async function textMessage(message, s) {
     }
   }
 
-  if (s.awaiting_feedback) {
-    delete s.awaiting_feedback;
-    const user = message.from;
-    await addFeedback(user, text);
-    await replyBold(message, '✅ Отправлено владельцу. Спасибо ❤️');
-    const who = user.username ? `@${user.username}` : `${user.first_name} (${user.id})`;
-    try {
-      await api.sendMessage({
-        chat_id: OWNER_USER_ID,
-        text: boldHtml(`📬 Новый фидбек от ${escapeHtml(String(who))}:\n\n${escapeHtml(truncate(text, 3500))}`),
-        parse_mode: 'HTML',
-      });
-    } catch {
-      // The owner may have blocked the bot; feedback is stored anyway.
-    }
+  if (!s.awaiting_feedback) {
+    // «фарм», «кто я», «браки»… work in the private chat too.
+    await chat.handleText(message);
+    return;
+  }
+  delete s.awaiting_feedback;
+  const user = message.from;
+  await addFeedback(user, text);
+  await replyBold(message, '✅ Отправлено владельцу. Спасибо ❤️');
+  const who = user.username ? `@${user.username}` : `${user.first_name} (${user.id})`;
+  try {
+    await api.sendMessage({
+      chat_id: OWNER_USER_ID,
+      text: boldHtml(`📬 Новый фидбек от ${escapeHtml(String(who))}:\n\n${escapeHtml(truncate(text, 3500))}`),
+      parse_mode: 'HTML',
+    });
+  } catch {
+    // The owner may have blocked the bot; feedback is stored anyway.
   }
 }
 
@@ -410,15 +409,28 @@ async function xpChatMatches(chatId) {
   return chatId === target;
 }
 
-async function activityMessage(message) {
-  if (!['group', 'supergroup'].includes(message.chat.type)) return;
+// A message in a Squad chat: commands in words, members and protection (lib/chat.js), then XP.
+async function squadMessage(message, command) {
   if (!(await xpChatMatches(message.chat.id))) return;
-  if (message.new_chat_members) {
-    await club.welcome(message);
-    return;
+  let result = { handled: false, checking: [] };
+  try {
+    result = await chat.onSquadMessage(message, { command });
+  } catch (err) {
+    await logError('chat', err);
   }
-  const award = await xp.comment(message, xpSourceChannelId());
-  if (award) await notifyPromotion(message.from, award);
+  if (result.handled) return;
+  try {
+    if (message.new_chat_members) {
+      // Newcomers with the «Я не бот» check are greeted once they pass it.
+      const people = message.new_chat_members.filter((u) => !result.checking.includes(u.id));
+      if (people.length) await club.welcome({ ...message, new_chat_members: people });
+      return;
+    }
+    const award = await xp.comment(message, xpSourceChannelId());
+    if (award) await notifyPromotion(message.from, award);
+  } catch (err) {
+    await logError('xp.comment', err);
+  }
 }
 
 export async function onMessageReaction(event) {
@@ -463,14 +475,8 @@ const COMMANDS = {
 export async function onMessage(message) {
   const deadline = Date.now() + CALL_BUDGET_MS;
   try {
-    if (['group', 'supergroup'].includes(message.chat.type)) {
-      try {
-        await activityMessage(message);
-      } catch (err) {
-        await logError('xp.comment', err);
-      }
-    }
     const cmd = parseCommand(message);
+    if (['group', 'supergroup'].includes(message.chat.type)) await squadMessage(message, Boolean(cmd));
     if (cmd) {
       const handler = COMMANDS[cmd.command];
       if (!handler) return;
@@ -611,6 +617,8 @@ export async function onCallbackQuery(query) {
   let runJobId = null;
   let runPending = false;
   try {
+    // Marriage, divorce, «Я не бот» and «Снять мут» buttons in the chats.
+    if (await chat.handleCallback(query)) return;
     await withSession(query.from.id, async (s) => {
       await button_(query, s);
       runJobId = s.run_job || null;
@@ -678,6 +686,13 @@ export async function onChatMember(event) {
   try {
     await blacklist.handleChatMember(event);
     await club.handleJoin(event);
+    if (event.chat && ['group', 'supergroup'].includes(event.chat.type) && (await xpChatMatches(event.chat.id))) {
+      try {
+        await chat.onSquadChatMember(event);
+      } catch (err) {
+        await logError('chat.member', err);
+      }
+    }
   } finally {
     await pump({ deadline });
   }
@@ -721,6 +736,7 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     }],
     ['pump.blacklist', () => blacklist.retryPending(5)],
     ['club.tick', () => club.tick()],
+    ['chat.tick', () => chat.tick(() => leftMs(deadline))],
     ['pump.jobs', () => jobs.runPendingJobs(Math.min(10000, leftMs(deadline) - 2000))],
   ];
   for (const [where, step] of steps) {

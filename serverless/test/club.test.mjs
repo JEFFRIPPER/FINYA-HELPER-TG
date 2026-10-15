@@ -242,6 +242,8 @@ test('referrals: a personal link, XP for both once, no self or returning members
 
 test('welcome: one greeting for newcomers in the discussion group, the old one is removed', async () => {
   const api = await setup();
+  // Without the «Я не бот» check (see chat.test.mjs): newcomers are greeted at once.
+  await setSetting('chat_captcha', false);
   const joined = (...people) => groupMessage(DISCUSSION, people[0], undefined, { new_chat_members: people });
   await onMessage(joined(user(7, { first_name: 'Ник' })));
   let sent = api.called('sendMessage');
