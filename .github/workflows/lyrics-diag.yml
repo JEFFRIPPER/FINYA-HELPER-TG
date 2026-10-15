@@ -1,0 +1,29 @@
+name: Lyrics diagnostic (temporary)
+
+# Runs a read-only diagnostic module in the cloud with `tgcloud run` — nothing is deployed.
+on:
+  push:
+    branches: [claude/lyrics-diag]
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: serverless
+    env:
+      TGCLOUD_TOKEN: ${{ secrets.TGCLOUD_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: mkdir -p .tgcloud
+      - run: npx tgcloud fetch
+      - name: Run diagnostic
+        run: npx tgcloud run endpoints/zdiag '{}' 2>&1 | tee diag.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: diag
+          path: serverless/diag.txt
