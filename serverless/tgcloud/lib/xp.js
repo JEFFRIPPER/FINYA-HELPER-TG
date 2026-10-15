@@ -320,7 +320,7 @@ export async function grant(user, kind, key, pts, timestamp = nowInt()) {
 }
 
 // «фарм» in the chat: random XP once per FARM_COOLDOWN, outside the daily limit.
-export const FARM_COOLDOWN = 4 * 3600;
+export const FARM_COOLDOWN = 3600;
 export const FARM_MAX = 100;
 export const FARM_RARE_MAX = 200;
 export const FARM_RARE_CHANCE = 0.1;

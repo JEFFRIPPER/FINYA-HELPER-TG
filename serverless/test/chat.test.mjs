@@ -91,7 +91,7 @@ test('фарм: random XP, then a cooldown; parallel messages farm once', async 
   assert.match(lastSent(api), /фарм удался: \+51 XP/);
   assert.equal((await db.get('SELECT xp FROM profiles WHERE user_id = 1')).xp, 51);
   await say(user(1), 'Фарм!');
-  assert.match(lastSent(api), /Приходи через 4 ч/);
+  assert.match(lastSent(api), /Приходи через 1 ч/);
   // A rare roll goes over 100.
   Math.random = () => 0.05;
   await Promise.all([say(user(2), 'фарм'), say(user(2), 'фарм'), say(user(2), 'фарм')]);
