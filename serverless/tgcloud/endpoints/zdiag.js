@@ -38,18 +38,25 @@ export default async function () {
     }));
     out.tracks.push({ track, per });
   }
-  if (pick[0]) {
+  out.find = [];
+  for (const t of all.slice(0, 8)) {
     const s = Date.now();
     try {
-      const f = await findLyrics(pick[0]);
-      out.find = { ms: Date.now() - s, source: f && f.source, head: short(f && (f.synced || f.plain), 80) };
+      const f = await findLyrics(t);
+      out.find.push({ t: t.artist + ' - ' + t.title, ms: Date.now() - s, source: f && f.source, kind: f ? (f.synced ? (/<\d/.test(f.synced) ? 'word' : 'line') : 'plain') : null });
     } catch (e) {
-      out.find = { ms: Date.now() - s, err: short(e && (e.stack || e.message) || e, 300) };
+      out.find.push({ t: t.title, ms: Date.now() - s, err: short(e && (e.stack || e.message) || e, 300) });
     }
   }
   out.errors = await db.all(sql`SELECT at, source, text FROM error_log ORDER BY id DESC LIMIT 15`);
   out.cached = await db.all(sql`SELECT id, substr(body, 1, 140) AS body, fetched_at FROM music_lyrics ORDER BY fetched_at DESC LIMIT 8`);
   out.totalMs = Date.now() - t0;
   console.log('DIAG ' + JSON.stringify(out));
-  return out;
+  const hang = async (url) => {
+    const s = Date.now();
+    try { const r = await fetch(url); return { url, status: r.status, ms: Date.now() - s }; } catch (e) { return { url, err: short(e && e.message, 200), ms: Date.now() - s }; }
+  };
+  out.hang = await Promise.all([hang('http://10.255.255.1/'), hang('https://httpbin.org/delay/9'), hang('https://httpbin.org/delay/25')]);
+  console.log('HANG ' + JSON.stringify(out.hang));
+  return { ok: true };
 }
