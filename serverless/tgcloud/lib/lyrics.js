@@ -12,7 +12,13 @@ const GRACE_MS = 1500; // after a line-synced hit, how long to wait for a word-s
 const DEADLINE_MS = 9000; // the whole search
 const MAX_CHARS = 60000;
 
+// The serverless isolate has no timers at all (setTimeout and clearTimeout are
+// not defined), so there a request ends when the platform ends it and the
+// search ends on what the sources answer, not on a clock.
+const hasTimers = () => typeof setTimeout === 'function' && typeof clearTimeout === 'function';
+
 function withTimeout(promise) {
+  if (!hasTimers()) return promise;
   let timer;
   return Promise.race([
     promise,
@@ -425,21 +431,23 @@ async function lyricsOvh({ title, artist }) {
   return text ? { plain: text } : null;
 }
 
-// Order breaks ties between answers of the same kind.
+// Order breaks ties between answers of the same kind. The number is the best a
+// source can give (2 word-synced, 1 line-synced, 0 plain): the search stops
+// waiting for a source once something at least as good is found.
 export const SOURCES = [
-  ['Apple Music', paxsenix],
-  ['Lyrics+', lyricsPlus],
-  ['Musixmatch', musixmatch],
-  ['LRCLIB', lrclib],
-  ['NetEase', netease],
-  ['QQ Music', qqMusic],
-  ['Kugou', kugou],
-  ['Deezer', deezer],
-  ['LiriQo', liriqo],
-  ['Unison', unison],
-  ['Megalobiz', megalobiz],
-  ['Genius', genius],
-  ['lyrics.ovh', lyricsOvh],
+  ['Apple Music', paxsenix, 2],
+  ['Lyrics+', lyricsPlus, 2],
+  ['Musixmatch', musixmatch, 2],
+  ['LRCLIB', lrclib, 1],
+  ['NetEase', netease, 1],
+  ['QQ Music', qqMusic, 1],
+  ['Kugou', kugou, 1],
+  ['Deezer', deezer, 1],
+  ['LiriQo', liriqo, 2],
+  ['Unison', unison, 2],
+  ['Megalobiz', megalobiz, 1],
+  ['Genius', genius, 0],
+  ['lyrics.ovh', lyricsOvh, 0],
 ];
 
 function rank(hit) {
@@ -449,42 +457,50 @@ function rank(hit) {
 }
 
 // → { synced, plain, source } or null. All sources run in parallel; errors of
-// one source never stop the others. Returns as soon as a word-synced answer
-// comes, a moment after the first line-synced one, or at the deadline.
-export function findLyrics(track, sources = SOURCES, { grace = GRACE_MS, deadline = DEADLINE_MS } = {}) {
+// one source never stop the others. The search ends once no source still
+// running can beat the best answer so far. Where timers exist it also ends a
+// moment after the first line-synced answer and at the deadline.
+export function findLyrics(track, sources = SOURCES, { grace = GRACE_MS, deadline = DEADLINE_MS, timers = hasTimers() } = {}) {
   return new Promise((resolve) => {
     const hits = new Array(sources.length).fill(null);
-    let pending = sources.length;
+    const settled = new Array(sources.length).fill(false);
     let done = false;
     let graceTimer = null;
     let deadlineTimer = null;
+    const best = () => {
+      let b = -1;
+      hits.forEach((h, i) => { if (rank(h) > (b < 0 ? -1 : rank(hits[b]))) b = i; });
+      return b;
+    };
     const finish = () => {
       if (done) return;
       done = true;
-      clearTimeout(graceTimer);
-      clearTimeout(deadlineTimer);
-      let best = -1;
-      hits.forEach((h, i) => { if (rank(h) > (best < 0 ? -1 : rank(hits[best]))) best = i; });
-      if (best < 0) return resolve(null);
-      const h = hits[best];
-      const name = sources[best][0];
+      if (timers) {
+        clearTimeout(graceTimer);
+        clearTimeout(deadlineTimer);
+      }
+      const b = best();
+      if (b < 0) return resolve(null);
+      const h = hits[b];
+      const name = sources[b][0];
       resolve(rank(h) > 0
         ? { synced: h.synced.slice(0, MAX_CHARS), plain: null, source: name }
         : { synced: null, plain: String(h.plain).slice(0, MAX_CHARS), source: name });
     };
-    deadlineTimer = setTimeout(finish, deadline);
-    if (!pending) finish();
+    if (timers) deadlineTimer = setTimeout(finish, deadline);
+    if (!sources.length) finish();
     sources.forEach(([name, find], i) => {
       Promise.resolve()
         .then(() => find(track))
         .catch((err) => { console.warn(`[lyrics] ${name}: ${err && err.message}`); return null; })
         .then((hit) => {
           hits[i] = hit || null;
-          pending -= 1;
+          settled[i] = true;
           if (done) return;
-          const r = rank(hit);
-          if (r === 2 || pending === 0) finish();
-          else if (r === 1 && !graceTimer) graceTimer = setTimeout(finish, grace);
+          const b = best();
+          const r = b < 0 ? -1 : rank(hits[b]);
+          if (sources.every(([, , most = 2], j) => settled[j] || most <= r)) finish();
+          else if (r === 1 && timers && !graceTimer) graceTimer = setTimeout(finish, grace);
         });
     });
   });
