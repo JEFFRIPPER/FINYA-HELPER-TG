@@ -153,16 +153,16 @@ export const error_log = table('error_log', {
   text: text('text').notNull(),
 });
 
-// The owner's profile music, cached for the Mini App player: whole files split
-// into base64 chunks (music_chunks), their bookkeeping (music_cache) and
-// lyrics looked up on LRCLIB (music_lyrics).
+// Cache of the removed music player (tracks in base64 chunks and lyrics).
+// Marked deprecated so `tgcloud migrate` drops the tables; delete these
+// declarations once the drop has been applied.
 export const music_cache = table('music_cache', {
   id: text('id').primaryKey(),
   size: integer('size').notNull(),
   mime: text('mime').notNull(),
   chunks: integer('chunks').notNull(),
   used_at: integer('used_at').notNull(),
-});
+}).deprecated('music player removed');
 
 export const music_chunks = table('music_chunks', {
   id: text('id').notNull(),
@@ -170,10 +170,10 @@ export const music_chunks = table('music_chunks', {
   data: text('data').notNull(),
 }, (t) => ({
   pk: primaryKey({ columns: [t.id, t.idx] }),
-}));
+})).deprecated('music player removed');
 
 export const music_lyrics = table('music_lyrics', {
   id: text('id').primaryKey(),
   body: text('body'),
   fetched_at: integer('fetched_at').notNull(),
-});
+}).deprecated('music player removed');

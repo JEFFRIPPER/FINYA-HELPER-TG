@@ -113,7 +113,8 @@ export function table(name, columns, extra) {
   for (const c of constraints) {
     if (c.kind === 'index') statements.push(`CREATE INDEX ${c.name} ON ${name} (${c.cols.map((x) => x.name).join(', ')})`);
   }
-  return { __table: name, statements };
+  // .deprecated() marks a table for drop: it is not created.
+  return { __table: name, statements, deprecated: () => ({ __table: name, statements: [] }) };
 }
 
 export async function resetDb(schema) {
