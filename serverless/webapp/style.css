@@ -439,9 +439,9 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   z-index: 10;
   display: flex;
   justify-content: center;
+  /* Nearly opaque, so no backdrop-filter: it would re-blur the page under the bar
+     on every frame of scrolling for no visible difference. */
   background: linear-gradient(180deg, rgba(14, 3, 5, 0.97), rgba(9, 2, 3, 0.99));
-  -webkit-backdrop-filter: blur(16px);
-  backdrop-filter: blur(16px);
   border-top: 1px solid var(--line);
   padding-bottom: var(--inset-bottom);
   animation: rise var(--dur-long) var(--ease-emph-decel) both;
@@ -1118,15 +1118,18 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .player > :not(.p-amb-box) { position: relative; z-index: 1; }
 .p-amb-box { position: absolute; inset: 0; z-index: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
 .player.playing { box-shadow: 0 0 32px -8px var(--glow); }
-/* Ambient light: the cover, blurred, slowly turning behind the card while it plays. */
+/* Ambient light: the cover, blurred, slowly turning behind the card while it plays.
+   The blur is baked into a tiny canvas (app.js paintGlow): the GPU only turns it. */
 .p-amb {
   position: absolute; inset: -40%; opacity: 0;
-  background: var(--amb, none) center / cover, radial-gradient(closest-side, rgba(255, 30, 60, 0.55), transparent);
-  filter: blur(36px) saturate(1.6);
+  background: radial-gradient(closest-side, rgba(255, 30, 60, 0.55), transparent);
   transition: opacity 900ms var(--ease-standard);
-  animation: amb-turn 26s linear infinite paused;
 }
-.player.playing .p-amb { opacity: 0.3; animation-play-state: running; }
+.glow { position: absolute; inset: 0; width: 100%; height: 100%; will-change: transform; }
+.glow[hidden] { display: none; }
+.p-amb .glow { animation: amb-turn 26s linear infinite paused; }
+.player.playing .p-amb { opacity: 0.3; }
+.player.playing .p-amb .glow { animation-play-state: running; }
 @keyframes amb-turn { to { transform: rotate(360deg); } }
 .player-head { display: flex; align-items: center; justify-content: space-between; margin: -4px -6px 8px 0; }
 .player .kicker {
@@ -1230,10 +1233,10 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .peek-track { position: absolute; top: 0; left: 0; right: 0; transition: transform 700ms var(--ease-emph-decel); will-change: transform; }
 .pl {
   margin: 0; padding: 3px 2px; text-align: center; font-size: 15px; line-height: 21px; font-weight: 700;
-  color: rgba(248, 233, 234, 0.55); opacity: 0.55; transform: scale(0.84); filter: blur(0.6px);
-  transition: transform 600ms var(--ease-emph-decel), opacity 450ms linear, filter 450ms linear;
+  color: rgba(248, 233, 234, 0.3); transform: scale(0.84);
+  transition: transform 600ms var(--ease-emph-decel), color 450ms linear;
 }
-.pl.on { opacity: 1; transform: none; filter: none; color: rgba(255, 236, 239, 0.42); }
+.pl.on { transform: none; color: rgba(255, 236, 239, 0.42); }
 .peek-status {
   position: absolute; inset: 0; margin: 0; padding: 0 4px; display: flex; align-items: center; justify-content: center;
   text-align: center; font-size: 14px; line-height: 20px; font-weight: 500; color: var(--text-2);
@@ -1243,21 +1246,20 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 @keyframes status-breathe { 0%, 100% { opacity: 0.45; } 50% { opacity: 1; } }
 @keyframes text-shine { from { background-position: 100% 0; } to { background-position: 0 0; } }
 
-/* Words of the current line: waiting ones are soft, sung ones glow, the one
-   being sung fills from left to right (--p is its progress, 0…1). */
+/* Words of the current line: waiting ones are dim, sung ones glow, the one being
+   sung fills from left to right (--p is its progress, 0…1). The fill starts and
+   ends at exactly the dim and the white colour, so switching state is seamless:
+   a colour transition from transparent here made every word blink when it ended.
+   No filter or transform per word either (each became a GPU layer), and the glow
+   is not animated: a text-shadow transition lays the page out on every frame. */
 .wd { white-space: nowrap; }
-.w {
-  display: inline-block;
-  transition: color 240ms linear, transform 700ms var(--ease-emph-decel), filter 320ms linear, text-shadow 500ms linear;
-}
-.on .w { transform: translateY(2px); filter: blur(0.6px); }
-.on .w.now, .on .w.done { transform: none; filter: none; }
+.w { display: inline-block; transition: color 300ms linear; }
 .on .w.now {
-  color: transparent;
+  color: transparent; transition: none;
   background-image: linear-gradient(90deg, #fff calc(var(--p, 0) * 140% - 40%), rgba(255, 236, 239, 0.42) calc(var(--p, 0) * 140%));
   -webkit-background-clip: text; background-clip: text;
 }
-.on .w.done { color: #fff; text-shadow: 0 0 16px var(--glow); }
+.on .w.done { color: #fff; text-shadow: 0 0 16px var(--glow); transition: none; }
 .gap .dots { display: inline-flex; gap: 6px; padding: 6px 0; }
 .gap .dots i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; opacity: 0.5; }
 .gap.on .dots i { background: #fff; animation: dot-breathe 1.2s ease-in-out infinite; box-shadow: 0 0 10px var(--glow); }
@@ -1290,8 +1292,8 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .q-t small { color: var(--text-2); font-size: 12px; }
 .q-d { color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; }
 
-/* Full-screen lyrics. The screen grows out of the card (clip-path), the lines
-   glide with a slight wave, far lines blur, the finger can browse them. */
+/* Full-screen lyrics. The screen grows out of the card (clip-path), the text
+   glides as one layer, the finger can browse it. */
 .karaoke {
   position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; overflow: hidden; overflow: clip;
   background: #070203;
@@ -1303,11 +1305,10 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .karaoke.leave > * { transition-delay: 0ms; transition-duration: 160ms; }
 .k-bg {
   position: absolute; inset: -60px; z-index: 0;
-  background: var(--cover, none) center / cover, radial-gradient(80% 60% at 50% 30%, #5a0a18, #070203 70%);
-  filter: blur(46px) brightness(0.42) saturate(1.4);
-  animation: bg-drift 28s ease-in-out infinite alternate paused;
+  background: radial-gradient(80% 60% at 50% 30%, #2a030a, #030101 70%);
 }
-.karaoke.playing .k-bg, .karaoke.playing .k-shape { animation-play-state: running; }
+.k-bg .glow { animation: bg-drift 28s ease-in-out infinite alternate paused; }
+.karaoke.playing .k-bg .glow, .karaoke.playing .k-shape { animation-play-state: running; }
 @keyframes bg-drift { to { transform: scale(1.22) rotate(10deg) translate(-4%, 3%); } }
 .k-shapes { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .k-shape {
@@ -1330,22 +1331,25 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .k-head b { display: block; font-size: 17px; line-height: 22px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-head span { display: block; color: var(--text-2); font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .k-lines {
-  flex: 1; min-height: 0; overflow: hidden; overflow: clip; touch-action: none; --y: 0px; -webkit-user-select: none; user-select: none;
-  -webkit-mask: linear-gradient(transparent, #000 14%, #000 80%, transparent);
-          mask: linear-gradient(transparent, #000 14%, #000 80%, transparent);
+  flex: 1; min-height: 0; overflow: hidden; overflow: clip; touch-action: none; -webkit-user-select: none; user-select: none;
+  -webkit-mask: linear-gradient(transparent, #000 14%, #000 56%, rgba(0, 0, 0, 0.5) 84%, transparent);
+          mask: linear-gradient(transparent, #000 14%, #000 56%, rgba(0, 0, 0, 0.5) 84%, transparent);
 }
 .k-lines.plain { overflow-y: auto; touch-action: pan-y; scrollbar-width: none; -webkit-user-select: text; user-select: text; }
 .k-lines::-webkit-scrollbar { display: none; }
+.k-track { position: relative; transition: transform 860ms cubic-bezier(0.16, 1, 0.3, 1); will-change: transform; }
+.k-lines.free .k-track { transition: none; }
 .k-line {
   margin: 0; padding: 7px 24px; font-size: 27px; line-height: 35px; font-weight: 800; letter-spacing: -0.2px;
-  color: rgba(248, 233, 234, 0.3); cursor: pointer; transform-origin: 24px 50%;
-  transform: translateY(var(--y)) scale(0.94);
-  filter: blur(calc(var(--d, 0) * 0.5px)); opacity: calc(1 - var(--d, 0) * 0.1);
-  transition: transform 860ms cubic-bezier(0.16, 1, 0.3, 1) var(--delay, 0ms), filter 500ms linear, opacity 500ms linear, color 400ms linear;
+  color: rgba(248, 233, 234, 0.3); cursor: pointer; transform-origin: 24px 50%; transform: scale(0.94);
+  transition: transform 600ms cubic-bezier(0.16, 1, 0.3, 1), color 400ms linear;
 }
-.k-line.on { transform: translateY(var(--y)) scale(1); color: rgba(255, 236, 239, 0.42); }
+.k-line.on { transform: none; color: rgba(255, 236, 239, 0.42); }
 .k-line.past { color: rgba(248, 233, 234, 0.45); }
-.k-lines.free .k-line { filter: none; opacity: 1; transition-property: filter, opacity, color; }
+
+/* Under the full-screen lyrics the page is neither drawn nor animated. */
+.k-cover #app, .k-cover .backdrop { visibility: hidden; }
+.k-cover #app *, .k-cover .backdrop i { animation-play-state: paused !important; }
 .k-plain { margin: 0; padding: 24px; white-space: pre-line; font-size: 18px; line-height: 28px; color: var(--text); }
 .k-wait { display: grid; gap: 14px; padding: 18vh 24px 0; }
 .k-wait i {

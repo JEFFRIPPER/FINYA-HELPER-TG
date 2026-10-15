@@ -1014,11 +1014,15 @@
     return h('span', { class: 'eqb', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'), h('i'));
   }
 
+  // 300 steps: about a pixel each. Moving the thumb lays the page out again, so it
+  // moves only when it would visibly move; the red fill follows smoothly (--fill).
+  var SEEK_STEPS = 300;
+
   function seekBar() {
-    var seek = h('input', { class: 'seek', type: 'range', min: '0', max: '1000', value: '0', 'aria-label': 'Перемотка' });
+    var seek = h('input', { class: 'seek', type: 'range', min: '0', max: String(SEEK_STEPS), value: '0', 'aria-label': 'Перемотка' });
     seek.addEventListener('input', function () {
       var a = music.audio;
-      if (a && a.duration) a.currentTime = (seek.value / 1000) * a.duration;
+      if (a && a.duration) a.currentTime = (seek.value / SEEK_STEPS) * a.duration;
       drawProgress();
       drawLyrics(true);
     });
@@ -1036,7 +1040,8 @@
     el.hidden = !list.length;
     if (el.hidden) return;
     var ui = music.ui = { views: null };
-    ui.amb = h('div', { class: 'p-amb' });
+    ui.glow = glowCanvas();
+    ui.amb = h('div', { class: 'p-amb' }, ui.glow);
     ui.cover = h('div', { class: 'cover' }, icon('music_note_fill'));
     ui.title = h('b', { class: 'p-title' });
     ui.artist = h('span', { class: 'p-artist' });
@@ -1101,8 +1106,55 @@
       v.coverSrc = src;
       v.cover.replaceChildren(src ? h('img', { src: src, alt: '' }) : icon('music_note_fill'));
     });
-    if (music.ui) music.ui.amb.style.setProperty('--amb', src ? 'url("' + src + '")' : 'none');
-    if (music.karaoke) music.karaoke.style.setProperty('--cover', src ? 'url("' + src + '")' : 'none');
+    if (music.ui) paintGlow(music.ui.glow, src, 3.5, 1, 1.6);
+    if (music.k) paintGlow(music.k.glow, src, 3, 0.42, 1.4);
+  }
+
+  // The blurred cover behind the player: blurred once into a tiny canvas that the
+  // GPU only stretches and moves. A CSS filter: blur() over the whole screen is
+  // redone on every frame and drops a phone to 25 fps.
+  function glowCanvas() {
+    return h('canvas', { class: 'glow', width: '64', height: '64', hidden: true });
+  }
+
+  function paintGlow(c, src, blur, dim, sat) {
+    if (c.coverSrc === src) return;
+    c.coverSrc = src;
+    c.hidden = !src;
+    if (!src) return;
+    var img = new Image();
+    img.onload = function () {
+      if (c.coverSrc !== src || !img.width) return;
+      // Same proportions as the box it fills, 64 px on the long side.
+      var bw = c.parentNode ? c.parentNode.clientWidth : 0;
+      var bh = c.parentNode ? c.parentNode.clientHeight : 0;
+      var r = bw && bh ? bw / bh : 1;
+      c.width = r >= 1 ? 64 : Math.max(8, Math.round(64 * r));
+      c.height = r >= 1 ? Math.max(8, Math.round(64 / r)) : 64;
+      var ctx = c.getContext('2d');
+      var s = Math.max(c.width / img.width, c.height / img.height);
+      var w = img.width * s + blur * 4;
+      var hh = img.height * s + blur * 4;
+      var x = (c.width - w) / 2;
+      var y = (c.height - hh) / 2;
+      ctx.clearRect(0, 0, c.width, c.height);
+      if ('filter' in ctx) {
+        ctx.filter = 'blur(' + blur + 'px) brightness(' + dim + ') saturate(' + sat + ')';
+        ctx.drawImage(img, x, y, w, hh);
+        ctx.filter = 'none';
+        return;
+      }
+      // No canvas filters (older Safari): a 6-pixel copy stretched back is soft enough.
+      var t = document.createElement('canvas');
+      t.width = t.height = 6;
+      t.getContext('2d').drawImage(img, 0, 0, 6, 6);
+      ctx.drawImage(t, 0, 0, c.width, c.height);
+      if (dim < 1) {
+        ctx.fillStyle = 'rgba(0, 0, 0, ' + (1 - dim) + ')';
+        ctx.fillRect(0, 0, c.width, c.height);
+      }
+    };
+    img.src = src;
   }
 
   function setMusicLoad(p) {
@@ -1137,11 +1189,18 @@
     var a = music.audio;
     if (!a) return;
     var d = a.duration || 0;
+    var p = d ? a.currentTime / d : 0;
+    var val = String(Math.round(p * SEEK_STEPS));
+    var fill = (p * 100).toFixed(1) + '%';
+    var cur = fmtTime(a.currentTime);
+    var dur = d ? fmtTime(d) : '';
+    // Called on every frame: the DOM is touched only when a value really changes,
+    // otherwise the page is laid out again 90–120 times a second.
     [music.ui, music.k].filter(Boolean).forEach(function (v) {
-      if (document.activeElement !== v.seek) v.seek.value = d ? String(Math.round((a.currentTime / d) * 1000)) : '0';
-      v.seek.style.setProperty('--fill', (d ? (a.currentTime / d) * 100 : 0) + '%');
-      v.tCur.textContent = fmtTime(a.currentTime);
-      if (d) v.tDur.textContent = fmtTime(d);
+      if (document.activeElement !== v.seek && v.seek.value !== val) v.seek.value = val;
+      if (v.fill !== fill) { v.fill = fill; v.seek.style.setProperty('--fill', fill); }
+      if (v.tCur.textContent !== cur) v.tCur.textContent = cur;
+      if (dur && v.tDur.textContent !== dur) v.tDur.textContent = dur;
     });
   }
 
@@ -1270,7 +1329,8 @@
           drawLyrics(true);
         });
       });
-      k.box.replaceChildren.apply(k.box, k.rows);
+      k.track.replaceChildren.apply(k.track, k.rows);
+      k.box.replaceChildren(k.track);
     } else if (music.lyricsWait && music.cur >= 0) {
       k.box.replaceChildren(h('div', { class: 'k-wait' }, h('i'), h('i'), h('i'), h('i'), h('p', { text: 'Ищу текст во всех источниках…' })));
     } else {
@@ -1291,18 +1351,16 @@
     var last = k.rows[k.rows.length - 1];
     var anchor = k.box.clientHeight * 0.3;
     k.y = Math.max(anchor - last.offsetTop, Math.min(anchor - first.offsetTop, y));
-    k.box.style.setProperty('--y', k.y.toFixed(1) + 'px');
+    k.track.style.transform = 'translate3d(0, ' + k.y.toFixed(1) + 'px, 0)';
   }
 
-  // Lines below the current one start moving a little later: a soft wave.
+  // The whole text is one layer that glides; only the lines that change state repaint.
   function placeKaraoke(i) {
     var k = music.k;
     if (!k || !k.rows || !k.rows.length) return;
     k.rows.forEach(function (r, j) {
       r.classList.toggle('on', j === i);
       r.classList.toggle('past', j < i);
-      r.style.setProperty('--d', String(Math.min(Math.abs(j - Math.max(i, 0)), 5)));
-      r.style.setProperty('--delay', (j > i ? Math.min((j - i) * 45, 360) : 0) + 'ms');
     });
     if (!k.free) setKaraokeY(karaokeY(i));
   }
@@ -1370,13 +1428,15 @@
     k.artist = h('span');
     k.info = h('div', { class: 'body p-info' }, k.title, k.artist);
     k.box = h('div', { class: 'k-lines' });
+    k.track = h('div', { class: 'k-track' });
+    k.glow = glowCanvas();
     k.seek = seekBar();
     k.tCur = h('span', { class: 't-cur', text: '0:00' });
     k.tDur = h('span', { class: 't-dur', text: '0:00' });
     k.play = playButton();
     k.src = h('p', { class: 'k-src' });
     var layer = h('div', { class: 'karaoke', role: 'dialog', 'aria-label': 'Текст песни' },
-      h('div', { class: 'k-bg', 'aria-hidden': 'true' }),
+      h('div', { class: 'k-bg', 'aria-hidden': 'true' }, k.glow),
       h('div', { class: 'k-shapes', 'aria-hidden': 'true' }, shape(9, 0.07, 's1'), shape(6, 0.14, 's2'), shape(4, 0.18, 's3'), shape(12, 0.05, 's4')),
       h('header', { class: 'k-head' }, k.cover, k.info,
         h('button', { class: 'icon-btn ripple', 'aria-label': 'Закрыть', onclick: closeKaraoke }, icon('close'))),
@@ -1400,9 +1460,16 @@
     layer.getBoundingClientRect();
     requestAnimationFrame(function () {
       layer.classList.add('open');
-      layer.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
+      if (layer.style.clipPath) layer.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
       drawLyrics(true);
     });
+    // Once the screen has grown, the clip goes (it would cost a full-screen pass on
+    // every frame) and the page underneath stops being drawn.
+    setTimeout(function () {
+      if (music.karaoke !== layer) return;
+      layer.style.clipPath = '';
+      document.documentElement.classList.add('k-cover');
+    }, reduceMotion ? 0 : 560);
     try { tg.BackButton.onClick(closeKaraoke); tg.BackButton.show(); } catch (e) { /* old client */ }
     // Dragging the lyrics down must not fold the Mini App (Bot API 7.7+).
     try { if (tg.isVersionAtLeast('7.7')) tg.disableVerticalSwipes(); } catch (e) { /* old client */ }
@@ -1421,12 +1488,18 @@
     music.k = null;
     try { tg.BackButton.offClick(closeKaraoke); tg.BackButton.hide(); } catch (e) { /* old client */ }
     try { if (tg.isVersionAtLeast('7.7')) tg.enableVerticalSwipes(); } catch (e) { /* old client */ }
+    document.documentElement.classList.remove('k-cover');
     var to = music.el && music.el.isConnected ? music.el.getBoundingClientRect() : null;
     var onScreen = to && to.height && to.bottom > 0 && to.top < innerHeight;
+    if (onScreen && !reduceMotion && !layer.style.clipPath) {
+      layer.style.clipPath = 'inset(0px 0px 0px 0px round 0px)';
+      layer.getBoundingClientRect();
+    }
     layer.classList.remove('open');
     layer.classList.add('leave');
     if (onScreen && !reduceMotion) layer.style.clipPath = cardInset(to);
     setTimeout(function () { layer.remove(); }, reduceMotion ? 0 : 420);
+    drawProgress();
     drawLyrics(true);
   }
 
