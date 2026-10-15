@@ -4,6 +4,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_ID, SQUAD_LINKS } from './config.js';
+import { withPremium } from './emoji.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
 import { escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
@@ -518,11 +519,11 @@ export async function welcome(message) {
     'Здесь обсуждают посты @THKC_SQUAD. Пиши комментарии и ставь реакции: за них Финя даёт XP, ' +
     'звания, ачивки и награды.\n\n' +
     `📜 Сначала загляни в <a href="${SQUAD_LINKS.rules}">правила</a>.`;
-  const sent = await api.sendMessage({
+  const sent = await withPremium({
     chat_id: message.chat.id, text, parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
     reply_markup: await profileButton('👤 Профиль и награды'),
-  });
+  }, (p) => api.sendMessage(p));
   // Only the newest greeting stays, so a wave of joins doesn't flood the chat.
   const previous = await getSetting(`welcome_last:${chatId}`);
   await setSetting(`welcome_last:${chatId}`, sent && sent.message_id ? sent.message_id : null);

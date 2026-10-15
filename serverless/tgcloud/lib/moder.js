@@ -7,6 +7,7 @@ import { getSetting, logError } from './store.js';
 import { answer, button, getMe, isApiError, isRetryAfter, keyboard } from './tg.js';
 import { boldHtml, escapeHtml, nowInt, truncate } from './util.js';
 import * as club from './club.js';
+import { withPremium } from './emoji.js';
 
 const MIN = 60;
 const HOUR = 3600;
@@ -254,11 +255,11 @@ export async function checkFlood(message) {
     if (!(err instanceof ModError)) throw err;
     return null; // No rights here: the guard stays quiet.
   }
-  return api.sendMessage({
+  return withPremium({
     chat_id: chatId, parse_mode: 'HTML',
     text: boldHtml(`🔇 ${mention(u.id, [u.first_name, u.last_name].filter(Boolean).join(' '))} получает мут на ${fmtDuration(FLOOD_MUTE)} за флуд.`),
     reply_markup: unmuteKeyboard(u.id),
-  });
+  }, (p) => api.sendMessage(p));
 }
 
 // ---- «Я не бот» --------------------------------------------------------------------
@@ -295,7 +296,7 @@ export async function onJoin(chat, user, replyTo = null) {
     reply_markup: keyboard([[button('✅ Я не бот', { callback_data: `cap:${user.id}` })]]),
   };
   if (replyTo) params.reply_parameters = { message_id: replyTo, allow_sending_without_reply: true };
-  const sent = await api.sendMessage(params);
+  const sent = await withPremium(params, (p) => api.sendMessage(p));
   await db.run(sql`UPDATE captcha SET message_id = ${sent && sent.message_id ? sent.message_id : null}
     WHERE chat_id = ${chat.id} AND user_id = ${user.id}`);
   return true;
@@ -405,9 +406,9 @@ export async function unmuteButton(query, userId) {
   } catch {
     // Too old or unchanged.
   }
-  await api.sendMessage({
+  await withPremium({
     chat_id: chatId, parse_mode: 'HTML',
     text: boldHtml(`🔊 Мут снят админом ${mention(query.from.id, userName(query.from))}.`),
     reply_parameters: { message_id: query.message.message_id, allow_sending_without_reply: true },
-  });
+  }, (p) => api.sendMessage(p));
 }
