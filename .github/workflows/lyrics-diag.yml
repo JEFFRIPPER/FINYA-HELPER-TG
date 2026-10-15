@@ -5,6 +5,9 @@ on:
   push:
     branches: [claude/lyrics-diag]
 
+permissions:
+  contents: write
+
 jobs:
   diag:
     runs-on: ubuntu-latest
@@ -34,9 +37,13 @@ jobs:
             cat o_*.txt >> diag.txt
             rm -f o_*.txt
           done
-      # Logs and artifacts are not readable from where this is debugged; annotations are.
-      - name: Publish as annotations
+      # Logs and artifacts are not readable from where this is debugged: the
+      # result is committed to this temporary branch instead.
+      - name: Save the result to the branch
         if: always()
-        run: >-
-          node -e "const s=require('fs').readFileSync('diag.txt','utf8').replace(/\x1b\[[0-9;]*m/g,'');
-          for(let i=0,n=0;i<s.length&&n<10;i+=6000,n++)console.log('::notice title=diag'+n+'::'+s.slice(i,i+6000).replace(/%/g,'%25').replace(/\r/g,'%0D').replace(/\n/g,'%0A'))"
+        run: |
+          sed -i 's/\x1b\[[0-9;]*m//g' diag.txt
+          mkdir -p ../diag && cp diag.txt "../diag/run-${{ github.run_id }}.txt"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add ../diag && git commit -m "diag ${{ github.run_id }}" && git push
