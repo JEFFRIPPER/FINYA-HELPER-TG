@@ -6,7 +6,9 @@ import { SOURCES, findLyrics } from '../lib/lyrics.js';
 
 const short = (s, n = 160) => (s == null ? s : String(s).slice(0, n));
 
-export default async function () {
+export default async function (input = {}) {
+  if (input.mode === 'env') return env();
+  if (input.mode === 'hang') return hang(input.url);
   const out = {
     env: {
       setTimeout: typeof setTimeout, clearTimeout: typeof clearTimeout,
@@ -52,11 +54,32 @@ export default async function () {
   out.cached = await db.all(sql`SELECT id, substr(body, 1, 140) AS body, fetched_at FROM music_lyrics ORDER BY fetched_at DESC LIMIT 8`);
   out.totalMs = Date.now() - t0;
   console.log('DIAG ' + JSON.stringify(out));
-  const hang = async (url) => {
-    const s = Date.now();
-    try { const r = await fetch(url); return { url, status: r.status, ms: Date.now() - s }; } catch (e) { return { url, err: short(e && e.message, 200), ms: Date.now() - s }; }
-  };
-  out.hang = await Promise.all([hang('http://10.255.255.1/'), hang('https://httpbin.org/delay/9'), hang('https://httpbin.org/delay/25')]);
-  console.log('HANG ' + JSON.stringify(out.hang));
   return { ok: true };
+}
+
+async function env() {
+  const g = Object.getOwnPropertyNames(globalThis).sort();
+  const out = { globals: g.join(','), ua: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+    waitAsync: typeof Atomics !== 'undefined' && typeof Atomics.waitAsync, sab: typeof SharedArrayBuffer,
+    scheduler: typeof scheduler !== 'undefined' ? Object.keys(scheduler).join(',') : null };
+  console.log('ENV ' + JSON.stringify(out));
+  if (out.waitAsync === 'function' && out.sab === 'function') {
+    const ia = new Int32Array(new SharedArrayBuffer(4));
+    const s = Date.now();
+    const r = Atomics.waitAsync(ia, 0, 0, 300);
+    out.wait = { async: r.async, value: r.async ? await r.value : r.value, ms: Date.now() - s };
+    console.log('WAIT ' + JSON.stringify(out.wait));
+  }
+  return out;
+}
+
+async function hang(url) {
+  const s = Date.now();
+  console.log('HANG start ' + url);
+  try {
+    const r = await fetch(url);
+    return { url, status: r.status, ms: Date.now() - s };
+  } catch (e) {
+    return { url, err: short(e && e.message, 200), ms: Date.now() - s };
+  }
 }

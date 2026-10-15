@@ -22,7 +22,12 @@ jobs:
       - run: mkdir -p .tgcloud
       - run: npx tgcloud fetch
       - name: Run diagnostic
-        run: npx tgcloud run endpoints/zdiag '{}' 2>&1 | tee diag.txt
+        run: |
+          (time npx tgcloud run endpoints/zdiag '{ mode: "env" }') > d1.txt 2>&1 || true
+          (time npx tgcloud run endpoints/zdiag '{}') > d2.txt 2>&1 || true
+          (time npx tgcloud run endpoints/zdiag '{ mode: "hang", url: "https://httpbin.org/delay/12" }') > d3.txt 2>&1 || true
+          (time npx tgcloud run endpoints/zdiag '{ mode: "hang", url: "http://10.255.255.1/" }') > d4.txt 2>&1 || true
+          cat d1.txt d2.txt d3.txt d4.txt > diag.txt
       # Logs and artifacts are not readable from where this is debugged; annotations are.
       - name: Publish as annotations
         if: always()
