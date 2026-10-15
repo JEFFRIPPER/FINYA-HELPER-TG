@@ -29,6 +29,14 @@
     mood_fill: 'M626-533q22.5 0 38.25-15.5T680-587q0-23-15.75-38.5T626-641q-22.5 0-38.25 15.5T572-587q0 23 15.75 38.5T626-533Zm-292 0q22.5 0 38.25-15.5T388-587q0-23-15.75-38.5T334-641q-22.5 0-38.25 15.5T280-587q0 23 15.75 38.5T334-533Zm-10 421.5Q251-143 197-197t-85.5-127Q80-397 80-480t31.5-156Q143-709 197-763t127-85.5Q397-880 480-880t156 31.5Q709-817 763-763t85.5 127Q880-563 880-480t-31.5 156Q817-251 763-197t-127 85.5Q563-80 480-80t-156-31.5ZM479.5-261q57.5 0 106-26t78.5-72.4q6-11.6-.75-22.6-6.75-11-20.25-11H316.92q-13.92 0-20.42 11-6.5 11-.5 22.6 30 46.4 78.5 72.4 48.5 26 105 26Z',
     redeem_fill: 'M140-277v97h680v-97H140Zm0-443h125q-5-9-8-22.5t-3-24.5q0-47 33-80t79-33q31 0 57 15.5t41 39.5l16 26 17-26q16-25 41-40t54-15q48 0 81 32.5t33 80.5q0 11-2.5 22t-7.5 25h124q24 0 42 18t18 42v480q0 24-18 42t-42 18H140q-24 0-42-18t-18-42v-480q0-24 18-42t42-18Zm0 336h680v-276H571l83 115q8 10 5.5 22T647-503q-10 8-22 6t-20-13L480-683 355-510q-8 11-19.5 13t-22.5-6q-10-8-12.5-20t5.5-22l83-115H140v276Zm264.5-345.5Q420-745 420-767t-15.5-37.5Q389-820 367-820t-37.5 15.5Q314-789 314-767t15.5 37.5Q345-714 367-714t37.5-15.5ZM592-714q23 0 38.5-15.5T646-767q0-22-15.5-37.5T592-820q-21 0-36.5 15.5T540-767q0 22 15.5 37.5T592-714Z',
     quiz_fill: 'M572-352q12-12 12-29t-12-29q-12-12-29-12t-29 12q-12 12-12 29t12 29q12 12 29 12t29-12Zm-30-114q10 0 16.5-6.5T567-489q2-14 11-27.5t28-31.5q28-27 38-46t10-45q0-46-31.5-75T540-743q-32 0-59 15t-43 42q-5 8-1 17t14 14q9 4 18 .5t15-11.5q11-16 25-23.5t31-7.5q29 0 48 17t19 43q0 19-9 33.5T566-570q-22 18-33.5 38.5T519-489q-1 9 6 16t17 7ZM260-200q-24 0-42-18t-18-42v-560q0-24 18-42t42-18h560q24 0 42 18t18 42v560q0 24-18 42t-42 18H260ZM140-80q-24 0-42-18t-18-42v-590q0-13 8.5-21.5T110-760q13 0 21.5 8.5T140-730v590h590q13 0 21.5 8.5T760-110q0 13-8.5 21.5T730-80H140Z',
+    play_arrow_fill: 'M320-258v-450q0-14 9-22t21-8q4 0 8 1t8 3l354 226q7 5 10.5 11t3.5 14q0 8-3.5 14T720-458L366-232q-4 2-8 3t-8 1q-12 0-21-8t-9-22Z',
+    pause_fill: 'M615-200q-24.75 0-42.37-17.63Q555-235.25 555-260v-440q0-24.75 17.63-42.38Q590.25-760 615-760h55q24.75 0 42.38 17.62Q730-724.75 730-700v440q0 24.75-17.62 42.37Q694.75-200 670-200h-55Zm-325 0q-24.75 0-42.37-17.63Q230-235.25 230-260v-440q0-24.75 17.63-42.38Q265.25-760 290-760h55q24.75 0 42.38 17.62Q405-724.75 405-700v440q0 24.75-17.62 42.37Q369.75-200 345-200h-55Z',
+    skip_next_fill: 'M680-270v-420q0-13 8.5-21.5T710-720q13 0 21.5 8.5T740-690v420q0 13-8.5 21.5T710-240q-13 0-21.5-8.5T680-270Zm-460-27v-366q0-14 9-22t21-8q5 0 9 1.5t8 4.5l263 182q7 5 10 11.5t3 13.5q0 7-3 13.5T530-455L267-273q-4 3-8 4.5t-9 1.5q-12 0-21-8t-9-22Z',
+    skip_previous_fill: 'M220-270v-420q0-13 8.5-21.5T250-720q13 0 21.5 8.5T280-690v420q0 13-8.5 21.5T250-240q-13 0-21.5-8.5T220-270Zm473-3L430-455q-7-5-10-11.5t-3-13.5q0-7 3-13.5t10-11.5l263-182q4-3 8-4.5t9-1.5q12 0 21 8t9 22v366q0 14-9 22t-21 8q-5 0-9-1.5t-8-4.5Z',
+    lyrics_fill: 'M270-410h100q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H270q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5Zm489.88-80Q714-490 682-522.12q-32-32.12-32-78T682.06-678q32.06-32 77.86-32 10.08 0 22.58 3 12.5 3 27.5 8v-191q0-12.75 8.63-21.38Q827.25-920 840-920h90q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5h-60v260q0 45.83-32.12 77.92-32.12 32.08-78 32.08ZM270-530h220q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H270q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5Zm0-120h220q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H270q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5Zm-30 410L131-131q-5 5-10.5 7t-10.83 2Q99-122 89.5-130q-9.5-8-9.5-22v-668q0-24.75 17.63-42.38Q115.25-880 140-880h480q31 0 53.5 21t22.5 52q0 17-8.4 31.41-8.39 14.42-22.6 23.59-39 25-62 65.18-23 40.18-23 86.61 0 48.21 23.5 88.71Q627-471 668-446q25.67 15.79 40.83 41.89Q724-378 724-348q0 45-30 76.5T620-240H240Z',
+    music_note_fill: 'M286.5-163.5Q243-207 243-270t43.5-106.5Q330-420 393-420q28 0 50.5 8t39.5 22v-420q0-13 8.5-21.5T513-840h174q13 0 21.5 8.5T717-810v75q0 13-8.5 21.5T687-705H543v435q0 63-43.5 106.5T393-120q-63 0-106.5-43.5Z',
+    queue_music_fill: 'M642.94-160q-47.94 0-81.44-33.56t-33.5-81.5q0-47.94 32.67-81.44Q593.33-390 640-390q15.97 0 30.48 3Q685-384 698-377v-308q0-14.88 10.35-24.94T734-720h111q14.88 0 24.94 10.29t10.06 25.5Q880-669 869.94-659T845-649h-87v375q0 47.5-33.56 80.75T642.94-160ZM150-320q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h246q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H150Zm0-170q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h413q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H150Zm0-170q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h413q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H150Z',
+    graphic_eq: 'M285-270v-420q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v420q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm165 160v-740q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v740q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63Q450-97.25 450-110ZM120-430v-100q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v100q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm495 160v-420q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v420q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm165-160v-100q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v100q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Z',
     storefront_fill: 'M179-120q-24 0-42-18t-18-42v-339q-28-24-37-59t2-70l43-135q8-27 28-42t46-15h553q28 0 49 15.5t29 41.5l44 135q11 35 1.5 70T840-519v339q0 24-18 42t-42 18H179Zm391-430q29 0 49-19t16-46l-25-165H510v165q0 26 17 45.5t43 19.5Zm-187 0q28 0 47.5-19t19.5-46v-165H350l-25 165q-4 26 14 45.5t44 19.5Zm-182 0q24 0 41.5-16.5T263-607l26-173H189l-46 146q-10 31 8 57.5t50 26.5Zm557 0q32 0 50.5-26t8.5-58l-46-146H671l26 173q3 24 20.5 40.5T758-550Z',
     rocket_launch_fill: 'M263-465q26-69 64.5-130.5T415-712l-77-15q-20-4-39.5 2T265-705L129-568q-11 11-8 26.5t17 21.5l125 55Zm580-398q-109-8-206.5 37.5T461-702q-50 50-88.5 106.5T309-473q-4 10-4 20t8 18l135 135q8 8 18 8t20-4q66-24 122.5-63T715-448q78-78 124-175.5T877-830q-1-6-3.5-11.5T866-852q-5-5-10.5-7.5T843-863ZM566-622.5q0-29.5 20-49.5t49.5-20q29.5 0 49.5 20t20 49.5q0 29.5-20 49.5t-49.5 20q-29.5 0-49.5-20t-20-49.5ZM479-250l54 125q6 15 22 17.5t27-8.5l136-136q14-14 20-33.5t2-39.5l-14-77q-55 49-116.5 87.5T479-250Zm-317-68q35-35 85-35.5t85 34.5q35 35 35 85t-35 85q-48 48-113.5 57T87-74q9-66 18.5-131.5T162-318Z',
     account_balance_fill: 'M212-271v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm242 0v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37ZM110-121q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32Q97.25-181 110-181h740q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H110Zm578-150v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm166-369H103q-9.58 0-16.29-6.71Q80-653.42 80-663v-17q0-6 3.5-11.5T92-700l358-204q14.17-8 30-8t30 8l357 203q6 4 9.5 10t3.5 13.5v10.23q0 11.59-7.47 19.43Q865.05-640 854-640Z',
@@ -722,8 +730,370 @@
       })));
   }
 
+  // ---- owner's music player ------------------------------------------------------
+
+  // Tracks from the owner's Telegram profile music. The card is built once and
+  // reused between tabs, so the music keeps playing while you move around.
+  var music = { tracks: null, failed: false, cur: -1, audio: null, urls: {}, order: [], lyrics: {}, covers: {},
+    loading: null, lines: null, line: -1, el: null, raf: 0, karaoke: null };
+  var MUSIC_KEEP = 3; // decoded tracks kept in memory
+
+  function fmtTime(s) {
+    s = Math.max(0, Math.floor(s || 0));
+    return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+  }
+
+  function b64bytes(b64) {
+    var bin = atob(b64);
+    var out = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  // [mm:ss.xx] lines → [{ t, text }] sorted by time; a line may carry several stamps.
+  function parseLrc(text) {
+    var out = [];
+    String(text || '').split(/\r?\n/).forEach(function (raw) {
+      var stamps = [];
+      var rest = raw.replace(/\[(\d{1,2}):(\d{2})(?:[.:](\d{1,3}))?\]/g, function (_, m, s, f) {
+        stamps.push(+m * 60 + +s + (f ? +('0.' + f) : 0));
+        return '';
+      }).trim();
+      stamps.forEach(function (t) { out.push({ t: t, text: rest || '♪' }); });
+    });
+    return out.sort(function (a, b) { return a.t - b.t; });
+  }
+
+  function musicAudio() {
+    if (music.audio) return music.audio;
+    var a = new Audio();
+    a.preload = 'auto';
+    a.addEventListener('play', musicTick);
+    a.addEventListener('pause', drawMusicState);
+    a.addEventListener('ended', function () { playTrack(music.cur + 1, true); });
+    a.addEventListener('loadedmetadata', drawMusicState);
+    music.audio = a;
+    return a;
+  }
+
+  function loadAudio(t, onProgress) {
+    if (music.urls[t.id]) return Promise.resolve(music.urls[t.id]);
+    var parts = [];
+    function next(i, count, mime) {
+      return api('music', { action: 'chunk', id: t.id, index: i }).then(function (r) {
+        parts.push(b64bytes(r.data));
+        onProgress((i + 1) / r.count);
+        if (i + 1 < r.count) return next(i + 1, r.count, r.mime);
+        return URL.createObjectURL(new Blob(parts, { type: r.mime || mime || 'audio/mpeg' }));
+      });
+    }
+    return next(0).then(function (url) {
+      music.urls[t.id] = url;
+      music.order.push(t.id);
+      while (music.order.length > MUSIC_KEEP) {
+        var old = music.order.shift();
+        if (music.tracks[music.cur] && music.tracks[music.cur].id === old) { music.order.push(old); break; }
+        URL.revokeObjectURL(music.urls[old]);
+        delete music.urls[old];
+      }
+      return url;
+    });
+  }
+
+  function loadLyrics(t) {
+    if (t.id in music.lyrics) return Promise.resolve(music.lyrics[t.id]);
+    return api('music', { action: 'lyrics', id: t.id }).then(function (r) {
+      music.lyrics[t.id] = r.lyrics || null;
+      return music.lyrics[t.id];
+    }, function () { return null; });
+  }
+
+  function loadCover(t) {
+    if (!t.cover) return Promise.resolve(null);
+    if (t.id in music.covers) return Promise.resolve(music.covers[t.id]);
+    return api('music', { action: 'cover', id: t.id }).then(function (r) {
+      music.covers[t.id] = r.data ? 'data:' + (r.mime || 'image/jpeg') + ';base64,' + r.data : null;
+      return music.covers[t.id];
+    }, function () { return null; });
+  }
+
+  function playTrack(i, auto) {
+    var list = music.tracks || [];
+    if (!list.length) return;
+    i = (i + list.length) % list.length;
+    var t = list[i];
+    var a = musicAudio();
+    if (music.cur === i && a.src && !music.loading) {
+      if (a.paused) a.play().catch(function () {});
+      else a.pause();
+      return;
+    }
+    a.pause();
+    music.cur = i;
+    music.lines = null;
+    music.line = -1;
+    var token = {};
+    music.loading = token;
+    drawMusic();
+    if (!auto) vibrate('light');
+    loadCover(t).then(function () { if (music.cur === i) drawMusicCover(); });
+    loadLyrics(t).then(function (ly) {
+      if (music.cur !== i) return;
+      music.lines = ly && ly.synced ? parseLrc(ly.synced) : null;
+      music.plain = ly && !ly.synced ? ly.plain : null;
+      drawLyrics(true);
+    });
+    loadAudio(t, function (p) {
+      if (music.loading === token) setMusicLoad(p);
+    }).then(function (url) {
+      if (music.loading !== token) return;
+      music.loading = null;
+      a.src = url;
+      a.play().catch(function () { drawMusicState(); });
+      setMediaSession(t);
+      drawMusicState();
+    }, function (err) {
+      if (music.loading !== token) return;
+      music.loading = null;
+      drawMusicState();
+      snackbar(errorText(err));
+    });
+  }
+
+  function setMediaSession(t) {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: t.title, artist: t.performer || 'T.N.K.C SQUAD', album: 'Финя',
+        artwork: music.covers[t.id] ? [{ src: music.covers[t.id] }] : [],
+      });
+      navigator.mediaSession.setActionHandler('nexttrack', function () { playTrack(music.cur + 1); });
+      navigator.mediaSession.setActionHandler('previoustrack', function () { playTrack(music.cur - 1); });
+    } catch (e) { /* not supported */ }
+  }
+
+  // One rAF loop while playing: progress bar, time and the current lyric line.
+  function musicTick() {
+    cancelAnimationFrame(music.raf);
+    drawMusicState();
+    (function frame() {
+      var a = music.audio;
+      if (!a || a.paused) return;
+      drawProgress();
+      drawLyrics(false);
+      music.raf = requestAnimationFrame(frame);
+    })();
+  }
+
+  function currentLine(t) {
+    var lines = music.lines;
+    if (!lines) return -1;
+    var lo = 0;
+    var hi = lines.length - 1;
+    var ans = -1;
+    while (lo <= hi) {
+      var mid = (lo + hi) >> 1;
+      if (lines[mid].t <= t + 0.15) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return ans;
+  }
+
+  function musicCard() {
+    if (music.el) {
+      drawMusic();
+      return music.el;
+    }
+    music.el = h('section', { class: 'card player', hidden: true });
+    api('music', { action: 'list' }).then(function (r) {
+      music.tracks = (r.tracks || []);
+      drawMusic();
+    }, function () {
+      music.failed = true;
+      drawMusic();
+    });
+    return music.el;
+  }
+
+  function drawMusic() {
+    var el = music.el;
+    if (!el) return;
+    var list = music.tracks;
+    el.hidden = !list || !list.length;
+    if (el.hidden) return;
+    var t = list[music.cur] || list[0];
+    var queueOpen = !!el.querySelector('details.queue[open]');
+    var seek = h('input', { class: 'seek', type: 'range', min: '0', max: '1000', value: '0', 'aria-label': 'Перемотка' });
+    seek.addEventListener('input', function () {
+      var a = music.audio;
+      if (a && a.duration) a.currentTime = (seek.value / 1000) * a.duration;
+      drawLyrics(true);
+    });
+    var play = h('button', { class: 'fab play ripple', 'aria-label': 'Играть', onclick: function () { playTrack(music.cur < 0 ? 0 : music.cur); } },
+      icon('play_arrow_fill'), h('span', { class: 'load-ring' }));
+    el.replaceChildren(
+      h('div', { class: 'player-head' },
+        h('span', { class: 'kicker' }, icon('graphic_eq', 'icon eq'), 'Музыка владельца'),
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Текст на весь экран', onclick: openKaraoke }, icon('lyrics_fill'))),
+      h('div', { class: 'player-row' },
+        h('div', { class: 'cover' }, icon('music_note_fill')),
+        h('div', { class: 'body' }, h('b', { class: 'p-title', text: t.title }), h('span', { class: 'p-artist', text: t.performer || 'Неизвестный исполнитель' })),
+        play),
+      h('div', { class: 'seek-wrap' }, seek,
+        h('div', { class: 'times' }, h('span', { class: 't-cur', text: '0:00' }), h('span', { class: 't-dur', text: fmtTime(t.duration) }))),
+      h('div', { class: 'controls' },
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Предыдущий', onclick: function () { playTrack(music.cur - 1); } }, icon('skip_previous_fill')),
+        h('div', { class: 'lyric-peek', onclick: openKaraoke },
+          h('p', { class: 'l-prev' }), h('p', { class: 'l-cur' }), h('p', { class: 'l-next' })),
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Следующий', onclick: function () { playTrack(music.cur + 1); } }, icon('skip_next_fill'))),
+      list.length > 1 ? h('details', { class: 'queue', open: queueOpen },
+        h('summary', null, icon('queue_music_fill'), list.length + ' ' + plural(list.length, 'трек', 'трека', 'треков') + ' в профиле'),
+        h('ol', null, list.map(function (x, i) {
+          return h('li', { class: 'q-item ripple' + (i === music.cur ? ' on' : ''), onclick: function () { playTrack(i); } },
+            h('span', { class: 'q-n', text: String(i + 1) }),
+            h('span', { class: 'q-t' }, h('b', { text: x.title }), h('small', { text: x.performer || '' })),
+            h('span', { class: 'q-d', text: fmtTime(x.duration) }));
+        }))) : null);
+    drawMusicCover();
+    drawMusicState();
+    drawLyrics(true);
+  }
+
+  function drawMusicCover() {
+    var el = music.el;
+    var t = music.tracks && music.tracks[music.cur];
+    var src = t && music.covers[t.id];
+    var box = el && el.querySelector('.cover');
+    if (box) box.replaceChildren(src ? h('img', { src: src, alt: '' }) : icon('music_note_fill'));
+    if (music.karaoke) music.karaoke.style.setProperty('--cover', src ? 'url("' + src + '")' : 'none');
+  }
+
+  function setMusicLoad(p) {
+    var ring = music.el && music.el.querySelector('.load-ring');
+    if (ring) ring.style.setProperty('--p', String(Math.round(p * 100)));
+  }
+
+  function drawMusicState() {
+    var el = music.el;
+    if (!el || el.hidden) return;
+    var a = music.audio;
+    var playing = !!(a && !a.paused);
+    el.classList.toggle('playing', playing);
+    el.classList.toggle('loading', !!music.loading);
+    var btn = el.querySelector('.play');
+    if (btn) {
+      btn.replaceChild(icon(playing ? 'pause_fill' : 'play_arrow_fill'), btn.querySelector('svg'));
+      btn.setAttribute('aria-label', playing ? 'Пауза' : 'Играть');
+    }
+    if (music.karaoke) music.karaoke.classList.toggle('playing', playing);
+    drawProgress();
+  }
+
+  function drawProgress() {
+    var el = music.el;
+    var a = music.audio;
+    if (!el || !a) return;
+    var d = a.duration || 0;
+    var seek = el.querySelector('.seek');
+    if (seek && document.activeElement !== seek) seek.value = d ? String(Math.round((a.currentTime / d) * 1000)) : '0';
+    if (seek) seek.style.setProperty('--fill', (d ? (a.currentTime / d) * 100 : 0) + '%');
+    var cur = el.querySelector('.t-cur');
+    if (cur) cur.textContent = fmtTime(a.currentTime);
+    var dur = el.querySelector('.t-dur');
+    if (dur && d) dur.textContent = fmtTime(d);
+  }
+
+  // Three lines in the card (previous, current, next) and the full list in karaoke.
+  function drawLyrics(force) {
+    var a = music.audio;
+    var i = currentLine(a ? a.currentTime : 0);
+    if (!force && i === music.line) return;
+    music.line = i;
+    var el = music.el;
+    var lines = music.lines;
+    if (el) {
+      var p = el.querySelector('.l-prev');
+      var c = el.querySelector('.l-cur');
+      var n = el.querySelector('.l-next');
+      if (c) {
+        if (lines) {
+          p.textContent = i > 0 ? lines[i - 1].text : '';
+          c.textContent = i >= 0 ? lines[i].text : '♪';
+          n.textContent = lines[i + 1] ? lines[i + 1].text : '';
+        } else {
+          p.textContent = '';
+          c.textContent = music.cur < 0 ? 'Нажми ▶, чтобы послушать' : music.plain ? 'Текст без таймингов: открой на весь экран' : music.loading ? 'Ищу текст…' : 'Текста для этого трека нет';
+          n.textContent = '';
+        }
+        c.classList.remove('swap-in');
+        void c.offsetWidth;
+        c.classList.add('swap-in');
+      }
+    }
+    var k = music.karaoke;
+    if (k && lines) {
+      var rows = k.querySelectorAll('.k-line');
+      rows.forEach(function (r, j) {
+        r.classList.toggle('on', j === i);
+        r.classList.toggle('past', j < i);
+      });
+      var on = rows[i];
+      if (on) on.scrollIntoView({ block: 'center', behavior: reduceMotion || force ? 'auto' : 'smooth' });
+    }
+  }
+
+  function openKaraoke() {
+    var t = music.tracks && music.tracks[music.cur];
+    if (!t) { playTrack(0); return; }
+    if (music.karaoke) return;
+    vibrate('light');
+    var list = h('div', { class: 'k-lines' });
+    if (music.lines) {
+      music.lines.forEach(function (l) {
+        list.appendChild(h('p', { class: 'k-line', onclick: function () {
+          if (music.audio) { music.audio.currentTime = l.t; if (music.audio.paused) music.audio.play().catch(function () {}); }
+        } }, l.text));
+      });
+    } else {
+      list.appendChild(h('p', { class: 'k-plain', text: music.plain || 'Текста для этого трека не нашлось.' }));
+    }
+    var layer = h('div', { class: 'karaoke', role: 'dialog', 'aria-label': 'Текст песни' },
+      h('div', { class: 'k-bg', 'aria-hidden': 'true' }),
+      h('header', { class: 'k-head' },
+        h('div', { class: 'body' }, h('b', { text: t.title }), h('span', { text: t.performer || '' })),
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Закрыть', onclick: closeKaraoke }, icon('close'))),
+      list,
+      h('footer', { class: 'k-foot' },
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Предыдущий', onclick: function () { closeKaraoke(); playTrack(music.cur - 1); } }, icon('skip_previous_fill')),
+        h('button', { class: 'fab ripple', 'aria-label': 'Играть или пауза', onclick: function () { playTrack(music.cur); } }, icon('play_arrow_fill')),
+        h('button', { class: 'icon-btn ripple', 'aria-label': 'Следующий', onclick: function () { closeKaraoke(); playTrack(music.cur + 1); } }, icon('skip_next_fill'))));
+    music.karaoke = layer;
+    document.body.appendChild(layer);
+    drawMusicCover();
+    drawMusicState();
+    var fab = layer.querySelector('.k-foot .fab');
+    var sync = function () {
+      var playing = !!(music.audio && !music.audio.paused);
+      fab.replaceChild(icon(playing ? 'pause_fill' : 'play_arrow_fill'), fab.querySelector('svg'));
+    };
+    sync();
+    layer.syncFab = sync;
+    if (music.audio) { music.audio.addEventListener('play', sync); music.audio.addEventListener('pause', sync); }
+    drawLyrics(true);
+    try { tg.BackButton.onClick(closeKaraoke); tg.BackButton.show(); } catch (e) { /* old client */ }
+  }
+
+  function closeKaraoke() {
+    var layer = music.karaoke;
+    if (!layer) return;
+    music.karaoke = null;
+    if (music.audio) { music.audio.removeEventListener('play', layer.syncFab); music.audio.removeEventListener('pause', layer.syncFab); }
+    try { tg.BackButton.offClick(closeKaraoke); tg.BackButton.hide(); } catch (e) { /* old client */ }
+    layer.classList.add('leave');
+    setTimeout(function () { layer.remove(); }, reduceMotion ? 0 : 220);
+  }
+
   function squadBody(sq) {
-    return [newsCard(sq), quickGrid(sq)]
+    return [newsCard(sq), musicCard(), quickGrid(sq)]
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
       .concat([projectsSection()]);
   }
