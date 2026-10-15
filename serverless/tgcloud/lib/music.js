@@ -14,6 +14,7 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024; // Bot API getFile cap
 const CACHE_LIMIT_BYTES = 120 * 1024 * 1024;
 const LIST_TTL = 60;
 const LYRICS_RETRY = 86400;
+const LYRICS_V = 2; // bump when the lyrics sources change
 const LIST_KEY = 'music_list';
 
 export class MusicError extends Error {
@@ -87,11 +88,17 @@ async function cached(t, ts) {
   return { size: bytes.length, mime: t.mime, chunks: count };
 }
 
+// Synced lyrics are kept for good; plain text or nothing is asked again after
+// a day, and right away when it was found with an older set of sources.
 async function lyrics(t, ts) {
   const row = await db.get(sql`SELECT body, fetched_at FROM music_lyrics WHERE id = ${t.id}`);
-  if (row && (row.body || ts - row.fetched_at < LYRICS_RETRY)) return row.body ? JSON.parse(row.body) : null;
+  const saved = row && row.body ? JSON.parse(row.body) : null;
+  if (saved && saved.synced) return { synced: saved.synced, plain: null, source: saved.source };
+  if (saved && saved.v === LYRICS_V && ts - row.fetched_at < LYRICS_RETRY) {
+    return saved.plain ? { synced: null, plain: saved.plain, source: saved.source } : null;
+  }
   const found = await findLyrics({ title: t.title, artist: t.performer, duration: t.duration });
-  const body = found ? JSON.stringify(found) : null;
+  const body = JSON.stringify({ ...(found || {}), v: LYRICS_V });
   await db.run(sql`INSERT INTO music_lyrics (id, body, fetched_at) VALUES (${t.id}, ${body}, ${ts})
     ON CONFLICT(id) DO UPDATE SET body = excluded.body, fetched_at = excluded.fetched_at`);
   return found;
