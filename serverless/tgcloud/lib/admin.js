@@ -5,7 +5,7 @@ import { button, editOrSend, editText, keyboard, menuButton } from './tg.js';
 import {
   feedbackCount, getSetting, isAdminUser, recentErrors, recentFeedback, setSetting, userStats,
 } from './store.js';
-import { adminKeyboard, statusText } from './ui.js';
+import { ADMIN_SECTIONS, adminKeyboard, adminSectionOf, statusText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, now, truncate } from './util.js';
 import { BROADCAST_CONFIRM_SECONDS } from './config.js';
 import * as blacklist from './blacklist.js';
@@ -119,6 +119,14 @@ export async function handleAdminCallback(query, s, action) {
   }
 
   let text;
+  if (action.startsWith('sec:')) {
+    const key = action.slice(4);
+    const sec = ADMIN_SECTIONS[key];
+    if (!sec) return;
+    delete s.admin_action;
+    await editText(query, boldHtml(`${sec.title}\n\n${sec.text}`), await adminKeyboard(key));
+    return;
+  }
   if (action === 'menu') {
     text = 'Админ-панель FINYA HELPER\n\nУправление ботом:';
   } else if (action === 'stats') {
@@ -184,6 +192,6 @@ export async function handleAdminCallback(query, s, action) {
   } else {
     return;
   }
-  await editText(query, boldHtml(text), await adminKeyboard());
+  await editText(query, boldHtml(text), await adminKeyboard(adminSectionOf(action)));
 }
 

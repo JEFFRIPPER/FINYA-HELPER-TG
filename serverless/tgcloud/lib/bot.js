@@ -2,7 +2,7 @@
 import { api, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import {
-  HOME_TEXT, INFO_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT, WEBAPP_URL,
+  HOME_TEXT, INFO_TEXT, MORE_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT, WEBAPP_URL,
 } from './config.js';
 import {
   answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, keyboard, reply, replyBold,
@@ -13,7 +13,7 @@ import {
 } from './store.js';
 import {
   adminKeyboard, backHomeKeyboard, channelNewsView, channelSubscriptionKeyboard, channelSubscriptionText,
-  homeKeyboard, infoKeyboard, partnerKeyboard, profileAppKeyboard, profileRow, squadKeyboard, statusKeyboard,
+  homeKeyboard, infoKeyboard, moreKeyboard, partnerKeyboard, profileAppKeyboard, profileRow, squadKeyboard, statusKeyboard,
   statusText, xpKeyboard, xpProfileText, xpRulesText, xpTopText,
 } from './ui.js';
 import { base64ToBytes, boldHtml, escapeHtml, now, truncate } from './util.js';
@@ -62,6 +62,67 @@ async function sendStartPhoto(chatId, caption, replyMarkup) {
   return result;
 }
 
+// ---- one live menu in private, self-cleaning replies in groups -----------------
+
+// A private chat keeps one menu: the user's command and the previous menu go away.
+async function tidyPrivate(message, s, sent) {
+  if (!message || message.chat.type !== 'private') return;
+  const old = s.menu_id;
+  if (sent && sent.message_id) s.menu_id = sent.message_id;
+  for (const id of [message.message_id, old]) {
+    if (!id || id === s.menu_id) continue;
+    try {
+      await api.deleteMessage({ chat_id: message.chat.id, message_id: id });
+    } catch {
+      // Older than 48 hours or already gone.
+    }
+  }
+}
+
+export const GROUP_REPLY_TTL = 120;
+
+// /rank and /top in a group: the command and the answer disappear after a while.
+async function cleanUpLater(message, sent) {
+  if (!['group', 'supergroup'].includes(message.chat.type)) return;
+  const at = now() + GROUP_REPLY_TTL;
+  for (const id of [message.message_id, sent && sent.message_id]) {
+    if (!id) continue;
+    await db.run(sql`INSERT OR IGNORE INTO autodelete (chat_id, message_id, delete_at)
+      VALUES (${message.chat.id}, ${id}, ${Math.floor(at)})`);
+  }
+}
+
+async function deleteDue(limit = 20) {
+  const rows = await db.all(sql`SELECT chat_id, message_id FROM autodelete WHERE delete_at <= ${now()}
+    ORDER BY delete_at LIMIT ${limit}`);
+  for (const r of rows) {
+    // One attempt: without delete rights or after 48 hours Telegram refuses, and that's fine.
+    await db.run(sql`DELETE FROM autodelete WHERE chat_id = ${r.chat_id} AND message_id = ${r.message_id}`);
+    try {
+      await api.deleteMessage({ chat_id: r.chat_id, message_id: r.message_id });
+    } catch {
+      // No rights or already deleted.
+    }
+  }
+}
+
+// The «/» menu: three commands for everyone, the owner also sees his own.
+const COMMANDS_VERSION = '2';
+async function ensureCommands() {
+  if ((await getSetting('commands_version')) === COMMANDS_VERSION) return;
+  const common = [
+    { command: 'start', description: 'Главное меню' },
+    { command: 'rank', description: 'Мой ранг и XP' },
+    { command: 'top', description: 'Топ Сквада' },
+  ];
+  await api.setMyCommands({ commands: common });
+  await api.setMyCommands({
+    commands: [...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' }],
+    scope: { type: 'chat', chat_id: OWNER_USER_ID },
+  });
+  await setSetting('commands_version', COMMANDS_VERSION);
+}
+
 // ---- commands --------------------------------------------------------------
 
 async function start(message, s, args = []) {
@@ -70,17 +131,22 @@ async function start(message, s, args = []) {
   const returning = Boolean(await getUser(message.from.id));
   await trackUser(message.from);
   if ((await isMaintenance()) && !isAdminUser(message.from)) {
-    await replyBold(message, '🛠 Бот временно на техработах.\nПопробуй чуть позже.');
+    await tidyPrivate(message, s, await replyBold(message, '🛠 Бот временно на техработах.\nПопробуй чуть позже.'));
     return;
   }
   // "Открыть профиль" in a group leads here: t.me/<bot>?start=profile.
   if (args[0] === 'profile' && message.chat.type === 'private') {
-    await replyBold(message, '👤 Профиль Фини\n\nРанг, прогресс до следующего звания, топ Сквада и история XP.',
-      profileAppKeyboard());
+    await tidyPrivate(message, s, await replyBold(message,
+      '👤 Профиль Фини\n\nРанг, прогресс до следующего звания, топ Сквада и история XP.', profileAppKeyboard()));
     return;
   }
-  const caption = returning ? '<b>С возвращением. FINYA HELPER на месте. Выбирай раздел:</b>' : HOME_TEXT;
-  await sendStartPhoto(message.chat.id, caption, homeKeyboard(message.chat.type));
+  // "Все ссылки Сквада" in a group leads here: t.me/<bot>?start=squad.
+  if (args[0] === 'squad' && message.chat.type === 'private') {
+    await tidyPrivate(message, s, await replyBold(message, SQUAD_TEXT, await squadKeyboard(message.chat)));
+    return;
+  }
+  const caption = returning ? '<b>С возвращением. FINYA HELPER на месте.</b>' : HOME_TEXT;
+  await tidyPrivate(message, s, await sendStartPhoto(message.chat.id, caption, await homeKeyboard(message.chat)));
 }
 
 async function adminCommand(message, s) {
@@ -89,13 +155,13 @@ async function adminCommand(message, s) {
   shopAdmin.clear(s);
   await trackUser(message.from);
   await setSetting('admin_chat_id', OWNER_USER_ID);
-  await replyBold(message, '🛠 Админ-панель FINYA HELPER\n\nУправление ботом:', await adminKeyboard());
+  await tidyPrivate(message, s, await replyBold(message, '🛠 Админ-панель FINYA HELPER\n\nУправление ботом:', await adminKeyboard()));
 }
 
 async function cancelCommand(message, s) {
   if (s.awaiting_feedback && message.chat.type === 'private') {
     delete s.awaiting_feedback;
-    await replyBold(message, 'Отменено. Обратная связь не отправлена.', backHomeKeyboard());
+    await tidyPrivate(message, s, await replyBold(message, 'Отменено. Обратная связь не отправлена.', backHomeKeyboard()));
     return;
   }
   if (!rankAdmin.allowed(message.from, message.chat)) return;
@@ -134,15 +200,22 @@ async function shopKeyCommand(message, s, args) {
   }
 }
 
-async function rankCommand(message) {
+const isGroup = (chat) => Boolean(chat) && ['group', 'supergroup'].includes(chat.type);
+const xpMenu = async (chat) => xpKeyboard(await profileRow(chat), { group: isGroup(chat) });
+
+async function rankCommand(message, s) {
   if (message.chat.type === 'private') await trackUser(message.from);
-  await replyBold(message, await xpProfileText(message.from), xpKeyboard(await profileRow(message.chat)));
+  const sent = await replyBold(message, await xpProfileText(message.from), await xpMenu(message.chat));
+  await tidyPrivate(message, s, sent);
+  await cleanUpLater(message, sent);
 }
 
-async function topCommand(message, args) {
+async function topCommand(message, s, args) {
   if (message.chat.type === 'private') await trackUser(message.from);
   const weekly = Boolean(args.length && ['week', 'неделя'].includes(args[0].toLowerCase()));
-  await replyBold(message, await xpTopText(weekly), xpKeyboard(await profileRow(message.chat)));
+  const sent = await replyBold(message, await xpTopText(weekly), await xpMenu(message.chat));
+  await tidyPrivate(message, s, sent);
+  await cleanUpLater(message, sent);
 }
 
 async function xpChatCommand(message, args) {
@@ -255,7 +328,7 @@ async function textMessage(message, s) {
     delete s.admin_action;
     if (action === 'set_news') {
       await setSetting('news', truncate(text, 3500));
-      await replyBold(message, '✅ Новость обновлена.', await adminKeyboard());
+      await replyBold(message, '✅ Новость обновлена.', await adminKeyboard('posts'));
       return;
     }
     if (action === 'broadcast') {
@@ -305,7 +378,7 @@ async function notifyPromotion(user, award) {
       chat_id: user.id,
       text: boldHtml(`Новое звание Сквада!\n\n${award.newRank[1]} · ${award.newRank[2]}\nВсего: ${award.total} XP`),
       parse_mode: 'HTML',
-      reply_markup: xpKeyboard(await profileRow(null)),
+      reply_markup: keyboard([await profileRow(null)]),
     });
   } catch {
     console.info(`Could not deliver rank promotion to ${user.id}`);
@@ -362,8 +435,8 @@ const COMMANDS = {
   admin: (m, s) => adminCommand(m, s),
   cancel: (m, s) => cancelCommand(m, s),
   shopkey: (m, s, a) => shopKeyCommand(m, s, a),
-  rank: (m) => rankCommand(m),
-  top: (m, s, a) => topCommand(m, a),
+  rank: (m, s) => rankCommand(m, s),
+  top: (m, s, a) => topCommand(m, s, a),
   xpchat: (m, s, a) => xpChatCommand(m, a),
   posts_on: (m, s, a) => postsOnCommand(m, a),
   posts_off: (m, s, a) => postsOffCommand(m, a),
@@ -438,20 +511,22 @@ async function button_(query, s) {
   let kb;
   if (data === 'info') {
     [text, kb] = [INFO_TEXT, infoKeyboard()];
+  } else if (data === 'more') {
+    [text, kb] = [MORE_TEXT, moreKeyboard()];
   } else if (data === 'squad') {
-    [text, kb] = [SQUAD_TEXT, squadKeyboard()];
+    [text, kb] = [SQUAD_TEXT, await squadKeyboard(chat)];
   } else if (data === 'home') {
-    [text, kb] = [HOME_TEXT, homeKeyboard(chat.type)];
+    [text, kb] = [HOME_TEXT, await homeKeyboard(chat)];
   } else if (data === 'news') {
     [text, kb] = await channelNewsView();
   } else if (data === 'status') {
     [text, kb] = [await statusText(user.id), await statusKeyboard(user.id)];
   } else if (data === 'xp:profile') {
-    [text, kb] = [await xpProfileText(user), xpKeyboard(await profileRow(chat))];
+    [text, kb] = [await xpProfileText(user), await xpMenu(chat)];
   } else if (data === 'xp:top' || data === 'xp:week') {
-    [text, kb] = [await xpTopText(data === 'xp:week'), xpKeyboard(await profileRow(chat))];
+    [text, kb] = [await xpTopText(data === 'xp:week'), await xpMenu(chat)];
   } else if (data === 'xp:rules') {
-    [text, kb] = [xpRulesText(), xpKeyboard(await profileRow(chat))];
+    [text, kb] = [xpRulesText(), await xpMenu(chat)];
   } else if (data === 'status:subscribe' || data === 'status:unsubscribe') {
     await setSubscribed(user, data === 'status:subscribe');
     [text, kb] = [await statusText(user.id), await statusKeyboard(user.id)];
@@ -499,7 +574,8 @@ async function button_(query, s) {
   } else {
     return;
   }
-  await editOrSend(query, text, kb);
+  const sent = await editOrSend(query, text, kb);
+  if (sent && sent.message_id && chat.type === 'private') s.menu_id = sent.message_id;
 }
 
 export async function onCallbackQuery(query) {
@@ -608,7 +684,11 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     return;
   }
   const steps = [
-    ['pump.menu', () => ensureMenuButton()],
+    ['pump.menu', async () => {
+      await ensureMenuButton();
+      await ensureCommands();
+    }],
+    ['pump.autodelete', () => deleteDue()],
     ['pump.relay', async () => {
       await relay.sweepStale();
       if (!(await isMaintenance())) await relay.deliverDue(Math.min(5000, leftMs(deadline) - 12000), 10);

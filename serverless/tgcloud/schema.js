@@ -230,3 +230,13 @@ export const referrals = table('referrals', {
 }, (t) => ({
   byReferrer: index('referrals_by_referrer').on(t.referrer_id, t.joined_at),
 }));
+
+// Bot replies to /rank and /top in groups, and the commands: deleted from pump() later.
+export const autodelete = table('autodelete', {
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id').notNull(),
+  delete_at: integer('delete_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.message_id] }),
+  due: index('autodelete_due').on(t.delete_at),
+}));
