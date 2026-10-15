@@ -208,6 +208,35 @@ test('lyrics: sources run in parallel, a hung one never blocks the answer', asyn
   assert.equal(await findLyrics(TRACK, [['Never', never]], { grace: 20, deadline: 50 }), null);
 });
 
+test('lyrics: the isolate has no timers, the search still answers', async () => {
+  fetchMock.handler = (url) => {
+    if (url.startsWith('https://lrclib.net/api/get')) return { json: { syncedLyrics: '[00:01.00] Я знаю', plainLyrics: 'Я знаю' } };
+    if (url.startsWith('https://api.lyrics.ovh/')) return new Promise(() => {}); // plain only: not worth waiting for
+    return notFound();
+  };
+  const saved = [globalThis.setTimeout, globalThis.clearTimeout];
+  globalThis.setTimeout = undefined;
+  globalThis.clearTimeout = undefined;
+  let found;
+  try {
+    found = await findLyrics(TRACK);
+  } finally {
+    [globalThis.setTimeout, globalThis.clearTimeout] = saved;
+  }
+  assert.deepEqual(found, { synced: '[00:01.00] Я знаю', plain: null, source: 'LRCLIB' });
+});
+
+test('lyrics without timers: waits only for sources that could do better', async () => {
+  const never = () => new Promise(() => {});
+  const line = async () => ({ synced: '[00:01.00]a b' });
+  const word = () => new Promise((r) => setTimeout(() => r({ synced: '[00:01.00]<00:01.00>a <00:01.50>b<00:02.00>' }), 30));
+  let found = await findLyrics(TRACK, [['Line', line, 1], ['Plain', never, 0], ['Same', never, 1]], { timers: false });
+  assert.equal(found.source, 'Line', 'nothing pending can beat a line-synced answer');
+  found = await findLyrics(TRACK, [['Line', line, 1], ['Word', word, 2], ['Plain', never, 0]], { timers: false });
+  assert.equal(found.source, 'Word', 'a source that can sync words is waited for');
+  assert.equal(await findLyrics(TRACK, [['Empty', async () => null, 2]], { timers: false }), null);
+});
+
 test('lyrics cache: empty answers of the old search are asked again, plain text waits a day', async () => {
   await musicApi();
   const ts = nowInt();
