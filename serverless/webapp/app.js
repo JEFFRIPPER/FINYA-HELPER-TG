@@ -967,6 +967,16 @@
       h('ul', { class: 'list' }, withDividers(items)));
   }
 
+  // What to do and how far along: the name is on the tile already.
+  function achHint(a) {
+    var pct = a.at ? 100 : Math.max(0, Math.min(100, Math.round(a.progress / a.goal * 100)));
+    return h('div', { class: 'snack-ach' },
+      h('span', { class: 'snack-ach-task', text: a.text }),
+      h('div', { class: 'snack-ach-row' },
+        h('span', { class: 'snack-ach-bar' }, h('i', { style: 'width: ' + pct + '%' })),
+        h('b', { text: a.at ? 'Готово' : a.progress + ' / ' + a.goal })));
+  }
+
   function achievementsCard(c) {
     var got = c.achievements.filter(function (a) { return a.at; }).length;
     return h('section', { class: 'card' },
@@ -974,7 +984,7 @@
       h('div', { class: 'ach-grid' }, c.achievements.map(function (a) {
         return h('button', { class: 'ach ripple' + (a.at ? ' on' : ''), type: 'button', onclick: function () {
           haptic();
-          snackbar(a.title + ': ' + a.text.toLowerCase() + '. ' + (a.at ? 'Открыта, ' : a.progress + ' из ' + a.goal + ', ') + '+' + a.xp + ' XP');
+          snackbar(achHint(a));
         } },
           h('span', { class: 'ach-icon' }, icon(a.icon), a.at ? null : h('i', { class: 'ach-lock' }, icon('lock_fill'))),
           h('b', { text: a.title }),
@@ -1266,10 +1276,11 @@
     return Array.prototype.map.call(a, function (b) { return (b < 16 ? '0' : '') + b.toString(16); }).join('');
   }
 
-  function snackbar(text) {
+  // `content`: a line of text or a ready node.
+  function snackbar(content) {
     var old = document.querySelector('.snackbar');
     if (old) old.remove();
-    var bar = h('div', { class: 'snackbar', role: 'status', text: text });
+    var bar = h('div', { class: 'snackbar', role: 'status' }, content);
     document.body.appendChild(bar);
     setTimeout(function () { bar.classList.add('leave'); }, 2600);
     setTimeout(function () { bar.remove(); }, 3000);

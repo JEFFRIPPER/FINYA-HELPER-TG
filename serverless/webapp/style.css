@@ -1050,15 +1050,22 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   z-index: 70;
   max-width: calc(100vw - 32px);
   padding: 14px 16px;
-  border-radius: 8px;
-  background: #f8e9ea;
-  color: #2a0a0d;
+  border-radius: 16px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+  color: var(--text);
   font-weight: 500;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6), 0 0 22px var(--glow-soft);
   transform: translateX(-50%);
   animation: snack-in 300ms var(--ease-emph-decel) both;
 }
 .snackbar.leave { animation: fade-out 300ms linear forwards; }
+.snack-ach { display: flex; flex-direction: column; gap: 10px; width: min(300px, calc(100vw - 64px)); }
+.snack-ach-task { font-size: 15px; line-height: 20px; font-weight: 600; }
+.snack-ach-row { display: flex; align-items: center; gap: 12px; }
+.snack-ach-bar { flex: 1; height: 6px; overflow: hidden; border-radius: 3px; background: var(--container); }
+.snack-ach-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--red-deep), var(--red)); box-shadow: 0 0 8px var(--glow); }
+.snack-ach-row b { flex: none; color: var(--red); font-weight: 700; font-variant-numeric: tabular-nums; }
 @keyframes snack-in { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 [hidden] { display: none !important; }
