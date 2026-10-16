@@ -47,12 +47,20 @@ const titleCase = (s) => String(s).replace(/(^|[\s«/-])(\p{Ll})/gu, (m, a, b) =
 
 // ---- sending -------------------------------------------------------------------
 
-// A reply to the message. `temp`: in a group, the command and the answer go away later.
-async function say(message, text, { markup, temp = false } = {}) {
+// Without a reply to the message: still in its topic or under the same post.
+function sameThread(message) {
+  if (!message.message_thread_id) return {};
+  if (message.is_topic_message) return { message_thread_id: message.message_thread_id };
+  return { reply_parameters: { message_id: message.message_thread_id, allow_sending_without_reply: true } };
+}
+
+// A reply to the message (or to `replyTo`; null — no reply). `temp`: in a group, the
+// command and the answer go away later.
+async function say(message, text, { markup, temp = false, replyTo = message.message_id } = {}) {
   const params = {
     chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML',
-    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
     link_preview_options: { is_disabled: true },
+    ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : sameThread(message)),
   };
   if (markup) params.reply_markup = markup;
   const sent = await withPremium(params, (p) => api.sendMessage(p));
@@ -275,7 +283,18 @@ async function rp(message, found, target) {
   const who = target.id === actor.id ? 'себя' : mention(target.id, target.name);
   let text = `${emoji} ${mention(actor.id, fullName(actor))} ${escapeHtml(verb)} ${who}`;
   if (found.rest) text += `\n💬 «${escapeHtml(truncate(found.rest, 200))}»`;
-  await say(message, text);
+  // In a group the command itself goes away: Финя's line answers the target's message.
+  if (!isGroupChat(message.chat)) {
+    await say(message, text);
+    return;
+  }
+  const r = message.reply_to_message;
+  await say(message, text, { replyTo: r && r.from && r.from.id === target.id ? r.message_id : null });
+  try {
+    await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
+  } catch {
+    // No rights to delete: the command stays.
+  }
 }
 
 async function rpListText() {

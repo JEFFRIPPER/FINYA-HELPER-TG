@@ -242,13 +242,22 @@ test('RP actions need a target; the owner adds his own', async () => {
   const a = user(1, { first_name: 'Аня' });
   const b = user(2, { first_name: 'Боря', username: 'borya' });
   await say(b, 'я тут');
-  await say(a, 'Обнять крепко-крепко', replyTo(b));
+  const hug = groupMessage(DISCUSSION, a, 'Обнять крепко-крепко', replyTo(b));
+  await onMessage(hug);
   assert.match(lastSent(api), /🤗 <a href="tg:\/\/user\?id=1">Аня<\/a> обнимает <a href="tg:\/\/user\?id=2">Боря<\/a>/);
   assert.match(lastSent(api), /💬 «крепко-крепко»/);
-  // By @username, without a reply.
+  // The command goes away; Финя answers Боря's message instead.
+  assert.equal(sent(api).at(-1).params.reply_parameters.message_id, hug.reply_to_message.message_id);
+  assert.ok(api.called('deleteMessage').some((c) => c.params.message_id === hug.message_id));
+  // By @username, without a reply: under the same post, the command gone too.
   const text = 'пожать руку @borya';
-  await say(a, text, { entities: [{ type: 'mention', offset: text.indexOf('@'), length: 6 }] });
+  const shake = groupMessage(DISCUSSION, a, text, {
+    message_thread_id: 900, entities: [{ type: 'mention', offset: text.indexOf('@'), length: 6 }],
+  });
+  await onMessage(shake);
   assert.match(lastSent(api), /жмёт руку/);
+  assert.equal(sent(api).at(-1).params.reply_parameters.message_id, 900);
+  assert.ok(api.called('deleteMessage').some((c) => c.params.message_id === shake.message_id));
   const before = sent(api).length;
   await say(a, 'обнять бы кого-нибудь');
   assert.equal(sent(api).length, before);
