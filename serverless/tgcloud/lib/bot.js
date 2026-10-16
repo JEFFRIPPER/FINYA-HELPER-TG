@@ -748,6 +748,7 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     ['pump.blacklist', () => blacklist.retryPending(5)],
     ['club.tick', () => club.tick()],
     ['chat.tick', () => chat.tick(() => leftMs(deadline))],
+    ['changelog.tick', () => changelog.tick()],
     ['pump.jobs', () => jobs.runPendingJobs(Math.min(10000, leftMs(deadline) - 2000))],
   ];
   for (const [where, step] of steps) {

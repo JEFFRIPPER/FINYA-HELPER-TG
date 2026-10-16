@@ -2,6 +2,8 @@ import { apiMock, BotApiError } from 'sdk';
 import { resetDb } from 'sdk/db';
 import * as schema from '../tgcloud/schema.js';
 import { clearCache as clearEmojiCache } from '../tgcloud/lib/emoji.js';
+import { CHANGES } from '../tgcloud/lib/changelog.js';
+import { setSetting } from '../tgcloud/lib/store.js';
 
 export const OWNER = { id: 7221285861, is_bot: false, first_name: 'Owner', username: 'THKC_SQUAD_CREATOR' };
 export const BOT = { id: 999, is_bot: true, first_name: 'Финя', username: 'finya_bot' };
@@ -23,6 +25,8 @@ export function apiError(method, code, description, parameters) {
 export async function setup(overrides = {}) {
   await resetDb(schema);
   clearEmojiCache();
+  // The current news is out already: only the CHANGELOG tests post it.
+  await setSetting('changelog_posted', CHANGES[0].id);
   apiMock.reset();
   apiMock.handler = async (method, params) => {
     if (overrides[method]) return overrides[method](params);
