@@ -139,21 +139,24 @@ async function messagesSince(chatId, from, userId = null) {
   return row.n;
 }
 
-export async function chatStats(chatId) {
-  const ts = nowInt();
-  const total = await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS n,
-      SUM(CASE WHEN status = 'member' THEN 1 ELSE 0 END) AS members,
-      SUM(CASE WHEN status = 'member' AND last_active >= ${ts - 7 * DAY} THEN 1 ELSE 0 END) AS active
-    FROM chat_members WHERE chat_id = ${chatId}`);
-  return {
-    day: await messagesSince(chatId, periodStart('day', ts)),
-    week: await messagesSince(chatId, periodStart('week', ts)),
-    month: await messagesSince(chatId, periodStart('month', ts)),
-    total: total.n || 0,
-    members: total.members || 0,
-    active: total.active || 0,
-    top: await activityTop(chatId, 'day', 3),
-  };
+// The chat over a period (null = all time): messages, members, how many of them wrote,
+// and the members by messages.
+export async function periodStats(chatId, period, limit = 20) {
+  const from = periodStart(period);
+  const people = await db.get(sql`SELECT COUNT(*) AS n FROM chat_members WHERE chat_id = ${chatId} AND status = 'member'`);
+  let messages;
+  let writers;
+  if (from == null) {
+    messages = (await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS n FROM chat_members WHERE chat_id = ${chatId}`)).n;
+    writers = (await db.get(sql`SELECT COUNT(*) AS n FROM chat_members
+      WHERE chat_id = ${chatId} AND status = 'member' AND msgs > 0`)).n;
+  } else {
+    messages = await messagesSince(chatId, from);
+    writers = (await db.get(sql`SELECT COUNT(DISTINCT a.user_id) AS n FROM chat_activity a
+      JOIN chat_members m ON m.chat_id = a.chat_id AND m.user_id = a.user_id
+      WHERE a.chat_id = ${chatId} AND a.day >= ${from} AND m.status = 'member'`)).n;
+  }
+  return { messages, members: people.n, writers, top: await activityTop(chatId, period, limit) };
 }
 
 // One member in one chat: messages today and all time, and since when they are here.

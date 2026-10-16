@@ -18,6 +18,8 @@ const DEFAULTS = {
   // Chat protection in the Squad chats, switched in the Mini App panel or by text.
   chat_antiflood: true,
   chat_captcha: true,
+  // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
+  chat_moderation: false,
 };
 
 export async function getSetting(key) {

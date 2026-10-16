@@ -80,8 +80,34 @@ test('member list: activity tops count current members with fresh names', async 
   await say(user(9), 'топ недели');
   assert.match(lastSent(api), /Ушёл — 3 сообщения/);
   await say(user(9), 'стата');
-  assert.match(lastSent(api), /Сегодня: 11/);
-  assert.match(lastSent(api), /Участников: 4/);
+  assert.match(lastSent(api), /Стата чата · сегодня/);
+  assert.match(lastSent(api), /Участников: 4 · писали: 4/);
+  assert.match(lastSent(api), /Всего сообщений: 11<\/b>$/);
+});
+
+test('stats panel: buttons switch the period, all time ends with the total', async () => {
+  const api = await setup();
+  const realNowFn = Date.now;
+  // Ten days ago, then today.
+  Date.now = () => realNowFn() - 10 * 86400 * 1000;
+  await say(user(1, { first_name: 'Давний' }), 'привет');
+  Date.now = realNowFn;
+  for (let i = 0; i < 2; i++) await say(user(2, { first_name: 'Сегодняшний' }), 'ага');
+  await say(user(9, { first_name: 'Спросил' }), 'стата');
+  const panel = sent(api).at(-1).params;
+  assert.match(panel.text, /🥇 Сегодняшний — 2 сообщения\n🥈 Спросил — 1 сообщение/);
+  assert.doesNotMatch(panel.text, /Давний/);
+  assert.deepEqual(panel.reply_markup.inline_keyboard[0].map((b) => [b.text, b.callback_data]), [
+    ['• День', 'stat:day'], ['Неделя', 'stat:week'], ['Месяц', 'stat:month'], ['Всё время', 'stat:all'],
+  ]);
+  await onCallbackQuery(groupButton(user(5), 'stat:all', 7000));
+  const edit = api.called('editMessageText').at(-1).params;
+  assert.equal(edit.message_id, 7000);
+  assert.match(edit.text, /Стата чата · всё время/);
+  assert.match(edit.text, /Давний — 1 сообщение/);
+  assert.match(edit.text, /Всего сообщений: 4<\/b>$/);
+  assert.equal(edit.reply_markup.inline_keyboard[0][3].text, '• Всё время');
+  assert.equal(api.called('answerCallbackQuery').length, 1);
 });
 
 test('фарм: random XP, then a cooldown; parallel messages farm once', async () => {
@@ -261,8 +287,25 @@ test('«Финя, …»: who, chance, choice and a yes/no answer', async () => {
   assert.equal(sent(api).length, before);
 });
 
+test('moderation by text is off until the owner turns it on', async () => {
+  const api = await setup(withAdmins([10]));
+  await say(user(10), 'мут 1ч', replyTo(user(5)));
+  await say(user(10), 'варны', replyTo(user(5)));
+  assert.equal(api.called('restrictChatMember').length, 0);
+  assert.equal(sent(api).length, 0);
+  await say(OWNER, 'Финя, команды');
+  assert.doesNotMatch(lastSent(api), /Админам/);
+  await say(OWNER, 'Финя, модерация вкл');
+  assert.match(lastSent(api), /Модерация командами включена/);
+  await say(OWNER, 'Финя, команды');
+  assert.match(lastSent(api), /Админам \(ответом\): мут/);
+  await say(user(10), 'мут 1ч', replyTo(user(5)));
+  assert.equal(api.called('restrictChatMember').length, 1);
+});
+
 test('moderation: admins mute, warn and ban by reply; members and admins are protected', async () => {
   const api = await setup(withAdmins([10, 11]));
+  await setSetting('chat_moderation', true);
   const admin = user(10, { first_name: 'Админ' });
   const bad = user(5, { first_name: 'Хулиган' });
   await say(bad, 'мут', replyTo(user(6)));
@@ -307,6 +350,7 @@ test('moderation without rights says what to fix', async () => {
     ...withAdmins([10]),
     restrictChatMember: () => { throw new (class extends Error { constructor() { super('x'); this.code = 400; this.description = 'Bad Request: not enough rights'; } })(); },
   });
+  await setSetting('chat_moderation', true);
   await say(user(10), 'мут 1ч', replyTo(user(5)));
   assert.match(lastSent(api), /не хватает прав/);
 });
