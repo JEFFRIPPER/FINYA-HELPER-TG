@@ -22,6 +22,7 @@ import { explicitXpChatId, resolveXpChat, xpSourceChannelId } from './xpchat.js'
 import { handleAdminCallback } from './admin.js';
 import * as blacklist from './blacklist.js';
 import * as chat from './chat.js';
+import * as changelog from './changelog.js';
 import * as club from './club.js';
 import * as emoji from './emoji.js';
 import * as importer from './importer.js';
@@ -116,7 +117,7 @@ async function deleteDue(deadline, limit = 20) {
 }
 
 // The «/» menu: three commands for everyone, the owner also sees his own.
-const COMMANDS_VERSION = '2';
+const COMMANDS_VERSION = '3';
 async function ensureCommands() {
   if ((await getSetting('commands_version')) === COMMANDS_VERSION) return;
   const common = [
@@ -129,7 +130,10 @@ async function ensureCommands() {
   await setSetting('commands_version', COMMANDS_VERSION);
   try {
     await api.setMyCommands({
-      commands: [...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' }],
+      commands: [
+        ...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' },
+        { command: 'log', description: 'Новость об обновлении: /log post — в CHANGELOG' },
+      ],
       scope: { type: 'chat', chat_id: OWNER_USER_ID },
     });
   } catch (err) {
@@ -476,6 +480,7 @@ const COMMANDS = {
   posts_on: (m, s, a) => postsOnCommand(m, a),
   posts_off: (m, s, a) => postsOffCommand(m, a),
   posts_retry: (m, s, a) => postsRetryCommand(m, a),
+  log: (m, s, a) => changelog.command(m, a, isAdminUser(m.from)),
 };
 
 export async function onMessage(message) {
