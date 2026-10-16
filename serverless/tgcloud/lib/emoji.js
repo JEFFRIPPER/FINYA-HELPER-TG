@@ -155,7 +155,7 @@ async function reply(message, text) {
   }, (p) => api.sendMessage(p));
 }
 
-const HINT = '«эмодзи» — что стоит сейчас · «эмодзи сброс» — вернуть обычные.';
+const HINT = '«Эмодзи» — что стоит сейчас · «Эмодзи Сброс» — вернуть обычные.';
 
 function coverageText({ have, missing }) {
   let text = `В ответах в чате премиум: ${have} из ${CHAT_EMOJI.length}.`;
