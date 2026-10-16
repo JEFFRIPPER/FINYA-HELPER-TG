@@ -90,5 +90,52 @@ test('a failed post: the owner hears once, Финя tries again later', async ()
   assert.equal(posts(api).length, 2);
   assert.equal(toOwner(api).length, 1);
   assert.equal((await db.get("SELECT COUNT(*) AS c FROM error_log WHERE source = 'changelog.post'")).c, 2);
+  // The owner's /log post says what Telegram answered.
+  await onMessage(privateMessage(OWNER, '/log post'));
+  assert.match(toOwner(api).at(-1).params.text, /Не вышло опубликовать: Bad Request: message thread not found/);
+  await db.run('DELETE FROM error_log');
+});
+
+const OTHER = { id: -1009990001, type: 'supergroup', title: 'Сквад Новости', is_forum: true };
+const otherTopic = { message_thread_id: 77, is_topic_message: true };
+
+test('/log_on in a topic: the news go there from now on, the pending one right away', async () => {
+  const api = await setup();
+  await freshDeploy();
+  await setSetting('changelog_failed_at', nowInt());
+  // Not by someone else, nor by an anonymous admin of a stranger chat.
+  await onMessage(groupMessage(OTHER, user(5), '/log_on', otherTopic));
+  await onMessage(groupMessage(OTHER, ANON, '/log_on', { ...otherTopic, sender_chat: { id: OTHER.id, type: 'supergroup' } }));
+  assert.equal(await getSetting('changelog_target'), null);
+
+  const cmd = groupMessage(OTHER, OWNER, '/log_on', otherTopic);
+  await onMessage(cmd);
+  const sent = api.called('sendMessage').filter((c) => c.params.chat_id === OTHER.id);
+  assert.equal(sent.length, 2);
+  assert.ok(sent.every((c) => c.params.message_thread_id === 77));
+  assert.match(sent[0].params.text, /будут приходить сюда/);
+  assert.match(sent[1].params.text, new RegExp(CHANGES[0].title));
+  assert.deepEqual(await getSetting('changelog_target'), { chat_id: OTHER.id, thread_id: 77, title: 'Сквад Новости' });
+  assert.equal(await getSetting('changelog_posted'), CHANGES[0].id);
+  assert.ok(api.called('deleteMessage').some((c) => c.params.message_id === cmd.message_id));
+  assert.equal(posts(api).length, 0);
+
+  await onMessage(privateMessage(OWNER, '/log'));
+  assert.match(toOwner(api).at(-2).params.text, /Куда: Сквад Новости · топик/);
+});
+
+test('/log_on where Финя cannot write: the owner hears why, nothing moves', async () => {
+  const api = await setup({
+    sendMessage: (p) => {
+      if (p.chat_id === OTHER.id) throw apiError('sendMessage', 400, 'Bad Request: TOPIC_CLOSED');
+      return { message_id: 1 };
+    },
+  });
+  await freshDeploy();
+  await setSetting('changelog_failed_at', nowInt());
+  await onMessage(groupMessage(OTHER, OWNER, '/log_on', otherTopic));
+  assert.equal(await getSetting('changelog_target'), null);
+  assert.equal(await getSetting('changelog_posted'), null);
+  assert.match(toOwner(api).at(-1).params.text, /Не могу писать в этот топик: Bad Request: TOPIC_CLOSED/);
   await db.run('DELETE FROM error_log');
 });
