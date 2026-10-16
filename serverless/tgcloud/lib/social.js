@@ -44,7 +44,7 @@ export const marriedDays = (since, ts = nowInt()) => Math.max(0, Math.floor((ts 
 // A proposal waits for the other one's button for an hour.
 export async function propose(chatId, fromId, toId) {
   if (fromId === toId) throw new SocialError('Жениться на себе нельзя, даже в Скваде 😏');
-  if (await spouseOf(fromId)) throw new SocialError('Ты уже в браке. Сначала «развод».');
+  if (await spouseOf(fromId)) throw new SocialError('Ты уже в браке. Сначала «Развод».');
   if (await spouseOf(toId)) throw new SocialError('Этот участник уже в браке.');
   await db.run(sql`INSERT INTO proposals (from_id, to_id, chat_id, message_id, created_at)
     VALUES (${fromId}, ${toId}, ${chatId}, NULL, ${nowInt()})
@@ -144,11 +144,11 @@ export const normalizeCmd = (s) => String(s || '').toLowerCase().replace(/ё/g, 
 export async function addAction(cmd, action) {
   cmd = normalizeCmd(cmd);
   action = String(action || '').replace(/\s+/g, ' ').trim();
-  if (!/^[\p{L}][\p{L} -]{0,29}$/u.test(cmd)) throw new SocialError('Команда: 1–30 букв, например «пощекотать».');
+  if (!/^[\p{L}][\p{L} -]{0,29}$/u.test(cmd)) throw new SocialError('Команда: 1–30 букв, например «Пощекотать».');
   if (!action || Array.from(action).length > 60) throw new SocialError('Действие: 1–60 символов, например «щекочет 🤭».');
   const count = await db.get(sql`SELECT COUNT(*) AS c FROM rp_actions`);
   const exists = await db.get(sql`SELECT 1 AS x FROM rp_actions WHERE cmd = ${cmd}`);
-  if (!exists && count.c >= RP_LIMIT) throw new SocialError(`Своих действий уже ${RP_LIMIT}. Удали лишние: «-рп команда».`);
+  if (!exists && count.c >= RP_LIMIT) throw new SocialError(`Своих действий уже ${RP_LIMIT}. Удали лишние: «-РП Команда».`);
   await db.run(sql`INSERT INTO rp_actions (cmd, action, created_at) VALUES (${cmd}, ${truncate(action, 60)}, ${nowInt()})
     ON CONFLICT(cmd) DO UPDATE SET action = excluded.action`);
   return cmd;

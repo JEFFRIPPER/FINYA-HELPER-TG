@@ -42,6 +42,8 @@ function fmtWait(seconds) {
 }
 
 const pick = (list) => list[Math.floor(Math.random() * list.length)];
+// Commands are shown Title Case («Кто Я», «Дать Пять»); typing them works in any case.
+const titleCase = (s) => String(s).replace(/(^|[\s«/-])(\p{Ll})/gu, (m, a, b) => a + b.toUpperCase());
 
 // ---- sending -------------------------------------------------------------------
 
@@ -128,7 +130,7 @@ async function showProfile(message, who, self) {
   if (who.isBot) {
     const me = await getMe();
     const text = who.id === me.id
-      ? '🤖 Я Финя, помощница Сквада 🔥\nВсе мои команды: «Финя, команды».'
+      ? '🤖 Я Финя, помощница Сквада 🔥\nВсе мои команды: «Финя, Команды».'
       : '🤖 Это бот, у ботов нет профиля в Скваде.';
     await say(message, text, { temp: true });
     return;
@@ -205,7 +207,7 @@ async function plusRep(message, target) {
 async function marriageStatus(message) {
   const s = await social.spouseOf(message.from.id);
   if (!s) {
-    await say(message, '💔 Ты не в браке.\nЧтобы сделать предложение, ответь «брак» на сообщение избранника.', { temp: true });
+    await say(message, '💔 Ты не в браке.\nЧтобы сделать предложение, ответь «Брак» на сообщение избранника.', { temp: true });
     return;
   }
   const partner = await members.nameOf(s.partner_id);
@@ -238,7 +240,7 @@ async function propose(message, target) {
 
 async function couplesText() {
   const rows = await social.couples(15);
-  if (!rows.length) return '💒 Пар в Скваде пока нет.\nОтветь «брак» на сообщение избранника, чтобы стать первыми.';
+  if (!rows.length) return '💒 Пар в Скваде пока нет.\nОтветь «Брак» на сообщение избранника, чтобы стать первыми.';
   let text = `💒 Пары Сквада: ${await social.coupleCount()}\n`;
   for (const [i, r] of rows.entries()) {
     const a = escapeHtml(truncate(await members.nameOf(r.a), 30));
@@ -279,8 +281,8 @@ async function rp(message, found, target) {
 async function rpListText() {
   const custom = await social.customActions();
   let text = '🤗 РП-действия\nОтветь словом на сообщение участника (или добавь @ник):\n\n' +
-    Object.keys(social.RP_ACTIONS).join(', ');
-  if (custom.length) text += '\n\n✨ Свои: ' + custom.map((r) => escapeHtml(r.cmd)).join(', ');
+    Object.keys(social.RP_ACTIONS).map(titleCase).join(', ');
+  if (custom.length) text += '\n\n✨ Свои: ' + custom.map((r) => escapeHtml(titleCase(r.cmd))).join(', ');
   return text;
 }
 
@@ -321,25 +323,31 @@ async function fun(message, rest) {
 
 // ---- help --------------------------------------------------------------------------
 
+// Each command with its description quoted under it.
 function helpText(owner, moderation) {
-  let text = '🤖 Финя в чате\n\n' +
-    '👤 кто я · кто ты (ответом) — профиль\n' +
-    '🏆 Финя, топ — топ по XP\n' +
-    '📊 стата · топ дня / недели / месяца — актив и участники\n' +
-    `🌾 фарм — случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}\n` +
-    '❤️ + или «спасибо» ответом — репутация\n' +
-    '💍 брак (ответом) · развод · браки\n' +
-    '🤗 обнять, поцеловать, ударить… (ответом) · рп — все действия\n' +
-    '🔮 Финя, кто… · Финя, инфа… · Финя, выбери А или Б · Финя, вопрос?';
+  const rows = [
+    ['👤 Кто Я · Кто Ты (ответом)', 'Профиль: звание, XP, репутация, брак и ачивки'],
+    ['🏆 Финя, Топ', 'Топ Сквада по XP'],
+    ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и список участников, период переключается кнопками'],
+    ['🌾 Фарм', `Случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}, иногда редкий — до ${xp.FARM_RARE_MAX}`],
+    ['❤️ + или «Спасибо» (ответом)', 'Репутация участнику, без лимита'],
+    ['💍 Брак (ответом) · Развод · Браки', 'Предложение руки и сердца, развод и все пары Сквада'],
+    ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
+    ['🔮 Финя, Кто… · Финя, Инфа…', 'Финя выберет участника или назовёт шанс в процентах'],
+    ['🤔 Финя, Выбери А или Б · Финя, Вопрос?', 'Выбор из вариантов и ответ «да» или «нет»'],
+  ];
   if (moderation) {
-    text += '\n\n🛡 Админам (ответом): мут 1ч · размут · бан · разбан · кик · варн · снять варн · варны. ' +
-      'Причину пиши с новой строки.';
+    rows.push(['🛡 Мут 1ч · Размут · Бан · Разбан · Кик · Варн · Снять Варн · Варны',
+      'Для админов, ответом на сообщение. Причину пиши с новой строки']);
   }
   if (owner) {
-    text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд / капча / модерация вкл/выкл · ' +
-      'эмодзи (в личке) — премиум-эмодзи';
+    rows.push(
+      ['👑 +РП Команда = Действие · -РП Команда', 'Владельцу: свои РП-действия'],
+      ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Владельцу: защита чата'],
+      ['✨ Эмодзи (в личке)', 'Владельцу: премиум-эмодзи Фини'],
+    );
   }
-  return text;
+  return '🤖 Финя в чате\n\n' + rows.map(([cmd, about]) => `${cmd}\n<blockquote>${about}</blockquote>`).join('\n');
 }
 
 // ---- owner settings ----------------------------------------------------------------
@@ -409,7 +417,7 @@ export async function handleText(message) {
   if (owner && (await ownerCommand(message, rest))) return true;
 
   if (addressed && !cmd) {
-    await say(message, '👋 На месте! Все команды: «Финя, команды».', { temp: true });
+    await say(message, '👋 На месте! Все команды: «Финя, Команды».', { temp: true });
     return true;
   }
   if (cmd === 'команды' || (addressed && ['помощь', 'help'].includes(cmd))) {

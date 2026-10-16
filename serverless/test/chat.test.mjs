@@ -259,7 +259,7 @@ test('RP actions need a target; the owner adds his own', async () => {
   await say(a, 'пощекотать', replyTo(b));
   assert.match(lastSent(api), /^<b>✨ .*щекочет 🤭/);
   await say(a, 'рп');
-  assert.match(lastSent(api), /Свои: пощекотать/);
+  assert.match(lastSent(api), /Свои: Пощекотать/);
   await say(OWNER, '-рп пощекотать');
   await say(a, 'пощекотать', replyTo(b));
   assert.match(lastSent(api), /Свои|удалено/);
@@ -280,7 +280,8 @@ test('«Финя, …»: who, chance, choice and a yes/no answer', async () => {
   await say(user(1), 'Финя');
   assert.match(lastSent(api), /На месте/);
   await say(user(1), 'финя, команды');
-  assert.match(lastSent(api), /кто я/);
+  assert.match(lastSent(api), /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль: звание/);
+  assert.doesNotMatch(lastSent(api), /Владельцу/);
   // Talking about Финя is not a command.
   const before = sent(api).length;
   await say(user(1), 'финя сегодня быстрая');
@@ -294,11 +295,11 @@ test('moderation by text is off until the owner turns it on', async () => {
   assert.equal(api.called('restrictChatMember').length, 0);
   assert.equal(sent(api).length, 0);
   await say(OWNER, 'Финя, команды');
-  assert.doesNotMatch(lastSent(api), /Админам/);
+  assert.doesNotMatch(lastSent(api), /Для админов/);
   await say(OWNER, 'Финя, модерация вкл');
   assert.match(lastSent(api), /Модерация командами включена/);
   await say(OWNER, 'Финя, команды');
-  assert.match(lastSent(api), /Админам \(ответом\): мут/);
+  assert.match(lastSent(api), /🛡 Мут 1ч · Размут[^\n]*\n<blockquote>Для админов/);
   await say(user(10), 'мут 1ч', replyTo(user(5)));
   assert.equal(api.called('restrictChatMember').length, 1);
 });
