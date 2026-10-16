@@ -117,7 +117,7 @@ async function deleteDue(deadline, limit = 20) {
 }
 
 // The «/» menu: three commands for everyone, the owner also sees his own.
-const COMMANDS_VERSION = '3';
+const COMMANDS_VERSION = '4';
 async function ensureCommands() {
   if ((await getSetting('commands_version')) === COMMANDS_VERSION) return;
   const common = [
@@ -132,7 +132,7 @@ async function ensureCommands() {
     await api.setMyCommands({
       commands: [
         ...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' },
-        { command: 'log', description: 'Новость об обновлении: /log post — в CHANGELOG' },
+        { command: 'log', description: 'Новость об обновлении: /log post — в топик, /log_on в топике — привязать' },
       ],
       scope: { type: 'chat', chat_id: OWNER_USER_ID },
     });
@@ -417,6 +417,8 @@ async function xpChatMatches(chatId) {
   return chatId === target;
 }
 
+const inSquadChat = async (m) => m.chat.type !== 'private' && xpChatMatches(m.chat.id);
+
 // A message in a Squad chat: commands in words, members and protection (lib/chat.js), then XP.
 async function squadMessage(message, command) {
   let squad = false;
@@ -480,7 +482,8 @@ const COMMANDS = {
   posts_on: (m, s, a) => postsOnCommand(m, a),
   posts_off: (m, s, a) => postsOffCommand(m, a),
   posts_retry: (m, s, a) => postsRetryCommand(m, a),
-  log: (m, s, a) => changelog.command(m, a, isAdminUser(m.from)),
+  log: async (m, s, a) => changelog.command(m, a, isAdminUser(m.from), await inSquadChat(m)),
+  log_on: async (m) => changelog.bindCommand(m, isAdminUser(m.from), await inSquadChat(m)),
 };
 
 export async function onMessage(message) {

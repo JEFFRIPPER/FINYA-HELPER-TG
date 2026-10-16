@@ -1,16 +1,26 @@
 // Update news for the CHANGELOG topic of SQUAD FAMILY CHAT. Every release of the
 // bot or the Mini App adds an entry on top of CHANGES; after the deploy pump() posts
-// it there by itself. /log shows the next news to the owner, /log post posts it now.
+// it there by itself. /log_on in a topic makes it the place for the news, like
+// /posts_on for the channel's posts. /log shows the next news, /log post posts it now.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from './config.js';
-import { getSetting, logError, setSetting } from './store.js';
+import { deleteLater, getSetting, logError, setSetting } from './store.js';
 import { withPremium } from './emoji.js';
-import { boldHtml, escapeHtml, nowInt } from './util.js';
+import { boldHtml, escapeHtml, nowInt, truncate } from './util.js';
 
-// https://t.me/c/2229986493/271940
+// Until /log_on: https://t.me/c/2229986493/271940
 export const CHANGELOG_CHAT_ID = -1002229986493;
 export const CHANGELOG_THREAD_ID = 271940;
+
+// The chat and topic the news go to.
+export async function target() {
+  const t = await getSetting('changelog_target');
+  if (t && t.chat_id) return t;
+  return { chat_id: CHANGELOG_CHAT_ID, thread_id: CHANGELOG_THREAD_ID, title: 'SQUAD FAMILY CHAT' };
+}
+
+const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { message_thread_id: t.thread_id } : {}), ...params });
 
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
@@ -58,45 +68,49 @@ async function setPosted(from, to) {
   return r.rowsAffected === 1;
 }
 
+// What Telegram answered.
+const reason = (err) => String((err && err.description) || (err && err.message) || err);
+
 async function warnOwner(entry, err) {
   if ((await getSetting('changelog_warned')) === entry.id) return;
   await setSetting('changelog_warned', entry.id);
-  const why = escapeHtml(String((err && err.description) || (err && err.message) || err));
+  const why = escapeHtml(reason(err));
   try {
     await api.sendMessage({
       chat_id: OWNER_USER_ID, parse_mode: 'HTML',
       text: boldHtml(`📰 Не смогла опубликовать новость в CHANGELOG: ${why}\n\n` +
-        'Проверь, что Финя есть в SQUAD FAMILY CHAT и может писать в топик. Попробую ещё раз сама, или напиши /log post.'),
+        'Отправь /log_on прямо в топике для новостей: Финя запомнит его и сразу опубликует новость. ' +
+        'Если не выйдет, проверь, что она может там писать.'),
     });
   } catch {
     // The owner's chat is closed: the error log has it.
   }
 }
 
-// Posts the oldest entry not in the topic yet. → 'posted' | 'none' | 'wait' | 'failed'
+// Posts the oldest entry not in the topic yet. → { status: 'posted' | 'none' | 'wait' | 'failed', why }
 export async function postNext({ manual = false } = {}) {
   const { posted, list } = await pending();
-  if (!list.length) return 'none';
+  if (!list.length) return { status: 'none' };
   if (!manual) {
     const failedAt = await getSetting('changelog_failed_at');
-    if (failedAt && nowInt() - failedAt < FAIL_GAP) return 'wait';
+    if (failedAt && nowInt() - failedAt < FAIL_GAP) return { status: 'wait' };
   }
   const entry = list[0];
-  if (!(await setPosted(posted, entry.id))) return 'wait';
+  const t = await target();
+  if (!(await setPosted(posted, entry.id))) return { status: 'wait' };
   try {
-    await withPremium({
-      chat_id: CHANGELOG_CHAT_ID, message_thread_id: CHANGELOG_THREAD_ID, text: newsText(entry), parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-    }, (p) => api.sendMessage(p));
+    await withPremium(inTarget(t, {
+      text: newsText(entry), parse_mode: 'HTML', link_preview_options: { is_disabled: true },
+    }), (p) => api.sendMessage(p));
   } catch (err) {
     await setPosted(entry.id, posted);
     await setSetting('changelog_failed_at', nowInt());
     await logError('changelog.post', err);
     await warnOwner(entry, err);
-    return 'failed';
+    return { status: 'failed', why: reason(err) };
   }
   await setSetting('changelog_failed_at', null);
-  return 'posted';
+  return { status: 'posted' };
 }
 
 // From pump(): a fresh deploy's news goes out by itself.
@@ -109,36 +123,83 @@ const reply = (message, text) => withPremium({
   reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
 }, (p) => api.sendMessage(p));
 
-// In the private chat by the owner; in the CHANGELOG chat also by its anonymous admins.
-export function allowed(message, owner) {
+// The owner; in a group also its anonymous admins (they write as the group), if it is
+// a Squad chat or the one with the news.
+export async function allowed(message, owner, squad = false) {
   if (owner) return true;
-  return Boolean(message.sender_chat) && message.sender_chat.id === CHANGELOG_CHAT_ID &&
-    message.chat.id === CHANGELOG_CHAT_ID;
+  const chatId = message.chat.id;
+  if (!message.sender_chat || message.sender_chat.id !== chatId) return false;
+  return squad || chatId === CHANGELOG_CHAT_ID || chatId === (await target()).chat_id;
+}
+
+async function dropCommand(message) {
+  try {
+    await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
+  } catch {
+    // No rights to delete: the command stays.
+  }
+}
+
+// /log_on in a topic: the news go there from now on, and the pending one right away.
+export async function bindCommand(message, owner, squad) {
+  const chat = message.chat;
+  if (!['group', 'supergroup'].includes(chat.type)) {
+    if (owner) await reply(message, 'Отправь /log_on прямо в топике, куда Фине писать новости об обновлениях.');
+    return;
+  }
+  if (!(await allowed(message, owner, squad))) return;
+  await dropCommand(message);
+  const t = {
+    chat_id: chat.id,
+    thread_id: message.is_topic_message && message.message_thread_id ? message.message_thread_id : null,
+    title: truncate(chat.title || '', 64),
+  };
+  let sent;
+  try {
+    sent = await withPremium(inTarget(t, {
+      text: boldHtml('📰 Готово: новости об обновлениях Фини будут приходить сюда.'), parse_mode: 'HTML',
+    }), (p) => api.sendMessage(p));
+  } catch (err) {
+    await logError('changelog.bind', err);
+    try {
+      await api.sendMessage({
+        chat_id: OWNER_USER_ID, parse_mode: 'HTML',
+        text: boldHtml(`📰 Не могу писать в этот топик: ${escapeHtml(reason(err))}\n\nДай Фине право писать сообщения и повтори /log_on.`),
+      });
+    } catch {
+      // The owner's chat is closed: the error log has it.
+    }
+    return;
+  }
+  await setSetting('changelog_target', t);
+  await setSetting('changelog_failed_at', null);
+  await setSetting('changelog_warned', null);
+  await deleteLater(chat.id, [sent && sent.message_id], 60);
+  await postNext({ manual: true });
 }
 
 // /log — the next news; /log post — post it now instead of waiting for pump().
-export async function command(message, args, owner) {
-  if (!allowed(message, owner)) return;
+export async function command(message, args, owner, squad) {
+  if (!(await allowed(message, owner, squad))) return;
   const group = message.chat.type !== 'private';
-  if (group) {
-    try {
-      await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
-    } catch {
-      // No rights to delete: the command stays.
-    }
-  }
+  if (group) await dropCommand(message);
   if ((args[0] || '').toLowerCase() !== 'post') {
     if (group) return;
     const { list } = await pending();
     const entry = list[0] || CHANGES[0];
+    const t = await target();
     const state = list.length ? 'Ещё не в топике: выйдет сама после выката, или сразу — /log post.' : 'Уже в топике.';
-    await reply(message, `📰 Новость для CHANGELOG\n${state}`);
+    await reply(message, `📰 Новость для CHANGELOG\n${state}\n\nКуда: ${escapeHtml(t.title || 'чат')}${t.thread_id ? ' · топик' : ''}. ` +
+      'Сменить: /log_on прямо в нужном топике.');
     await withPremium({ chat_id: message.chat.id, text: newsText(entry), parse_mode: 'HTML' }, (p) => api.sendMessage(p));
     return;
   }
-  const result = await postNext({ manual: true });
+  const { status, why } = await postNext({ manual: true });
   if (group) return;
-  if (result === 'posted') await reply(message, '✅ Новость опубликована в CHANGELOG.');
-  else if (result === 'none') await reply(message, 'Это обновление уже в топике. Новая запись появится со следующим обновлением.');
-  else if (result === 'failed') await reply(message, '❌ Не вышло опубликовать: проверь, что Финя в чате и может писать в топик CHANGELOG.');
+  if (status === 'posted') await reply(message, '✅ Новость опубликована в CHANGELOG.');
+  else if (status === 'none') await reply(message, 'Это обновление уже в топике. Новая запись появится со следующим обновлением.');
+  else if (status === 'failed') {
+    await reply(message, `❌ Не вышло опубликовать: ${escapeHtml(why)}\n\nОтправь /log_on прямо в топике для новостей, ` +
+      'или проверь, что Финя может там писать.');
+  }
 }
