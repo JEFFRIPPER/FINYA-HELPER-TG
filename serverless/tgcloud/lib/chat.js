@@ -4,7 +4,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from './config.js';
-import { deleteLater, setSetting } from './store.js';
+import { deleteLater, getSetting, setSetting } from './store.js';
 import { answer, button, getMe, keyboard } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, nowInt, truncate } from './util.js';
@@ -139,35 +139,33 @@ async function showProfile(message, who, self) {
 
 // ---- tops and stats --------------------------------------------------------------
 
-const PERIODS = {
-  'топ дня': ['day', 'сегодня'],
-  'топ недели': ['week', 'эта неделя'],
-  'топ месяца': ['month', 'этот месяц'],
-  'топ актива': [null, 'всё время'],
-  'актив': [null, 'всё время'],
+// One panel for the chat's activity, switched by buttons under it.
+const STAT_PERIODS = {
+  day: ['День', 'сегодня'],
+  week: ['Неделя', 'эта неделя'],
+  month: ['Месяц', 'этот месяц'],
+  all: ['Всё время', 'всё время'],
 };
+// Words that open the panel, and on which period.
+const STAT_WORDS = {
+  'стата': 'day', 'статистика': 'day', 'стата чата': 'day', 'актив': 'all', 'топ актива': 'all',
+  'топ дня': 'day', 'топ недели': 'week', 'топ месяца': 'month',
+};
+const STAT_LIST = 20;
 const MEDALS = ['🥇', '🥈', '🥉'];
 const placeMark = (i) => MEDALS[i] || `${i + 1}.`;
 
-async function activityTopText(chat, period, label) {
-  const rows = await members.activityTop(chat.id, period, 10);
-  let text = `🏆 Топ актива · ${label}`;
-  if (!rows.length) return `${text}\n\nПока пусто: напиши что-нибудь, и ты первый в списке 😉`;
-  rows.forEach((r, i) => { text += `\n${placeMark(i)} ${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`; });
-  return text;
-}
+const statsKeyboard = (period) => keyboard([Object.entries(STAT_PERIODS).map(([key, [label]]) =>
+  button(key === period ? `• ${label}` : label, { callback_data: `stat:${key}` }))]);
 
-async function statsText(chat) {
-  const s = await members.chatStats(chat.id);
-  let text = '📊 Стата чата\n\n' +
-    `💬 Сегодня: ${fmtThousands(s.day)} · неделя: ${fmtThousands(s.week)}\n` +
-    `💬 Месяц: ${fmtThousands(s.month)} · всего: ${fmtThousands(s.total)}\n` +
-    `👥 Участников: ${s.members} · активных за неделю: ${s.active}`;
-  if (s.top.length) {
-    text += '\n\n🔥 Сегодня активнее всех:';
-    s.top.forEach((r, i) => { text += `\n${placeMark(i)} ${escapeHtml(truncate(r.name, 35))} — ${r.n}`; });
-  }
-  return text;
+async function statsPanel(chatId, period) {
+  const s = await members.periodStats(chatId, period, STAT_LIST);
+  let text = `📊 Стата чата · ${STAT_PERIODS[period][1]}\n\n👥 Участников: ${s.members} · писали: ${s.writers}\n`;
+  if (!s.top.length) text += '\nПока никто не писал: напиши что-нибудь, и ты первый в списке 😉\n';
+  s.top.forEach((r, i) => { text += `\n${placeMark(i)} ${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`; });
+  if (s.writers > s.top.length) text += `\n…и ещё ${s.writers - s.top.length}`;
+  text += `\n\n💬 Всего сообщений: ${fmtThousands(s.messages)}`;
+  return { text, markup: statsKeyboard(period) };
 }
 
 // ---- farm ------------------------------------------------------------------------
@@ -323,26 +321,34 @@ async function fun(message, rest) {
 
 // ---- help --------------------------------------------------------------------------
 
-function helpText(owner) {
+function helpText(owner, moderation) {
   let text = '🤖 Финя в чате\n\n' +
     '👤 кто я · кто ты (ответом) — профиль\n' +
-    '🏆 Финя, топ — по XP · топ дня / недели / месяца — по сообщениям\n' +
-    '📊 стата — стата чата\n' +
+    '🏆 Финя, топ — топ по XP\n' +
+    '📊 стата · топ дня / недели / месяца — актив и участники\n' +
     `🌾 фарм — случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}\n` +
     '❤️ + или «спасибо» ответом — репутация\n' +
     '💍 брак (ответом) · развод · браки\n' +
     '🤗 обнять, поцеловать, ударить… (ответом) · рп — все действия\n' +
-    '🔮 Финя, кто… · Финя, инфа… · Финя, выбери А или Б · Финя, вопрос?\n\n' +
-    '🛡 Админам (ответом): мут 1ч · размут · бан · разбан · кик · варн · снять варн · варны. ' +
-    'Причину пиши с новой строки.';
+    '🔮 Финя, кто… · Финя, инфа… · Финя, выбери А или Б · Финя, вопрос?';
+  if (moderation) {
+    text += '\n\n🛡 Админам (ответом): мут 1ч · размут · бан · разбан · кик · варн · снять варн · варны. ' +
+      'Причину пиши с новой строки.';
+  }
   if (owner) {
-    text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд вкл/выкл · капча вкл/выкл · ' +
+    text += '\n\n👑 Владельцу: +рп команда = действие · -рп команда · антифлуд / капча / модерация вкл/выкл · ' +
       'эмодзи (в личке) — премиум-эмодзи';
   }
   return text;
 }
 
 // ---- owner settings ----------------------------------------------------------------
+
+const SWITCHES = {
+  'антифлуд': ['chat_antiflood', 'Антифлуд', 'включён', 'выключен'],
+  'капча': ['chat_captcha', 'Капча для новичков', 'включена', 'выключена'],
+  'модерация': ['chat_moderation', 'Модерация командами', 'включена', 'выключена'],
+};
 
 async function ownerCommand(message, rest) {
   let m = /^\+рп\s+(.+?)\s*=\s*(.+)$/iu.exec(rest);
@@ -362,12 +368,12 @@ async function ownerCommand(message, rest) {
     await say(message, ok ? '🗑 Действие удалено.' : 'Такого своего действия нет. Встроенные удалить нельзя.');
     return true;
   }
-  m = /^(антифлуд|капча)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
+  m = /^(антифлуд|капча|модерация)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
   if (m) {
     const on = ['вкл', 'on'].includes(m[2]);
-    const key = m[1] === 'антифлуд' ? 'chat_antiflood' : 'chat_captcha';
+    const [key, name, onWord, offWord] = SWITCHES[m[1]];
     await setSetting(key, on);
-    await say(message, `${on ? '✅' : '⏸'} ${m[1] === 'антифлуд' ? 'Антифлуд' : 'Капча для новичков'} ${on ? 'включена' : 'выключена'}.`);
+    await say(message, `${on ? '✅' : '⏸'} ${name} ${on ? onWord : offWord}.`);
     return true;
   }
   return false;
@@ -407,7 +413,7 @@ export async function handleText(message) {
     return true;
   }
   if (cmd === 'команды' || (addressed && ['помощь', 'help'].includes(cmd))) {
-    await say(message, helpText(owner), { temp: true });
+    await say(message, helpText(owner, await getSetting('chat_moderation')), { temp: true });
     return true;
   }
   if (['кто я', 'профиль', 'мой профиль', 'кто ты'].includes(cmd)) {
@@ -452,7 +458,7 @@ export async function handleText(message) {
       await marriageStatus(message);
       return true;
     }
-    if (PERIODS[cmd] || ['стата', 'статистика'].includes(cmd)) {
+    if (STAT_WORDS[cmd]) {
       await say(message, 'Это работает в чате Сквада: напиши там.');
       return true;
     }
@@ -460,13 +466,9 @@ export async function handleText(message) {
   }
 
   // ---- group only ----
-  if (PERIODS[cmd]) {
-    const [period, label] = PERIODS[cmd];
-    await say(message, await activityTopText(message.chat, period, label), { temp: true });
-    return true;
-  }
-  if (['стата', 'статистика', 'стата чата'].includes(cmd)) {
-    await say(message, await statsText(message.chat), { temp: true });
+  if (STAT_WORDS[cmd]) {
+    const { text: stats, markup } = await statsPanel(message.chat.id, STAT_WORDS[cmd]);
+    await say(message, stats, { markup, temp: true });
     return true;
   }
   const hint = message.reply_to_message || (message.entities || []).some((e) => ['mention', 'text_mention'].includes(e.type));
@@ -480,8 +482,10 @@ export async function handleText(message) {
     await plusRep(message, target);
     return true;
   }
-  const mod = MOD_VERBS.exec(rest.trim());
-  const parsed = mod && target ? moder.parseCommandArgs(norm(mod[1]), mod[2] || (mod[3] ? '\n' + mod[3] : '')) : null;
+  const mod = target && MOD_VERBS.exec(rest.trim());
+  const moderation = mod || cmd === 'варны' ? await getSetting('chat_moderation') : false;
+  const parsed = mod && moderation
+    ? moder.parseCommandArgs(norm(mod[1]), mod[2] || (mod[3] ? '\n' + mod[3] : '')) : null;
   if (parsed) {
     const verb = norm(mod[1]);
     try {
@@ -493,7 +497,7 @@ export async function handleText(message) {
     }
     return true;
   }
-  if (cmd === 'варны' && target) {
+  if (cmd === 'варны' && target && moderation) {
     await say(message, await moder.warnsText(message.chat.id, target), { temp: true });
     return true;
   }
@@ -534,12 +538,14 @@ export async function onSquadChatMember(event) {
 
 // ---- buttons -------------------------------------------------------------------------
 
-async function edit(query, text) {
+async function edit(query, text, markup) {
+  const params = {
+    chat_id: query.message.chat.id, message_id: query.message.message_id, text: boldHtml(text), parse_mode: 'HTML',
+    link_preview_options: { is_disabled: true },
+  };
+  if (markup) params.reply_markup = markup;
   try {
-    await withPremium({
-      chat_id: query.message.chat.id, message_id: query.message.message_id, text: boldHtml(text), parse_mode: 'HTML',
-      link_preview_options: { is_disabled: true },
-    }, (p) => api.editMessageText(p));
+    await withPremium(params, (p) => api.editMessageText(p));
   } catch {
     // Too old or unchanged.
   }
@@ -590,10 +596,17 @@ async function divorceButton(query, yes, userId, partnerId) {
   await edit(query, `💔 ${mention(userId, fullName(query.from))} и ${mention(partnerId, await members.nameOf(partnerId))} больше не в браке.`);
 }
 
+// Anyone in the chat switches the period; the panel is edited in place.
+async function statsButton(query, period) {
+  await answer(query);
+  const { text, markup } = await statsPanel(query.message.chat.id, period);
+  await edit(query, text, markup);
+}
+
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|cap|mod):/.exec(data);
+  const m = /^(marry|div|cap|mod|stat):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -604,6 +617,7 @@ export async function handleCallback(query) {
   else if ((p = /^div:([yn]):(\d+):(\d+)$/.exec(data))) await divorceButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^cap:(\d+)$/.exec(data))) await moder.captchaButton(query, Number(p[1]));
   else if ((p = /^mod:unmute:(\d+)$/.exec(data))) await moder.unmuteButton(query, Number(p[1]));
+  else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);
   else await answer(query);
   return true;
 }
