@@ -717,6 +717,18 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .rep-chip { border: 1px solid var(--line); background: rgba(255, 255, 255, 0.04); color: var(--text-2); }
 .rep-chip .icon { flex: none; width: 18px; height: 18px; fill: var(--gold); }
 
+/* ---- positions in the Squad ---------------------------------------------------- */
+.hero .job-chips { position: relative; margin-top: 6px; }
+.job-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 28px; max-width: 100%;
+  padding: 3px 10px 3px 8px; border-radius: 8px; font-weight: 500; font-size: 13px; line-height: 18px;
+  border: 1px solid rgba(255, 30, 60, 0.45); background: rgba(255, 30, 60, 0.12); color: #ffd6dc;
+}
+.job-chip i { font-style: normal; }
+.job-chip > span { min-width: 0; overflow-wrap: anywhere; }
+.team .lead.team-emoji { font-size: 20px; }
+.team .lead.team-emoji.muted { opacity: 0.45; }
+
 /* ---- streak ------------------------------------------------------------------ */
 .streak-chip {
   display: inline-flex;
