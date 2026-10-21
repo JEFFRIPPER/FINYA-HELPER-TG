@@ -52,7 +52,7 @@ function validInt(value, label, min = 0, max = Number.MAX_SAFE_INTEGER) {
 
 // Bonus XP (daily reward, quests, achievements, ...) from lib/club.js.
 // Stored in `events` with chat_id = 0 and message_id = the reward's key.
-export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly', 'farm']);
+export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly', 'farm', 'gift', 'casino']);
 
 async function points(userId, start, end) {
   const row = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
@@ -198,15 +198,18 @@ export async function setManualRank(userId, roman, opts) {
   return adminChange(userId, roman, { ...opts, action: 'set_manual_rank' });
 }
 
+// Tops show the nick («+ник») instead of the Telegram name.
+const TOP_COLUMNS = sql.raw('p.user_id, p.username, p.xp, p.manual_rank, COALESCE((SELECT nick FROM nicks n WHERE n.user_id = p.user_id), p.name) AS name');
+
 export async function leaderboard({ weekly = false, limit = 10 } = {}) {
   if (weekly) {
     const ts = nowInt();
-    return db.all(sql`SELECT p.*, SUM(e.points) AS score FROM profiles p JOIN events e ON e.user_id = p.user_id
+    return db.all(sql`SELECT ${TOP_COLUMNS}, SUM(e.points) AS score FROM profiles p JOIN events e ON e.user_id = p.user_id
       WHERE e.earned_at >= ${weekStart(ts)} AND e.earned_at <= ${ts} AND e.kind IN ('comment', 'reaction')
       GROUP BY p.user_id HAVING score > 0 ORDER BY score DESC, p.user_id LIMIT ${limit}`);
   }
-  return db.all(sql`SELECT *, xp AS score FROM profiles WHERE xp > 0
-    ORDER BY score DESC, user_id LIMIT ${limit}`);
+  return db.all(sql`SELECT ${TOP_COLUMNS}, p.xp AS score FROM profiles p WHERE p.xp > 0
+    ORDER BY score DESC, p.user_id LIMIT ${limit}`);
 }
 
 export async function messageRecord(chatId, messageId) {

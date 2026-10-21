@@ -292,8 +292,15 @@ test('«Финя, …»: who, chance, choice and a yes/no answer', async () => {
   await say(user(1), 'Финя');
   assert.match(lastSent(api), /На месте/);
   await say(user(1), 'финя, команды');
-  assert.match(lastSent(api), /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль с графиком актива/);
-  assert.doesNotMatch(lastSent(api), /Владельцу/);
+  assert.match(lastSent(api), /Выбери раздел/);
+  const menu = sent(api).at(-1).params.reply_markup.inline_keyboard.flat().map((b) => b.text);
+  assert.deepEqual(menu, ['👤 Профиль', '💞 Люди', '🎲 XP и игры', '🛠 Полезное', '🛡 Админам']);
+  await onCallbackQuery(groupButton(user(1), 'help:profile:0'));
+  const shown = api.called('editMessageText').at(-1).params;
+  assert.match(shown.text, /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль с графиком актива/);
+  assert.equal(shown.reply_markup.inline_keyboard[0][0].text, '• 👤 Профиль');
+  await onCallbackQuery(groupButton(user(1), 'help:owner:0'));
+  assert.equal(api.called('editMessageText').length, 1);
   // Talking about Финя is not a command.
   const before = sent(api).length;
   await say(user(1), 'финя сегодня быстрая');
@@ -306,12 +313,16 @@ test('moderation by text is off until the owner turns it on', async () => {
   await say(user(10), 'варны', replyTo(user(5)));
   assert.equal(api.called('restrictChatMember').length, 0);
   assert.equal(sent(api).length, 0);
-  await say(OWNER, 'Финя, команды');
-  assert.doesNotMatch(lastSent(api), /Для админов/);
+  const adminHelp = async () => {
+    await onCallbackQuery(groupButton(OWNER, 'help:admin:1'));
+    return api.called('editMessageText').at(-1).params.text;
+  };
+  assert.doesNotMatch(await adminHelp(), /Мут 1ч/);
   await say(OWNER, 'Финя, модерация вкл');
   assert.match(lastSent(api), /Модерация командами включена/);
   await say(OWNER, 'Финя, команды');
-  assert.match(lastSent(api), /🛡 Мут 1ч · Размут[^\n]*\n<blockquote>Для админов/);
+  assert.ok(sent(api).at(-1).params.reply_markup.inline_keyboard.flat().some((b) => b.text === '👑 Владельцу'));
+  assert.match(await adminHelp(), /🛡 Мут 1ч · Размут[^\n]*\n<blockquote>Ответом на сообщение/);
   await say(user(10), 'мут 1ч', replyTo(user(5)));
   assert.equal(api.called('restrictChatMember').length, 1);
 });
