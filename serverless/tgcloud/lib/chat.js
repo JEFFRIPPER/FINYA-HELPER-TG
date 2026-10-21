@@ -3,7 +3,7 @@
 // ones also work in the private chat.
 import { api, BotApiError, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
-import { OWNER_USER_ID } from './config.js';
+import { OWNER_USER_ID, WEBAPP_URL } from './config.js';
 import { deleteLater, getSetting, setSetting } from './store.js';
 import { answer, button, getMe, keyboard } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
@@ -514,6 +514,7 @@ function helpText(owner, moderation) {
       ['👑 +РП Команда = Действие · -РП Команда', 'Владельцу: свои РП-действия'],
       ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Владельцу: защита чата'],
       ['✨ Эмодзи (в личке)', 'Владельцу: премиум-эмодзи Фини'],
+      ['📥 Обновить Инфо', 'Владельцу: подтянуть старую историю чата из экспорта Telegram Desktop'],
     );
   }
   return '🤖 Финя в чате\n\n' + rows.map(([cmd, about]) => `${cmd}\n<blockquote>${about}</blockquote>`).join('\n');
@@ -527,7 +528,26 @@ const SWITCHES = {
   'модерация': ['chat_moderation', 'Модерация командами', 'включена', 'выключена'],
 };
 
+export const HISTORY_TEXT = '📥 Обновить инфо: старая история чата\n\n'
+  + 'Боты не видят сообщения, которые были до них, даже с правами админа. Поэтому историю берём из экспорта:\n'
+  + '1. Telegram Desktop → чат → ⋮ → «Экспорт истории чата».\n'
+  + '2. Сними галочки с медиа, формат — «Машиночитаемый JSON».\n'
+  + '3. «Панель» в Mini App → «История чата» → выбери файл result.json.\n\n'
+  + 'Файл читается на устройстве, Фине уходит только, кто и сколько писал по дням. Повторная загрузка ничего не задвоит.';
+
+export async function historyKeyboard(chat) {
+  if (!chat || chat.type === 'private') {
+    return keyboard([[button('📥 Открыть загрузку', { web_app: { url: `${WEBAPP_URL}?tab=admin&open=history` } })]]);
+  }
+  const me = await getMe();
+  return keyboard([[button('📥 Открыть загрузку', { url: `https://t.me/${me.username}?start=history` })]]);
+}
+
 async function ownerCommand(message, rest) {
+  if (/^обновить\s+инфо$/u.test(norm(rest))) {
+    await say(message, HISTORY_TEXT, { markup: await historyKeyboard(message.chat), temp: true });
+    return true;
+  }
   let m = /^\+рп\s+(.+?)\s*=\s*(.+)$/iu.exec(rest);
   if (m) {
     try {

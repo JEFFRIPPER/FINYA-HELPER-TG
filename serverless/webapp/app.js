@@ -1240,6 +1240,257 @@
       polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);
   }
 
+  // ---- old chat history ---------------------------------------------------------
+  // Bots can't read what was written before them, so the owner exports the chat in
+  // Telegram Desktop (JSON). The file is read here, slice by slice, and only
+  // "who wrote how much on which day" goes to Финя.
+
+  var MSK_OFFSET = 3 * 3600;
+  var JOINS = { join_group_by_link: true, join_group_by_request: true };
+  var hist = { stage: 'idle', file: null, scan: null, chat: null, chunks: [], done: 0, added: 0, members: 0, error: '', percent: 0 };
+
+  function wait(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  // Calls back with every message object of the export; resolves to the chat's
+  // name, type and id (they come before "messages").
+  function readExport(file, onMessage, onProgress) {
+    var SLICE = 4 * 1024 * 1024;
+    var decoder = new TextDecoder('utf-8');
+    var head = '';
+    var depth = 0;
+    var inString = false;
+    var escaped = false;
+    var inMessages = false;
+    var buf = null;   // the message object read so far (from earlier slices)
+    var offset = 0;
+    function step() {
+      if (offset >= file.size) return Promise.resolve();
+      var blob = file.slice(offset, offset + SLICE);
+      return blob.arrayBuffer().then(function (bytes) {
+        offset += SLICE;
+        var text = decoder.decode(new Uint8Array(bytes), { stream: offset < file.size });
+        if (head.length < 65536 && !inMessages) head += text.slice(0, 65536);
+        var start = buf != null ? 0 : -1;
+        for (var i = 0; i < text.length; i++) {
+          var c = text.charCodeAt(i);
+          if (inString) {
+            if (escaped) escaped = false;
+            else if (c === 92) escaped = true;
+            else if (c === 34) inString = false;
+            continue;
+          }
+          if (c === 34) inString = true;
+          else if (c === 123 || c === 91) {
+            depth++;
+            if (depth === 2 && c === 91) inMessages = true;
+            else if (depth === 3 && inMessages && c === 123) start = i;
+          } else if (c === 125 || c === 93) {
+            if (depth === 3 && inMessages && c === 125 && start >= 0) {
+              var json = (buf || '') + text.slice(start, i + 1);
+              buf = null;
+              start = -1;
+              try { onMessage(JSON.parse(json)); } catch (e) { /* a broken message is skipped */ }
+            } else if (depth === 2 && inMessages) inMessages = false;
+            depth--;
+          }
+        }
+        if (start >= 0) buf = (buf || '') + text.slice(start);
+        onProgress(Math.min(100, Math.round((offset / file.size) * 100)));
+        return step();
+      });
+    }
+    return step().then(function () {
+      var root = head.slice(0, Math.max(0, head.indexOf('"messages"')));
+      var name = /"name":\s*("(?:[^"\\]|\\.)*")/.exec(root);
+      var type = /"type":\s*"(\w+)"/.exec(root);
+      var id = /"id":\s*(\d+)/.exec(root);
+      return { name: name ? JSON.parse(name[1]) : '', type: type ? type[1] : '', id: id ? Number(id[1]) : 0 };
+    });
+  }
+
+  function scanExport(file, onProgress) {
+    var users = {};
+    var total = 0;
+    var fromDay = Infinity;
+    var toDay = -Infinity;
+    function take(m) {
+      if (!m || (m.type !== 'message' && !(m.type === 'service' && JOINS[m.action]))) return;
+      var who = /^user(\d+)$/.exec(String((m.type === 'message' ? m.from_id : m.actor_id) || ''));
+      if (!who) return;
+      var ts = Number(m.date_unixtime) || Math.floor(Date.parse(m.date) / 1000);
+      if (!ts) return;
+      var u = users[who[1]] || (users[who[1]] = { id: Number(who[1]), name: '', first: ts, last: ts, msgs: 0, days: {} });
+      if (ts < u.first) u.first = ts;
+      if (m.type !== 'message') return;
+      if (typeof m.from === 'string' && m.from) u.name = m.from;
+      if (ts > u.last || !u.msgs) u.last = ts;
+      var day = Math.floor((ts + MSK_OFFSET) / 86400);
+      u.days[day] = (u.days[day] || 0) + 1;
+      u.msgs++;
+      total++;
+      if (day < fromDay) fromDay = day;
+      if (day > toDay) toDay = day;
+    }
+    return readExport(file, take, onProgress).then(function (chat) {
+      var list = Object.keys(users).map(function (k) { return users[k]; }).filter(function (u) { return u.msgs > 0; });
+      return { chat: chat, users: list, total: total, fromDay: fromDay, toDay: toDay };
+    });
+  }
+
+  // Batches the server accepts: at most 50 members and 4000 days each. One member
+  // may span several batches: every batch is merged on its own.
+  function historyChunks(users) {
+    var chunks = [];
+    var cur = [];
+    var rows = 0;
+    users.forEach(function (u) {
+      var days = Object.keys(u.days).map(function (d) { return [Number(d), u.days[d]]; });
+      for (var i = 0; i < days.length; i += 4000) {
+        var part = days.slice(i, i + 4000);
+        if (cur.length >= 50 || rows + part.length > 4000) { chunks.push(cur); cur = []; rows = 0; }
+        cur.push({ id: u.id, name: u.name, first: u.first, last: u.last, days: part });
+        rows += part.length;
+      }
+    });
+    if (cur.length) chunks.push(cur);
+    return chunks;
+  }
+
+  function dayText(day) {
+    var d = new Date(day * 86400 * 1000);
+    return pad(d.getUTCDate()) + '.' + pad(d.getUTCMonth() + 1) + '.' + d.getUTCFullYear();
+  }
+
+  function pickExport(file) {
+    hist = { stage: 'reading', file: file, scan: null, chat: null, chunks: [], done: 0, added: 0, members: 0, error: '', percent: 0 };
+    drawHistory();
+    var last = 0;
+    scanExport(file, function (p) {
+      hist.percent = p;
+      if (p - last >= 2 || p === 100) { last = p; drawHistory(); }
+    }).then(function (scan) {
+      if (!scan.total) throw new Error('В файле нет сообщений. Нужен экспорт чата в формате JSON (result.json).');
+      hist.scan = scan;
+      return api('history', { action: 'chat', id: scan.chat.id, type: scan.chat.type });
+    }).then(function (data) {
+      hist.chat = data.chat;
+      hist.chunks = historyChunks(hist.scan.users);
+      hist.stage = 'ready';
+      vibrate('light');
+      drawHistory();
+    }, function (err) {
+      hist.stage = 'error';
+      hist.error = err && err.type === 'ENDPOINT_ERROR' ? err.message : (err && err.message) || 'Не получилось прочитать файл.';
+      vibrate('error');
+      drawHistory();
+    });
+  }
+
+  // Sends the batches one by one; a pause from Telegram or a lost connection is
+  // retried, and «Продолжить» resumes from the batch that failed.
+  function uploadHistory() {
+    hist.stage = 'uploading';
+    hist.error = '';
+    drawHistory();
+    var tries = 0;
+    function next() {
+      if (hist.done >= hist.chunks.length) {
+        hist.stage = 'done';
+        vibrate('success');
+        drawHistory();
+        return;
+      }
+      api('history', { action: 'import', chat: hist.chat.id, users: hist.chunks[hist.done] }).then(function (r) {
+        tries = 0;
+        hist.done++;
+        hist.added += r.added || 0;
+        hist.members += r.members || 0;
+        drawHistory();
+        next();
+      }, function (err) {
+        var retry = !err || err.type !== 'ENDPOINT_ERROR' || /паузу/.test(err.message || '');
+        if (retry && tries < 4) {
+          tries++;
+          wait(tries * 15000).then(next);
+          return;
+        }
+        hist.stage = 'paused';
+        hist.error = errorText(err);
+        vibrate('error');
+        drawHistory();
+      });
+    }
+    next();
+  }
+
+  function historyCard() {
+    return h('section', { class: 'card history-card' });
+  }
+
+  function drawHistory() {
+    var card = adminRoot && adminRoot.querySelector('.history-card');
+    if (!card) return;
+    var file = h('input', { type: 'file', accept: '.json,application/json', hidden: true });
+    file.addEventListener('change', function () {
+      var f = file.files && file.files[0];
+      file.value = '';
+      if (f) pickExport(f);
+    });
+    var choose = function (label, cls) {
+      return h('button', { class: (cls || 'btn-filled') + ' ripple', type: 'button', onclick: function () { file.click(); } }, icon('folder_fill'), label);
+    };
+    function bar(percent, left, right) {
+      var ind = h('i', { class: 'ind' });
+      ind.style.width = 'calc(' + Math.max(1, Math.min(100, percent)) + '% - 6px)';
+      ind.style.transition = 'none';
+      return h('div', { class: 'progress' },
+        h('div', { class: 'lp', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(percent) },
+          ind, h('i', { class: 'trk' })),
+        h('div', { class: 'progress-label' }, h('span', { text: left }), h('b', { text: right })));
+    }
+    var s = hist.scan;
+    var summary = s && hist.chat ? h('p', { class: 'note pre', text: 'Чат «' + hist.chat.title + '»\n'
+      + s.total.toLocaleString('ru-RU') + ' ' + plural(s.total, 'сообщение', 'сообщения', 'сообщений') + ' от '
+      + s.users.length + ' ' + plural(s.users.length, 'участника', 'участников', 'участников') + '\n'
+      + 'с ' + dayText(s.fromDay) + ' по ' + dayText(s.toDay) }) : null;
+    var body;
+    if (hist.stage === 'reading') {
+      body = [bar(hist.percent, 'Читаю ' + (hist.file ? hist.file.name : 'файл') + '…', hist.percent + '%')];
+    } else if (hist.stage === 'ready') {
+      body = [summary,
+        h('div', { class: 'row-btns' },
+          h('button', { class: 'btn-filled ripple', type: 'button', onclick: uploadHistory }, icon('send_fill'), 'Загрузить'),
+          choose('Другой файл', 'btn-tonal'))];
+    } else if (hist.stage === 'uploading' || hist.stage === 'paused') {
+      var pct = Math.round((hist.done / Math.max(1, hist.chunks.length)) * 100);
+      body = [summary, bar(pct, hist.stage === 'paused' ? 'Пауза' : 'Загружаю…', hist.done + ' из ' + hist.chunks.length),
+        hist.stage === 'paused' ? h('p', { class: 'fine', text: hist.error }) : null,
+        hist.stage === 'paused' ? h('div', { class: 'row-btns' },
+          h('button', { class: 'btn-filled ripple', type: 'button', onclick: uploadHistory }, icon('refresh'), 'Продолжить')) : null];
+    } else if (hist.stage === 'done') {
+      body = [summary,
+        h('p', { class: 'note pre', text: 'Готово: добавлено ' + hist.added.toLocaleString('ru-RU') + ' '
+          + plural(hist.added, 'сообщение', 'сообщения', 'сообщений')
+          + (hist.members ? ', новых участников в списке: ' + hist.members : '') + '.\n'
+          + (hist.added ? 'Графики, актив и первое появление в профилях уже обновлены.' : 'Всё это Финя уже знала: дни не задваиваются.') }),
+        h('div', { class: 'row-btns' }, choose('Ещё файл', 'btn-tonal'))];
+    } else {
+      body = [
+        hist.stage === 'error' ? h('p', { class: 'note pre', text: '❌ ' + hist.error }) : null,
+        h('p', { class: 'note pre', text: '1. Telegram Desktop → чат → ⋮ → «Экспорт истории чата».\n'
+          + '2. Сними галочки с медиа, формат — «Машиночитаемый JSON».\n'
+          + '3. Выбери здесь файл result.json.' }),
+        h('p', { class: 'fine', text: 'Файл читается на этом устройстве, Фине уходит только, кто и сколько писал по дням. Загружать можно сколько угодно раз: дни не задваиваются.' }),
+        h('div', { class: 'row-btns' }, choose('Выбрать файл'))];
+    }
+    card.replaceChildren.apply(card, [
+      h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('history')),
+        h('div', { class: 'body' }, h('b', { text: 'История чата' }), h('span', { text: 'Из экспорта Telegram Desktop' }))),
+      file].concat(body.filter(Boolean)));
+  }
+
   function viewBody() {
     var d = state.data;
     if (state.tab === 'squad') return squadBody(d.squad);
@@ -1309,12 +1560,14 @@
     });
     adminRoot = h('div', { class: 'admin' },
       clubAdminCard(state.data.club),
+      historyCard(),
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
       h('section', { class: 'card list-card goods-card' }));
     drawAdmin();
     drawGoods();
+    drawHistory();
     // The list comes from GitHub: once per session, «Обновить» reloads it.
     if (!goods.loaded) loadGoods();
     if (!admin.loaded) loadAdmin(true);
@@ -1868,9 +2121,11 @@
           err && err.type === 'ENDPOINT_ERROR' ? err.message : 'Проверь интернет и попробуй ещё раз.', true);
         return;
       }
-      if (!state.data) state.tab = startTab(data);
+      var first = !state.data;
+      if (first) state.tab = startTab(data);
       state.data = data;
       render();
+      if (first) openSection();
     });
   }
 
@@ -1880,6 +2135,14 @@
     try { tab = new URLSearchParams(window.location.search).get('tab'); } catch (e) { /* old WebView */ }
     var known = TABS.some(function (t) { return t[0] === tab; }) || (tab === 'admin' && data.admin);
     return known ? tab : state.tab;
+  }
+
+  // ?tab=admin&open=history from «Обновить Инфо» scrolls to the history card.
+  function openSection() {
+    var open = null;
+    try { open = new URLSearchParams(window.location.search).get('open'); } catch (e) { /* old WebView */ }
+    var card = open === 'history' && state.tab === 'admin' && adminRoot ? adminRoot.querySelector('.history-card') : null;
+    if (card) setTimeout(function () { card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' }); }, 400);
   }
 
   document.addEventListener('pointerdown', ripple);

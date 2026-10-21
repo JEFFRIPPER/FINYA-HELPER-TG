@@ -1439,3 +1439,4 @@ em.nm { font-style: normal; }
 .celebrate-actions > * { white-space: nowrap; }
 /* Long switch names («Поздравления с днём рождения») wrap on narrow phones. */
 .switch-row .body b, .switch-row .body span { white-space: normal; }
+.history-card .row-btns { margin-top: 14px; }

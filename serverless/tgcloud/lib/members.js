@@ -22,7 +22,7 @@ const CONTENT = [
 ];
 export const isContent = (message) => CONTENT.some((key) => message[key] != null);
 
-const nameOfUser = (u) => truncate(fullName(u), 100) || String(u.id);
+export const nameOfUser = (u) => truncate(fullName(u), 100) || String(u.id);
 
 async function upsert(chatId, u, ts, { counted }) {
   const one = counted ? 1 : 0;
