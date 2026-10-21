@@ -1291,6 +1291,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   letter-spacing: 0.2px;
   overflow-wrap: anywhere;
 }
+.ach-more { display: block; margin: 8px auto 0; }
 .ach small { font-size: 10px; line-height: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ach.on small { color: var(--gold); }
 @media (max-width: 340px) { .ach-grid { grid-template-columns: repeat(3, 1fr); } }

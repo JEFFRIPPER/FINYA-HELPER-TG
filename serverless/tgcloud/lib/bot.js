@@ -25,6 +25,7 @@ import * as chat from './chat.js';
 import * as changelog from './changelog.js';
 import * as club from './club.js';
 import * as emoji from './emoji.js';
+import * as historyFile from './history_file.js';
 import * as importer from './importer.js';
 import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
@@ -511,6 +512,10 @@ export async function onMessage(message) {
       await importer.importFromMessage(message);
       return;
     }
+    if (message.document && isAdminUser(message.from) && historyFile.looksLikeChatExport(message.document)) {
+      await historyFile.fromMessage(message, () => leftMs(deadline));
+      return;
+    }
     if ((message.photo || message.document) && isAdminUser(message.from)) {
       let handled = false;
       await withSession(message.from.id, async (s) => { handled = await shopAdmin.handleMedia(message, s); });
@@ -756,6 +761,7 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     ['pump.blacklist', () => blacklist.retryPending(5)],
     ['club.tick', () => club.tick()],
     ['chat.tick', () => chat.tick(() => leftMs(deadline))],
+    ['history.file', () => historyFile.work(() => leftMs(deadline))],
     ['changelog.tick', () => changelog.tick()],
     ['pump.jobs', () => jobs.runPendingJobs(Math.min(10000, leftMs(deadline) - 2000))],
   ];

@@ -3,6 +3,7 @@
 // whoever leaves drops out of the lists until they come back.
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
+import { bumpHour } from './feats.js';
 import { fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
 
 const DAY = 86400;
@@ -24,34 +25,40 @@ export const isContent = (message) => CONTENT.some((key) => message[key] != null
 
 export const nameOfUser = (u) => truncate(fullName(u), 100) || String(u.id);
 
+// → the member's messages in this chat now.
 async function upsert(chatId, u, ts, { counted }) {
   const one = counted ? 1 : 0;
-  await db.run(sql`INSERT INTO chat_members (chat_id, user_id, name, username, status, first_seen, last_active, msgs)
+  const r = await db.run(sql`INSERT INTO chat_members (chat_id, user_id, name, username, status, first_seen, last_active, msgs)
     VALUES (${chatId}, ${u.id}, ${nameOfUser(u)}, ${truncate(u.username || '', 40)}, 'member', ${ts},
       ${counted ? ts : 0}, ${one})
     ON CONFLICT(chat_id, user_id) DO UPDATE SET name = excluded.name, username = excluded.username,
       status = 'member', msgs = msgs + ${one},
-      last_active = CASE WHEN ${one} = 1 THEN MAX(last_active, excluded.last_active) ELSE last_active END`);
+      last_active = CASE WHEN ${one} = 1 THEN MAX(last_active, excluded.last_active) ELSE last_active END
+    RETURNING msgs`);
+  return r.rows && r.rows[0] ? r.rows[0].msgs : 0;
 }
 
 // Every message of a member: fresh name, back in the list, +1 for today.
+// → { msgs } in this chat after it, or null when it wasn't a member's message.
 export async function track(message) {
   const chatId = message.chat.id;
   // Service messages come from whoever added or removed the member, maybe a bot.
   if (message.left_chat_member) {
     if (isPerson(message.left_chat_member)) await left(chatId, message.left_chat_member.id);
-    return;
+    return null;
   }
   if (message.new_chat_members) {
     for (const m of message.new_chat_members) if (isPerson(m)) await joined(chatId, m);
-    return;
+    return null;
   }
   const u = message.from;
-  if (!isPerson(u) || message.sender_chat || !isContent(message)) return;
+  if (!isPerson(u) || message.sender_chat || !isContent(message)) return null;
   const ts = Math.min(nowInt(), Math.floor(message.date || nowInt()));
-  await upsert(chatId, u, ts, { counted: true });
+  const msgs = await upsert(chatId, u, ts, { counted: true });
   await db.run(sql`INSERT INTO chat_activity (chat_id, user_id, day, msgs) VALUES (${chatId}, ${u.id}, ${mskDay(ts)}, 1)
     ON CONFLICT(chat_id, day, user_id) DO UPDATE SET msgs = msgs + 1`);
+  await bumpHour(u.id, ts);
+  return { msgs };
 }
 
 export async function joined(chatId, u) {
@@ -186,11 +193,15 @@ export async function placeOf(chatId, period, userId) {
   return { place: above.c + 1, n };
 }
 
-// Messages per Moscow day in the whole chat, from `fromDay` on.
-export async function chatDays(chatId, fromDay) {
-  const rows = await db.all(sql`SELECT day, SUM(msgs) AS n FROM chat_activity
-    WHERE chat_id = ${chatId} AND day >= ${fromDay} GROUP BY day`);
-  return new Map(rows.map((r) => [r.day, r.n]));
+// One Moscow day of the chat, for «🌙 Итоги дня»: messages, how many wrote, the top.
+export async function dayStats(chatId, day, limit = 3) {
+  const t = await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS n, COUNT(*) AS w FROM chat_activity
+    WHERE chat_id = ${chatId} AND day = ${day}`);
+  const top = await db.all(sql`SELECT m.user_id, ${NAME} AS name, a.msgs AS n FROM chat_activity a
+    JOIN chat_members m ON m.chat_id = a.chat_id AND m.user_id = a.user_id
+    WHERE a.chat_id = ${chatId} AND a.day = ${day} AND m.status = 'member'
+    ORDER BY a.msgs DESC, a.user_id LIMIT ${limit}`);
+  return { messages: t.n, writers: t.w, top };
 }
 
 export const CHART_DAYS = 365;

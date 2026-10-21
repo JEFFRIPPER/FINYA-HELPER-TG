@@ -9,8 +9,7 @@ import { setSetting } from '../tgcloud/lib/store.js';
 import { nowInt } from '../tgcloud/lib/util.js';
 import * as xp from '../tgcloud/lib/xp.js';
 import {
-  BOT, callback, channelRoot, checkErrors, DISCUSSION, FAMILY, groupMessage, OWNER, privateMessage, setup, user,
-} from './helpers.mjs';
+  BOT, callback, channelRoot, checkErrors, DISCUSSION, FAMILY, groupMessage, OWNER, privateMessage, setup, user, replies } from './helpers.mjs';
 
 const realNow = Date.now;
 const realRandom = Math.random;
@@ -22,7 +21,7 @@ afterEach(async () => {
 
 const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text, extra));
 const replyTo = (target) => ({ reply_to_message: groupMessage(DISCUSSION, target, 'сообщение') });
-const sent = (api) => api.called('sendMessage');
+const sent = replies;
 const lastSent = (api) => { const s = sent(api); return s.length ? s[s.length - 1].params.text : null; };
 // The profile goes out as the activity chart with a caption.
 const lastProfile = (api) => { const s = api.called('sendPhoto'); return s.length ? s[s.length - 1].params.caption : null; };

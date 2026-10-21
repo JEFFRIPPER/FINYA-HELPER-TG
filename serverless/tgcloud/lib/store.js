@@ -18,6 +18,8 @@ const DEFAULTS = {
   // Chat protection in the Squad chats, switched in the Mini App panel or by text.
   chat_antiflood: true,
   chat_captcha: true,
+  // «🌙 Итоги дня» in each Squad chat at 23:55 МСК.
+  chat_daily: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
   chat_moderation: false,
 };
