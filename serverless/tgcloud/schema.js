@@ -365,3 +365,24 @@ export const premium_emoji = table('premium_emoji', {
   picked: integer('picked').notNull().default(0),
   added_at: integer('added_at').notNull(),
 });
+
+// ---- Профиль как у Ириса: «О себе» и награды -------------------------------------
+
+// «+описание …»: a few lines about yourself, shown in the profile.
+export const profile_about = table('profile_about', {
+  user_id: integer('user_id').primaryKey(),
+  text: text('text').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+// «наградить …» from a chat admin; shown in the profile, newest first.
+export const awards = table('awards', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  user_id: integer('user_id').notNull(),
+  text: text('text').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  given_by: integer('given_by').notNull(),
+  given_at: integer('given_at').notNull(),
+}, (t) => ({
+  byUser: index('awards_by_user').on(t.user_id, t.given_at),
+}));

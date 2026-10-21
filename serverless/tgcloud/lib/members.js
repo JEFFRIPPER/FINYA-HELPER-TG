@@ -159,9 +159,24 @@ export async function periodStats(chatId, period, limit = 20) {
   return { messages, members: people.n, writers, top: await activityTop(chatId, period, limit) };
 }
 
-// One member in one chat: messages today and all time, and since when they are here.
-export async function memberStats(chatId, userId) {
-  const row = await db.get(sql`SELECT first_seen, msgs FROM chat_members WHERE chat_id = ${chatId} AND user_id = ${userId}`);
+export const CHART_DAYS = 365;
+
+// One member in one chat, for the profile: since when, the last message, messages
+// today / this week / this month / all time, and per day over the last year (the chart).
+export async function memberCard(chatId, userId, ts = nowInt()) {
+  const row = await db.get(sql`SELECT first_seen, last_active, msgs FROM chat_members
+    WHERE chat_id = ${chatId} AND user_id = ${userId}`);
   if (!row) return null;
-  return { since: row.first_seen, total: row.msgs, today: await messagesSince(chatId, periodStart('day'), userId) };
+  const rows = await db.all(sql`SELECT day, msgs FROM chat_activity
+    WHERE chat_id = ${chatId} AND user_id = ${userId} AND day > ${mskDay(ts) - CHART_DAYS}`);
+  const sum = (from) => rows.reduce((n, r) => (r.day >= from ? n + r.msgs : n), 0);
+  return {
+    since: row.first_seen,
+    lastActive: row.last_active,
+    total: row.msgs,
+    day: sum(periodStart('day', ts)),
+    week: sum(periodStart('week', ts)),
+    month: sum(periodStart('month', ts)),
+    days: new Map(rows.map((r) => [r.day, r.msgs])),
+  };
 }

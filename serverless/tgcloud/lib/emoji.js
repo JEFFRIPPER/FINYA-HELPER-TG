@@ -81,15 +81,23 @@ function iconButtons(markup, map) {
   return changed ? { ...markup, inline_keyboard: rows } : markup;
 }
 
-// Sends `params` (HTML text, inline keyboard) with premium emoji. If Telegram refuses
+// Sends `params` (HTML text or caption, inline keyboard) with premium emoji. If Telegram refuses
 // them, the plain message still goes out.
 export async function withPremium(params, send) {
   const map = await premiumMap();
-  const text = wrap(params.text, map);
+  const fancy = { ...params };
+  let changed = false;
+  for (const key of ['text', 'caption']) {
+    if (params[key] == null) continue;
+    fancy[key] = wrap(params[key], map);
+    if (fancy[key] !== params[key]) changed = true;
+  }
   const markup = iconButtons(params.reply_markup, map);
-  if (text === params.text && markup === params.reply_markup) return send(params);
-  const fancy = { ...params, text };
-  if (markup) fancy.reply_markup = markup;
+  if (markup !== params.reply_markup) {
+    fancy.reply_markup = markup;
+    changed = true;
+  }
+  if (!changed) return send(params);
   try {
     return await send(fancy);
   } catch (err) {
