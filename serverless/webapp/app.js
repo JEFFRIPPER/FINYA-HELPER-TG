@@ -1253,6 +1253,30 @@
     return new Promise(function (resolve) { setTimeout(resolve, ms); });
   }
 
+  // A slice of the file as bytes. Desktop WebViews sometimes refuse a read for a
+  // moment (NotReadableError): try again, the second time through FileReader.
+  function readSlice(blob, attempt) {
+    var read = attempt % 2 === 0 && blob.arrayBuffer ? blob.arrayBuffer() : new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () { resolve(reader.result); };
+      reader.onerror = function () { reject(reader.error || new Error('read')); };
+      reader.readAsArrayBuffer(blob);
+    });
+    return read.catch(function (err) {
+      if (attempt >= 3) throw err;
+      return wait(400 * (attempt + 1)).then(function () { return readSlice(blob, attempt + 1); });
+    });
+  }
+
+  function readError(err) {
+    if (err && err.type === 'ENDPOINT_ERROR') return err.message;
+    if (err && (err.name === 'NotReadableError' || err.name === 'NotFoundError' || err.name === 'SecurityError')) {
+      return 'Telegram не дал прочитать файл. Так бывает, если экспорт ещё идёт или файл лежит в папке OneDrive.\n'
+        + 'Дождись «Экспорт завершён», скопируй result.json на рабочий стол и выбери его оттуда.';
+    }
+    return (err && err.message) || 'Не получилось прочитать файл.';
+  }
+
   // Calls back with every message object of the export; resolves to the chat's
   // name, type and id (they come before "messages").
   function readExport(file, onMessage, onProgress) {
@@ -1267,8 +1291,7 @@
     var offset = 0;
     function step() {
       if (offset >= file.size) return Promise.resolve();
-      var blob = file.slice(offset, offset + SLICE);
-      return blob.arrayBuffer().then(function (bytes) {
+      return readSlice(file.slice(offset, offset + SLICE), 0).then(function (bytes) {
         offset += SLICE;
         var text = decoder.decode(new Uint8Array(bytes), { stream: offset < file.size });
         if (head.length < 65536 && !inMessages) head += text.slice(0, 65536);
@@ -1382,7 +1405,7 @@
       drawHistory();
     }, function (err) {
       hist.stage = 'error';
-      hist.error = err && err.type === 'ENDPOINT_ERROR' ? err.message : (err && err.message) || 'Не получилось прочитать файл.';
+      hist.error = readError(err);
       vibrate('error');
       drawHistory();
     });
