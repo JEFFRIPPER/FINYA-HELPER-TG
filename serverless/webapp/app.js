@@ -979,11 +979,21 @@
         h('b', { text: a.at ? 'Готово' : a.progress + ' / ' + a.goal })));
   }
 
+  // Opened ones first, then the closest to opening; two rows until «Все ачивки».
+  var ACH_FOLDED = 8;
+  var achOpen = false;
+
   function achievementsCard(c) {
     var got = c.achievements.filter(function (a) { return a.at; }).length;
-    return h('section', { class: 'card' },
-      h('div', { class: 'card-title' }, h('h3', { text: 'Ачивки' }), h('span', { class: 'count-chip', text: got + ' из ' + c.achievements.length })),
-      h('div', { class: 'ach-grid' }, c.achievements.map(function (a) {
+    var list = c.achievements.slice().sort(function (x, y) {
+      if (!x.at !== !y.at) return x.at ? -1 : 1;
+      if (x.at) return y.at - x.at;
+      return y.progress / y.goal - x.progress / x.goal;
+    });
+    var grid = h('div', { class: 'ach-grid' });
+    var more = list.length > ACH_FOLDED ? h('button', { class: 'btn-text ripple ach-more', type: 'button' }) : null;
+    function draw() {
+      grid.replaceChildren.apply(grid, (achOpen ? list : list.slice(0, ACH_FOLDED)).map(function (a) {
         return h('button', { class: 'ach ripple' + (a.at ? ' on' : ''), type: 'button', onclick: function () {
           haptic();
           snackbar(achHint(a));
@@ -991,7 +1001,14 @@
           h('span', { class: 'ach-icon' }, icon(a.icon), a.at ? null : h('i', { class: 'ach-lock' }, icon('lock_fill'))),
           h('b', { text: a.title }),
           h('small', { text: a.at ? '+' + a.xp + ' XP' : a.progress + '/' + a.goal }));
-      })));
+      }));
+      if (more) more.textContent = achOpen ? 'Свернуть' : 'Все ачивки · ' + list.length;
+    }
+    if (more) more.addEventListener('click', function () { haptic(); achOpen = !achOpen; draw(); });
+    draw();
+    return h('section', { class: 'card' },
+      h('div', { class: 'card-title' }, h('h3', { text: 'Ачивки' }), h('span', { class: 'count-chip', text: got + ' из ' + c.achievements.length })),
+      grid, more);
   }
 
   // ---- XP shop ----------------------------------------------------------------
@@ -1236,7 +1253,8 @@
         setting('welcome', 'Приветствие новичков', 'В обсуждениях, когда кто-то вступает'),
         setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК'),
         setting('captcha', 'Капча для новичков', 'Кнопка «Я не бот», иначе кик через 5 минут'),
-        setting('antiflood', 'Антифлуд в чатах', 'Мут на 10 минут за 8 сообщений за 10 секунд')),
+        setting('antiflood', 'Антифлуд в чатах', 'Мут на 10 минут за 8 сообщений за 10 секунд'),
+        setting('daily', 'Итоги дня в чатах', '23:55 МСК: топ-3 дня по сообщениям')),
       h('div', { class: 'row-btns' },
         h('button', { class: 'btn-filled ripple', onclick: openPollSheet }, icon('add'), 'Новый опрос'), preview),
       polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);

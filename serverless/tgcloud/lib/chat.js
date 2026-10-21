@@ -5,14 +5,15 @@ import { api, BotApiError, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, WEBAPP_URL } from './config.js';
 import { squadChatIds } from './xpchat.js';
-import { deleteLater, getSetting, setSetting } from './store.js';
+import { deleteLater, getSetting, logError, setSetting } from './store.js';
 import { answer, button, getMe, keyboard, sendWithFloodWait } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
-import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, nowInt, truncate } from './util.js';
+import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
 import { withPremium } from './emoji.js';
+import * as feats from './feats.js';
 import * as games from './games.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
@@ -451,10 +452,12 @@ async function rp(message, found, target) {
   // In a group the command itself goes away: Финя's line answers the target's message.
   if (!isGroupChat(message.chat)) {
     await say(message, text);
+    await feats.bump(actor.id, 'rp');
     return;
   }
   const r = message.reply_to_message;
   await say(message, text, { replyTo: r && r.from && r.from.id === target.id ? r.message_id : null });
+  await feats.bump(actor.id, 'rp');
   try {
     await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
   } catch {
@@ -638,6 +641,7 @@ async function casino(message, self, emoji, amount) {
     return;
   }
   const r = await games.settle(message.from, bet, emoji, dice.dice.value);
+  if (emoji === '🎰' && dice.dice.value === 64) await feats.bump(message.from.id, 'jackpot');
   const name = escapeHtml(truncate(self.name, 40));
   const result = r.won
     ? `+${fmtThousands(r.won)} XP (×${String(r.times).replace('.', ',')})`
@@ -658,6 +662,7 @@ async function remindCommand(message, self, words, addressed) {
   }
   try {
     const r = await reminders.add(message, message.from, self.name, parsed);
+    await feats.bump(message.from.id, 'reminders');
     await say(message, `⏰ Напомню ${reminders.whenText(r.due)} (МСК)${r.text ? `:\n<blockquote>${escapeHtml(r.text)}</blockquote>` : '.'}`, { temp: true });
   } catch (err) {
     if (!(err instanceof reminders.ReminderError)) throw err;
@@ -715,6 +720,112 @@ async function anniversaries(ts = nowInt()) {
   }
 }
 
+// ---- achievements ------------------------------------------------------------------
+
+const ACH_TTL = 600;
+const ACH_SHOWN = 5;
+
+// «🏆 … открывает ачивку»: under the message, not as a reply, and gone after a while.
+async function announceAchievements(message, who, fresh) {
+  if (!fresh.length) return;
+  const name = mention(who.id, await nameFor(who));
+  const reward = fresh.reduce((n, a) => n + a.xp, 0);
+  const shown = fresh.slice(0, ACH_SHOWN);
+  let text = fresh.length === 1
+    ? `🏆 ${name} открывает ачивку «${escapeHtml(fresh[0].title)}» · +${fresh[0].xp} XP\n<blockquote>${escapeHtml(fresh[0].text)}</blockquote>`
+    : `🏆 ${name} открывает ачивки · +${fmtThousands(reward)} XP\n<blockquote>` +
+      shown.map((a) => `«${escapeHtml(a.title)}» — ${escapeHtml(a.text)}`).join('\n') +
+      (fresh.length > shown.length ? `\n…и ещё ${fresh.length - shown.length}` : '') + '</blockquote>';
+  text += '\nВсе ачивки — в профиле Фини.';
+  const sent = await withPremium({
+    chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML', link_preview_options: { is_disabled: true },
+    ...sameThread(message),
+  }, (p) => api.sendMessage(p));
+  if (isGroupChat(message.chat) && sent) await deleteLater(message.chat.id, [sent.message_id], ACH_TTL);
+}
+
+// After a command or every 10th message: the author's chat achievements, and those of
+// whoever the command was about (a «+», a wedding, an award…).
+async function checkAchievements(message, handled, tracked) {
+  const people = [];
+  if (handled || (tracked && tracked.msgs % 10 === 0)) people.push(message.from);
+  const r = message.reply_to_message;
+  if (handled && r && members.isPerson(r.from) && !r.sender_chat && r.from.id !== message.from.id) people.push(r.from);
+  for (const u of people) {
+    try {
+      await announceAchievements(message, u, await feats.check(u));
+    } catch (err) {
+      // No right to write here is fine: the badges are open anyway, the Mini App shows them.
+      if (!(err instanceof BotApiError)) await logError('chat.achievements', err);
+    }
+  }
+}
+
+async function achievementsText(who, self) {
+  const rows = await db.all(sql`SELECT code, unlocked_at FROM achievements WHERE user_id = ${who.id}
+    ORDER BY unlocked_at DESC, rowid DESC`);
+  const byCode = new Map(club.ACHIEVEMENTS.map((a) => [a.code, a]));
+  const got = rows.filter((r) => byCode.has(r.code));
+  const name = escapeHtml(truncate(who.name, 40));
+  if (!got.length) {
+    return `🏆 ${self ? 'У тебя' : `У ${name}`} пока нет ачивок. Их ${club.ACHIEVEMENTS.length}: за сообщения, дни в чате, репутацию, фарм, казино и не только.`;
+  }
+  const last = got.slice(0, ACH_SHOWN).map((r) => {
+    const a = byCode.get(r.code);
+    return `«${escapeHtml(a.title)}» — ${escapeHtml(a.text)}`;
+  });
+  return `🏆 Ачивки ${self ? 'твои' : name}: ${got.length} из ${club.ACHIEVEMENTS.length}\n\nПоследние:\n<blockquote>${last.join('\n')}</blockquote>`;
+}
+
+// ---- daily summary -----------------------------------------------------------------
+
+const SUMMARY_AT = 23 * 3600 + 55 * 60;
+const SUMMARY_LATE_UNTIL = 12 * 3600;
+
+function dayLabel(day) {
+  const d = new Date(day * 86400 * 1000);
+  return `${String(d.getUTCDate()).padStart(2, '0')}.${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+export async function dailySummaryText(chatId, day) {
+  const s = await members.dayStats(chatId, day);
+  if (!s.top.length) return null;
+  const lines = s.top.map((r, i) => `${MEDALS[i]} ${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`);
+  return {
+    top: s.top,
+    text: `🌙 Итоги дня · ${dayLabel(day)}\n\n${lines.join('\n')}\n\n` +
+      `💬 Всего: ${msgsWord(s.messages)} · 👥 писали: ${s.writers}\n` +
+      `⭐ Звезда дня — ${escapeHtml(truncate(s.top[0].name, 35))}! Новый день — новый топ 🔥`,
+  };
+}
+
+// The day's top-3 in each Squad chat at 23:55 МСК. pump() runs only on updates, so a
+// quiet night moves it to the morning (until 12:00) for the day before.
+async function dailySummary(ts = nowInt()) {
+  const sec = (ts + MSK_OFFSET) % 86400;
+  const today = members.mskDay(ts);
+  let day;
+  if (sec >= SUMMARY_AT) day = today;
+  else if (sec < SUMMARY_LATE_UNTIL) day = today - 1;
+  else return;
+  if (!(await getSetting('chat_daily'))) return;
+  for (const chatId of await squadChatIds()) {
+    const key = `daily_summary:${chatId}`;
+    await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${key}, ${String(day - 1)})`);
+    const won = await db.run(sql`UPDATE settings SET value = ${String(day)}
+      WHERE key = ${key} AND CAST(value AS INTEGER) < ${day}`);
+    if (won.rowsAffected !== 1) continue;
+    const summary = await dailySummaryText(chatId, day);
+    if (!summary) continue;
+    await feats.bump(summary.top[0].user_id, 'day_top');
+    try {
+      await withPremium({ chat_id: chatId, text: boldHtml(summary.text), parse_mode: 'HTML' }, (p) => api.sendMessage(p));
+    } catch {
+      // No rights in that chat any more.
+    }
+  }
+}
+
 // ---- help --------------------------------------------------------------------------
 
 // The help: a menu of sections, each a list of commands with the description
@@ -725,6 +836,7 @@ const HELP = {
     ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
     ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
     ['🏅 Награды (ответом)', 'Награды участника от админов чата'],
+    ['🏆 Ачивки (ответом)', `Сколько открыто из ${club.ACHIEVEMENTS.length} и последние. Новые Финя объявляет в чате сама`],
   ]],
   people: ['💞 Люди', () => [
     ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
@@ -739,7 +851,7 @@ const HELP = {
     ['🎰 Казино 50 · 🎲 Кости 50', `Ставка XP от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Правила: «Казино»`],
   ]],
   useful: ['🛠 Полезное', () => [
-    ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата с графиком и твоё место, период переключается кнопками'],
+    ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и твоё место, период переключается кнопками. В 23:55 МСК Финя сама подводит итоги дня'],
     ['⏰ Финя, Напомни Через 2ч Текст', 'Ещё «… В 18:30 …», «… Завтра В 10:00 …». Список: «Напоминания», удалить: «-Напоминание N»'],
     ['🆔 Ид', 'Твой ID и ID чата. Чужой ID ответом — для админов'],
     ['⭐ Админы', 'Админы этого чата'],
@@ -755,8 +867,9 @@ const HELP = {
   owner: ['👑 Владельцу', () => [
     ['👑 +РП Команда = Действие · -РП Команда', 'Свои РП-действия'],
     ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
+    ['👑 Итоги Дня Вкл/Выкл', 'Топ-3 дня в каждом чате Сквада в 23:55 МСК'],
     ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
-    ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop'],
+    ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop: через Mini App или файлом в личку (до 20 МБ)'],
   ]],
 };
 
@@ -783,14 +896,16 @@ const SWITCHES = {
   'антифлуд': ['chat_antiflood', 'Антифлуд', 'включён', 'выключен'],
   'капча': ['chat_captcha', 'Капча для новичков', 'включена', 'выключена'],
   'модерация': ['chat_moderation', 'Модерация командами', 'включена', 'выключена'],
+  'итоги дня': ['chat_daily', 'Итоги дня в чатах', 'включены', 'выключены'],
 };
 
 export const HISTORY_TEXT = '📥 Обновить инфо: старая история чата\n\n'
   + 'Боты не видят сообщения, которые были до них, даже с правами админа. Поэтому историю берём из экспорта:\n'
   + '1. Telegram Desktop → чат → ⋮ → «Экспорт истории чата».\n'
   + '2. Сними галочки с медиа, формат — «Машиночитаемый JSON».\n'
-  + '3. «Панель» в Mini App → «История чата» → выбери файл result.json.\n\n'
-  + 'Файл читается на устройстве, Фине уходит только, кто и сколько писал по дням. Повторная загрузка ничего не задвоит.';
+  + '3. «Панель» в Mini App → «История чата» → выбери файл result.json.\n'
+  + 'Или просто пришли result.json Фине в личку, если он до 20 МБ (больше Telegram ботам не отдаёт).\n\n'
+  + 'Фине нужно только, кто и сколько писал по дням. Повторная загрузка ничего не задвоит.';
 
 export async function historyKeyboard(chat) {
   if (!chat || chat.type === 'private') {
@@ -822,7 +937,7 @@ async function ownerCommand(message, rest) {
     await say(message, ok ? '🗑 Действие удалено.' : 'Такого своего действия нет. Встроенные удалить нельзя.');
     return true;
   }
-  m = /^(антифлуд|капча|модерация)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
+  m = /^(антифлуд|капча|модерация|итоги дня)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
   if (m) {
     const on = ['вкл', 'on'].includes(m[2]);
     const [key, name, onWord, offWord] = SWITCHES[m[1]];
@@ -921,6 +1036,14 @@ export async function handleText(message) {
   if (cmd === '-описание' || cmd === '- описание') {
     const removed = await bio.clearAbout(self.id);
     await say(message, removed ? '🗑 Описание удалено.' : 'Описания и так нет.', { temp: true });
+    return true;
+  }
+  if (/^(?:мои )?ачивки(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = group ? await targetOf(message) : null;
+    const who = asked && !asked.isBot ? asked : self;
+    await say(message, await achievementsText(who, who.id === self.id), {
+      markup: keyboard([await profileRow(message.chat, '🏆 Все ачивки')]), temp: true,
+    });
     return true;
   }
   const view = /^(описание|награды)(?:\s+@\w+)?$/u.exec(cmd);
@@ -1081,14 +1204,16 @@ export async function handleText(message) {
 // → { handled: a command for Финя (it earns no XP then), checking: newcomers who must
 // press «Я не бот» first (they are greeted after it) }.
 export async function onSquadMessage(message, { command = false } = {}) {
-  await members.track(message);
+  const tracked = await members.track(message);
   const checking = [];
   for (const u of message.new_chat_members || []) {
     if (members.isPerson(u) && (await moder.onJoin(message.chat, u, message.message_id))) checking.push(u.id);
   }
   if (message.left_chat_member) await moder.onLeave(message.chat.id, message.left_chat_member.id);
   if (await moder.checkFlood(message)) return { handled: false, checking };
-  return { handled: command ? false : await handleText(message), checking };
+  const handled = command ? false : await handleText(message);
+  if (members.isPerson(message.from) && !message.sender_chat) await checkAchievements(message, handled, tracked);
+  return { handled, checking };
 }
 
 // chat_member in a Squad chat: the member list and the newcomer check.
@@ -1205,6 +1330,7 @@ export async function tick(leftMs) {
   await moder.tick(leftMs);
   await reminders.tick(leftMs);
   await anniversaries();
+  await dailySummary();
 }
 
 // For the Mini App profile.

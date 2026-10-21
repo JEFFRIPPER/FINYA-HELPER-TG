@@ -9,8 +9,7 @@ import { parse } from '../tgcloud/lib/reminders.js';
 import { setSetting } from '../tgcloud/lib/store.js';
 import { nowInt } from '../tgcloud/lib/util.js';
 import {
-  BOT, callback, checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, setup, user,
-} from './helpers.mjs';
+  BOT, callback, checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, setup, user, replies } from './helpers.mjs';
 
 const realNow = Date.now;
 afterEach(async () => {
@@ -21,7 +20,7 @@ afterEach(async () => {
 const DAY = 86400;
 const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text, extra));
 const replyTo = (target) => ({ reply_to_message: groupMessage(DISCUSSION, target, 'сообщение') });
-const sent = (api) => api.called('sendMessage');
+const sent = replies;
 const lastSent = (api) => sent(api).at(-1).params.text;
 const groupButton = (from, data) => callback(from, data, { chat: DISCUSSION, message_id: 5000 });
 const members = (ids) => ({
@@ -68,9 +67,10 @@ test('«передать 100»: XP from the balance, the rank stays; the owner g
   await say(a, 'передать 30', replyTo(b));
   assert.match(lastSent(api), /🎁 <a href="tg:\/\/user\?id=2">Аня<\/a> ➜ <a href="tg:\/\/user\?id=3">Боря<\/a>: \+30 XP/);
   assert.match(lastSent(api), /У тебя на балансе: 20 XP/);
-  assert.equal(await xpOf(2), 200);
+  // +10 for the «Широкий жест» achievement: XP, not spent.
+  assert.equal(await xpOf(2), 210);
   assert.equal(await xpOf(3), 30);
-  assert.equal(await games.balanceOf(2), 20);
+  assert.equal(await games.balanceOf(2), 30);
   await say(a, 'передать 5', replyTo(a));
   assert.match(lastSent(api), /Себе переводить нельзя/);
   await say(a, 'передать 5', replyTo(BOT));
@@ -82,7 +82,7 @@ test('«передать 100»: XP from the balance, the rank stays; the owner g
   await say(b, 'баланс');
   assert.match(lastSent(api), /на балансе 1,030 XP из 1,030/);
   // The shop sees the same balance.
-  await assert.rejects(games.stake(a, 25), /Не хватает XP на балансе: есть 20/);
+  await assert.rejects(games.stake(a, 35), /Не хватает XP на балансе: есть 30/);
 });
 
 test('casino: the stake goes, a win comes back as XP; limits and refunds', async () => {
@@ -101,13 +101,14 @@ test('casino: the stake goes, a win comes back as XP; limits and refunds', async
   assert.equal(api.called('sendDice').at(-1).params.emoji, '🎰');
   assert.match(lastSent(api), /ДЖЕКПОТ 7️⃣7️⃣7️⃣ · \+1,000 XP \(×20\)/);
   assert.equal(sent(api).at(-1).params.reply_parameters.message_id, 7000);
-  assert.equal(await xpOf(2), 1300);
-  assert.equal(await games.balanceOf(2), 1250);
+  // +100 for the «Три семёрки» achievement.
+  assert.equal(await xpOf(2), 1400);
+  assert.equal(await games.balanceOf(2), 1350);
   value = 2;
   await say(a, 'кости 100');
   assert.equal(api.called('sendDice').at(-1).params.emoji, '🎲');
   assert.match(lastSent(api), /Выпало 2 · −100 XP/);
-  assert.equal(await games.balanceOf(2), 1150);
+  assert.equal(await games.balanceOf(2), 1250);
   value = 6;
   await say(a, 'кости 100');
   assert.match(lastSent(api), /Шестёрка! · \+250 XP \(×2,5\)/);

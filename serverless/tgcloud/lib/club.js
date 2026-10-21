@@ -5,6 +5,7 @@ import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_ID, SQUAD_LINKS } from './config.js';
 import { withPremium } from './emoji.js';
+import { CHAT_ACHIEVEMENTS, chatStats, unlock } from './feats.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
 import { escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
@@ -122,8 +123,8 @@ export async function claimQuest(user, id) {
 
 // ---- achievements ------------------------------------------------------------
 
-// `n` is the reward key in events: never reuse or renumber.
-export const ACHIEVEMENTS = [
+// `n` is the reward key in events: never reuse or renumber. The chat ones (17+) are in feats.js.
+const CLUB_ACHIEVEMENTS = [
   { n: 1, code: 'first_comment', stat: 'comments', goal: 1, xp: 10, icon: 'chat_bubble_fill', title: 'Первое слово', text: 'Первый комментарий под постом' },
   { n: 2, code: 'comments_100', stat: 'comments', goal: 100, xp: 50, icon: 'chat_bubble_fill', title: 'Голос Сквада', text: '100 комментариев' },
   { n: 3, code: 'comments_500', stat: 'comments', goal: 500, xp: 150, icon: 'workspace_premium_fill', title: 'Легенда чата', text: '500 комментариев' },
@@ -141,6 +142,7 @@ export const ACHIEVEMENTS = [
   { n: 15, code: 'shopper', stat: 'purchases', goal: 1, xp: 10, icon: 'checkroom_fill', title: 'Модник', text: 'Купи вещь в лавке' },
   { n: 16, code: 'birthday', stat: 'birthday', goal: 1, xp: 20, icon: 'cake_fill', title: 'Именинник', text: 'Отметь день рождения в Скваде' },
 ];
+export const ACHIEVEMENTS = [...CLUB_ACHIEVEMENTS, ...CHAT_ACHIEVEMENTS];
 
 async function achievementStats(userId, base) {
   const counts = {};
@@ -152,6 +154,7 @@ async function achievementStats(userId, base) {
   // Every friend counts, also those past the weekly XP limit.
   const invited = await db.get(sql`SELECT COUNT(*) AS c FROM referrals WHERE referrer_id = ${userId}`);
   return {
+    ...(await chatStats(userId)),
     ...base,
     comments: counts.comment || 0,
     reactions: counts.reaction || 0,
@@ -173,11 +176,7 @@ async function achievementsView(userId, base) {
   const fresh = [];
   for (const a of ACHIEVEMENTS) {
     if (unlocked.has(a.code) || stats[a.stat] < a.goal) continue;
-    // XP first (once per key): a call cut off in between must not leave the badge without its XP.
-    await xp.grant(userId, 'achievement', a.n, a.xp, ts);
-    const inserted = await db.run(sql`INSERT OR IGNORE INTO achievements (user_id, code, unlocked_at)
-      VALUES (${userId}, ${a.code}, ${ts})`);
-    if (inserted.rowsAffected !== 1) continue;
+    if (!(await unlock(userId, a, ts))) continue;
     unlocked.set(a.code, ts);
     fresh.push(a.code);
   }
@@ -691,6 +690,7 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
       birthdays: Boolean(await getSetting('club_birthdays')),
       antiflood: Boolean(await getSetting('chat_antiflood')),
       captcha: Boolean(await getSetting('chat_captcha')),
+      daily: Boolean(await getSetting('chat_daily')),
     };
   }
   return data;

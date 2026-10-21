@@ -79,9 +79,16 @@ export function callback(from, data, message = {}) {
   };
 }
 
+// Chat achievement announcements come on their own after commands: skipped here,
+// their own tests look for them.
+export const isAnnouncement = (c) => /открывает ачивк/.test(String(c.params.text || ''));
+
+// sendMessage calls without those announcements.
+export const replies = (api) => api.called('sendMessage').filter((c) => !isAnnouncement(c));
+
 export function lastText(mock, method = null) {
   const calls = mock.calls.filter((c) => ['sendMessage', 'editMessageText', 'editMessageCaption'].includes(c.method) &&
-    (!method || c.method === method));
+    (!method || c.method === method) && !isAnnouncement(c));
   const c = calls[calls.length - 1];
   return c ? (c.params.text ?? c.params.caption) : null;
 }

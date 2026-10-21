@@ -7,8 +7,7 @@ import { onMessage } from '../tgcloud/lib/bot.js';
 import { mskDay } from '../tgcloud/lib/members.js';
 import { setSetting } from '../tgcloud/lib/store.js';
 import {
-  apiError, BOT, checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, setup, user,
-} from './helpers.mjs';
+  apiError, BOT, checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, setup, user, replies } from './helpers.mjs';
 
 const realNow = Date.now;
 afterEach(async () => {
@@ -24,7 +23,7 @@ const DAY = 86400;
 const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text, extra));
 const replyTo = (target) => ({ reply_to_message: groupMessage(DISCUSSION, target, 'сообщение') });
 const photos = (api) => api.called('sendPhoto');
-const lastText = (api) => api.called('sendMessage').at(-1).params.text;
+const lastText = (api) => replies(api).at(-1).params.text;
 // Only user 1 is the creator, user 4 an admin; everyone else is a member.
 const roles = {
   getChatMember: (p) => {

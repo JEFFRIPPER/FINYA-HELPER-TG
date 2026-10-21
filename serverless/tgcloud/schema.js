@@ -422,3 +422,38 @@ export const reminders = table('reminders', {
   byDue: index('reminders_by_due').on(t.due_at),
   byUser: index('reminders_by_user').on(t.user_id, t.due_at),
 }));
+
+// Counts behind the chat achievements that no other table keeps: RP actions,
+// jackpots, reminders set, days as №1 of the daily summary, night and early messages.
+export const counters = table('counters', {
+  user_id: integer('user_id').notNull(),
+  key: text('key').notNull(),
+  n: integer('n').notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user_id, t.key] }),
+}));
+
+// A chat export the owner sent in the private chat: parsed at once, then imported
+// batch by batch (history_queue) within the call's time and on later updates.
+export const history_imports = table('history_imports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chat_id: integer('chat_id').notNull(),
+  title: text('title').notNull(),
+  report_chat_id: integer('report_chat_id').notNull(),
+  progress_message_id: integer('progress_message_id'),
+  chunks: integer('chunks').notNull(),
+  done: integer('done').notNull().default(0),
+  added: integer('added').notNull().default(0),
+  members: integer('members').notNull().default(0),
+  created_at: integer('created_at').notNull(),
+  finished_at: integer('finished_at'),
+});
+
+export const history_queue = table('history_queue', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  import_id: integer('import_id').notNull(),
+  users: text('users').notNull(),
+  lease_until: integer('lease_until').notNull().default(0),
+}, (t) => ({
+  byImport: index('history_queue_by_import').on(t.import_id, t.id),
+}));
