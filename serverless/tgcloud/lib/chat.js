@@ -1,13 +1,15 @@
 // Финя в чате: commands in plain words, like Iris («кто я», «топ дня», «фарм»,
 // «брак», «обнять», «+», «мут 1ч»…). Works in the Squad chats; a few personal
 // ones also work in the private chat.
-import { api, db } from 'sdk';
+import { api, BotApiError, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from './config.js';
 import { deleteLater, getSetting, setSetting } from './store.js';
 import { answer, button, getMe, keyboard } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, nowInt, truncate } from './util.js';
+import * as bio from './bio.js';
+import { activityChart } from './chart.js';
 import * as club from './club.js';
 import { withPremium } from './emoji.js';
 import * as members from './members.js';
@@ -103,7 +105,52 @@ async function place(userId, points) {
   return row.c + 1;
 }
 
-async function profileText(chat, who, self) {
+// «2 года 2 мес», «11 мес 21 дн», «5 дней», «3 ч 10 мин».
+function ageText(seconds) {
+  const sec = Math.max(0, Math.floor(seconds));
+  const days = Math.floor(sec / 86400);
+  if (days >= 365) {
+    const y = Math.floor(days / 365.25);
+    const mo = Math.floor((days - y * 365.25) / 30.44);
+    return `${y} ${plural(y, 'год', 'года', 'лет')}${mo ? ` ${mo} мес` : ''}`;
+  }
+  if (days >= 30) {
+    const mo = Math.floor(days / 30.44);
+    const d = Math.floor(days - mo * 30.44);
+    return `${mo} мес${d ? ` ${d} дн` : ''}`;
+  }
+  if (days) return daysWord(days);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (h) return `${h} ч${m ? ` ${m} мин` : ''}`;
+  return `${Math.max(1, m)} мин`;
+}
+
+const agoText = (seconds) => (seconds < 60 ? 'только что' : `${ageText(seconds)} назад`);
+
+// 742 · 7,1k · 69,2k · 1,2m — as Iris writes them.
+function compact(n) {
+  if (n < 1000) return String(n);
+  const [v, unit] = n < 1e6 ? [n / 1000, 'k'] : [n / 1e6, 'm'];
+  return `${v < 100 ? String(Math.floor(v * 10) / 10).replace('.', ',') : Math.floor(v)}${unit}`;
+}
+
+// «Создатель этого чата» or «Админ этого чата», with the admin's tag.
+async function chatRole(chatId, userId) {
+  const m = await moder.memberOf(chatId, userId);
+  if (!m || typeof m !== 'object') return null;
+  const tag = m.custom_title ? ` · «${escapeHtml(truncate(m.custom_title, 30))}»` : '';
+  if (m.status === 'creator') return `👑 Создатель этого чата${tag}`;
+  if (m.status === 'administrator') return `⭐ Админ этого чата${tag}`;
+  return null;
+}
+
+const ABOUT_PREVIEW = 160;
+
+// The profile, like Iris has it: who, rank and XP, activity in this chat, «о себе»
+// and awards. → { text, card } (card: activity in this chat, for the chart).
+async function profileCard(chat, who, self) {
+  const ts = nowInt();
   const p = self ? await xp.profile(who.user) : await db.get(sql`SELECT * FROM profiles WHERE user_id = ${who.id}`);
   const points = p ? p.xp : 0;
   const founder = who.id === OWNER_USER_ID;
@@ -113,25 +160,73 @@ async function profileText(chat, who, self) {
   const spouse = await social.spouseOf(who.id);
   const ach = await db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`);
   const style = await club.myStyle(who.id);
-  const lines = [`👤 ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
-  lines.push(`🎖 ${rank[1]} · ${escapeHtml(rank[2])}`);
-  lines.push(`⚡ ${fmtThousands(points)} XP${top ? ` · #${top} в топе` : ''}`);
-  lines.push(`❤️ Репутация: ${rep.points}`);
+  const group = isGroupChat(chat);
+
+  const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
+  const role = group ? await chatRole(chat.id, who.id) : null;
+  if (role) head.push(role);
   if (spouse) {
     const partner = await members.nameOf(spouse.partner_id);
-    lines.push(`💍 В браке с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
-  } else {
-    lines.push('💔 Не в браке');
+    head.push(`💍 В браке с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
   }
-  lines.push(`🏆 Ачивок: ${ach.c}`);
-  if (isGroupChat(chat)) {
-    const st = await members.memberStats(chat.id, who.id);
-    if (st) {
-      lines.push(`💬 ${msgsWord(st.total)} · сегодня ${st.today}`);
-      lines.push(`📅 В чате с ${fmtMsk(st.since).slice(0, 10)}`);
-    }
+
+  const stats = [
+    `🎖 [${rank[1]}] Звание: ${escapeHtml(rank[2])}`,
+    `⚡ ${fmtThousands(points)} XP${top ? ` · #${top} в топе` : ''}`,
+    `🏆 Ачивок: ${ach.c}`,
+    `❤️ Репутация: ${rep.points}${rep.given ? ` · ➕ отдано ${rep.given}` : ''}`,
+  ];
+  const card = group ? await members.memberCard(chat.id, who.id, ts) : null;
+  if (card) {
+    stats.push(
+      `🏠 Первое появление: ${fmtMsk(card.since).slice(0, 10)} (${ts - card.since < 86400 ? 'сегодня' : ageText(ts - card.since)})`,
+      `🕒 Последний актив: ${card.lastActive ? agoText(ts - card.lastActive) : 'сообщений не было'}`,
+      `💬 Актив (д|н|м|весь): ${[card.day, card.week, card.month, card.total].map(compact).join(' | ')}`,
+    );
   }
-  return lines.join('\n');
+  const blocks = [head.join('\n'), stats.join('\n')];
+
+  const about = await bio.aboutOf(who.id);
+  if (about) {
+    const long = Array.from(about).length > ABOUT_PREVIEW;
+    // A long one is cut on a word, the rest is a command away.
+    const shown = long ? `${Array.from(about).slice(0, ABOUT_PREVIEW).join('').replace(/\s+\S*$/u, '')}…` : about;
+    blocks.push(`📝 О себе:\n<blockquote>${escapeHtml(shown)}</blockquote>` +
+      (long ? `\nЦеликом: «Описание»${self ? '' : ' ответом'}` : ''));
+  } else if (self) {
+    blocks.push('📝 О себе: пусто. Напиши «+Описание» и пару строк о себе');
+  }
+  const awards = await bio.awardsOf(who.id);
+  if (awards.length) {
+    const shown = awards.slice(0, 5).map((a) => `🎖 ${escapeHtml(a.text)}, ${ageText(ts - a.given_at)}`);
+    if (awards.length > 5) shown.push(`…и ещё ${awards.length - 5}: «Награды»${self ? '' : ' ответом'}`);
+    blocks.push(`🏅 Награды:\n${shown.join('\n')}`);
+  }
+  return { text: blocks.join('\n\n'), card };
+}
+
+// A photo caption holds 1024 characters of text, tags aside.
+const CAPTION_MAX = 1024;
+const visibleLength = (html) => Array.from(String(html).replace(/<[^>]*>/g, '').replace(/&(?:lt|gt|amp|quot|#39);/g, '_')).length;
+
+async function sayPhoto(message, png, caption, { markup, temp = false } = {}) {
+  const params = {
+    chat_id: message.chat.id, photo: new InputFile(png, 'activity.png', { type: 'image/png' }),
+    caption: boldHtml(caption), parse_mode: 'HTML',
+    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
+  };
+  if (markup) params.reply_markup = markup;
+  const sent = await withPremium(params, (p) => api.sendPhoto(p));
+  if (temp && isGroupChat(message.chat)) await deleteLater(message.chat.id, [message.message_id, sent && sent.message_id]);
+  return sent;
+}
+
+// The member's messages per day in this chat: the last year, or a month for a newcomer.
+function chartOf(card, ts) {
+  const today = members.mskDay(ts);
+  const first = card.days.size ? Math.min(...card.days.keys()) : today;
+  const from = Math.min(today - 29, Math.max(first, today - members.CHART_DAYS + 1));
+  return activityChart(card.days, from, today, members.periodStart('week', ts));
 }
 
 async function showProfile(message, who, self) {
@@ -144,7 +239,60 @@ async function showProfile(message, who, self) {
     return;
   }
   const markup = self ? keyboard([await profileRow(message.chat, '👤 Профиль Фини')]) : undefined;
-  await say(message, await profileText(message.chat, who, self), { markup, temp: true });
+  const { text, card } = await profileCard(message.chat, who, self);
+  // With the chart on top, as Iris does; no right to send photos — just the text.
+  if (card && visibleLength(text) <= CAPTION_MAX) {
+    try {
+      await sayPhoto(message, chartOf(card, nowInt()), text, { markup, temp: true });
+      return;
+    } catch (err) {
+      if (!(err instanceof BotApiError)) throw err;
+    }
+  }
+  await say(message, text, { markup, temp: true });
+}
+
+// «Описание»: the whole «о себе» of a member.
+async function aboutText(who, self) {
+  const about = await bio.aboutOf(who.id);
+  const name = escapeHtml(truncate(who.name, 60));
+  if (!about) return self ? '📝 О себе пока пусто. Напиши «+Описание» и пару строк о себе.' : `📝 О себе · ${name}\nПока пусто.`;
+  return `📝 О себе · ${name}\n<blockquote>${escapeHtml(about)}</blockquote>`;
+}
+
+// «Награды»: all awards, numbered for «Снять Награду N».
+async function awardsText(who) {
+  const list = await bio.awardsOf(who.id);
+  const name = escapeHtml(truncate(who.name, 60));
+  if (!list.length) return `🏅 Награды · ${name}\nПока пусто. Наградить могут админы чата: «Наградить Текст» ответом.`;
+  const ts = nowInt();
+  return `🏅 Награды · ${name}\n\n` + list.map((a, i) => `${i + 1}. ${escapeHtml(a.text)}, ${ageText(ts - a.given_at)}`).join('\n');
+}
+
+// Awards are handed out by the chat's creator and admins (and the owner).
+async function canAward(chatId, userId) {
+  if (userId === OWNER_USER_ID) return true;
+  const m = await moder.memberOf(chatId, userId);
+  return Boolean(m) && (m.status === 'creator' || m.status === 'administrator');
+}
+
+async function awardCommand(message, self, target, value) {
+  if (!(await canAward(message.chat.id, self.id))) {
+    await say(message, '🏅 Награждать могут только админы чата.', { temp: true });
+    return;
+  }
+  if (target.isBot) {
+    await say(message, '🤖 Ботам награды ни к чему.', { temp: true });
+    return;
+  }
+  try {
+    // «наградить @ник Текст»: the mention is not part of the award.
+    const award = await bio.giveAward(message.chat.id, self.id, target.id, String(value || '').replace(/^@\w+\s*/u, ''));
+    await say(message, `🏅 ${mention(target.id, target.name)} получает награду «${escapeHtml(award)}»!`);
+  } catch (err) {
+    if (!(err instanceof bio.BioError)) throw err;
+    await say(message, `❌ ${err.message}`, { temp: true });
+  }
 }
 
 // ---- tops and stats --------------------------------------------------------------
@@ -345,7 +493,9 @@ async function fun(message, rest) {
 // Each command with its description quoted under it.
 function helpText(owner, moderation) {
   const rows = [
-    ['👤 Кто Я · Кто Ты (ответом)', 'Профиль: звание, XP, репутация, брак и ачивки'],
+    ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
+    ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
+    ['🏅 Награды (ответом) · Наградить Текст (ответом)', 'Награды участника. Награждают и снимают («Снять Награду N») админы чата'],
     ['🏆 Финя, Топ', 'Топ Сквада по XP'],
     ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и список участников, период переключается кнопками'],
     ['🌾 Фарм', `Случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}, иногда редкий — до ${xp.FARM_RARE_MAX}`],
@@ -479,6 +629,31 @@ export async function handleText(message) {
     await say(message, await rpListText(), { temp: true });
     return true;
   }
+  // «О себе» and awards, as Iris has them.
+  const aboutSet = /^\+\s?описание(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
+  if (aboutSet) {
+    try {
+      await bio.setAbout(self.id, aboutSet[1]);
+      await say(message, '📝 Описание обновлено. Посмотреть: «Кто Я».', { temp: true });
+    } catch (err) {
+      if (!(err instanceof bio.BioError)) throw err;
+      await say(message, `❌ ${err.message}`, { temp: true });
+    }
+    return true;
+  }
+  if (cmd === '-описание' || cmd === '- описание') {
+    const removed = await bio.clearAbout(self.id);
+    await say(message, removed ? '🗑 Описание удалено.' : 'Описания и так нет.', { temp: true });
+    return true;
+  }
+  const view = /^(описание|награды)(?:\s+@\w+)?$/u.exec(cmd);
+  if (view) {
+    const asked = group ? await targetOf(message) : null;
+    const who = asked || self;
+    const text = view[1] === 'описание' ? await aboutText(who, who.id === self.id) : await awardsText(who);
+    await say(message, text, { temp: true });
+    return true;
+  }
 
   if (!group) {
     if (cmd === 'брак') {
@@ -507,6 +682,21 @@ export async function handleText(message) {
   }
   if (THANKS.has(cmd) && target) {
     await plusRep(message, target);
+    return true;
+  }
+  const give = /^наградить(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
+  if (give && target) {
+    await awardCommand(message, self, target, give[1]);
+    return true;
+  }
+  const take = /^(?:-\s?награда|снять\s+награду)\s+(\d{1,3})$/u.exec(cmd);
+  if (take && target) {
+    if (!(await canAward(message.chat.id, self.id))) {
+      await say(message, '🏅 Снимать награды могут только админы чата.', { temp: true });
+      return true;
+    }
+    const removed = await bio.removeAward(target.id, Number(take[1]));
+    await say(message, removed ? `🗑 Награда «${escapeHtml(removed)}» снята.` : 'Такой награды нет. Номера — в «Награды» ответом.', { temp: true });
     return true;
   }
   const mod = target && MOD_VERBS.exec(rest.trim());

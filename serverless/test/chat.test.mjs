@@ -24,6 +24,8 @@ const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text
 const replyTo = (target) => ({ reply_to_message: groupMessage(DISCUSSION, target, 'сообщение') });
 const sent = (api) => api.called('sendMessage');
 const lastSent = (api) => { const s = sent(api); return s.length ? s[s.length - 1].params.text : null; };
+// The profile goes out as the activity chart with a caption.
+const lastProfile = (api) => { const s = api.called('sendPhoto'); return s.length ? s[s.length - 1].params.caption : null; };
 // Chat admins for getChatMember; everyone else is a plain member.
 const withAdmins = (ids) => ({
   getChatMember: (p) => ids.includes(p.user_id)
@@ -40,16 +42,17 @@ test('«кто я» shows the profile, earns no XP and cleans itself up', async 
   const root = channelRoot();
   await onMessage(root);
   await say(u, 'кто я', { reply_to_message: root });
-  const text = lastSent(api);
-  assert.match(text, /👤 Вася/);
+  const text = lastProfile(api);
+  assert.match(text, /👤 Это пользователь Вася/);
   assert.match(text, /Репутация: 0/);
-  assert.match(text, /Не в браке/);
-  assert.match(text, /В чате с/);
+  assert.doesNotMatch(text, /В браке/);
+  assert.match(text, /Первое появление: \d\d\.\d\d\.\d{4}/);
+  assert.match(text, /Актив \(д\|н\|м\|весь\): 1 \| 1 \| 1 \| 1/);
   assert.equal((await db.get('SELECT COUNT(*) AS c FROM events WHERE kind = ?', ['comment'])).c, 0);
   assert.equal((await db.get('SELECT COUNT(*) AS c FROM autodelete')).c, 2);
   // Ordinary talk is not a command.
   await say(u, 'я сегодня кто угодно, только не профиль');
-  assert.equal(sent(api).length, 1);
+  assert.equal(sent(api).length + api.called('sendPhoto').length, 1);
 });
 
 test('commands work only in the Squad chats', async () => {
@@ -160,7 +163,7 @@ test('«+» gives reputation without a limit; not to yourself, bots or the chann
   await onMessage(m);
   assert.equal((await db.get('SELECT points FROM reputation WHERE user_id = 1')).points, 1);
   await say(b, 'кто ты', replyTo(a));
-  assert.match(lastSent(api), /Репутация: 1/);
+  assert.match(lastProfile(api), /Репутация: 1/);
 });
 
 test('marriage: proposal, only the other one accepts, Mini App shows the partner, divorce', async () => {
@@ -191,7 +194,7 @@ test('marriage: proposal, only the other one accepts, Mini App shows the partner
   const data = await profileEndpoint({}, { initData: { user: a } });
   assert.equal(data.me.marriage.name, 'Боря');
   await say(a, 'кто я');
-  assert.match(lastSent(api), /В браке с Боря/);
+  assert.match(lastProfile(api), /В браке с Боря/);
   // Divorce asks first; only the one who asked can confirm.
   await say(a, 'развод');
   const div = sent(api).at(-1).params.reply_markup.inline_keyboard[0][0].callback_data;
@@ -289,7 +292,7 @@ test('«Финя, …»: who, chance, choice and a yes/no answer', async () => {
   await say(user(1), 'Финя');
   assert.match(lastSent(api), /На месте/);
   await say(user(1), 'финя, команды');
-  assert.match(lastSent(api), /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль: звание/);
+  assert.match(lastSent(api), /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль с графиком актива/);
   assert.doesNotMatch(lastSent(api), /Владельцу/);
   // Talking about Финя is not a command.
   const before = sent(api).length;

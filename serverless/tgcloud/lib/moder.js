@@ -42,7 +42,7 @@ export const mention = (id, name) => `<a href="tg://user?id=${id}">${escapeHtml(
 
 // ---- who may moderate ------------------------------------------------------------
 
-async function memberOf(chatId, userId) {
+export async function memberOf(chatId, userId) {
   try {
     return await api.getChatMember({ chat_id: chatId, user_id: userId });
   } catch {
