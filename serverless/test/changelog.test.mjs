@@ -110,15 +110,25 @@ test('/log_on in a topic: the news go there from now on, the pending one right a
 
   const cmd = groupMessage(OTHER, OWNER, '/log_on', otherTopic);
   await onMessage(cmd);
+  // Only the news itself goes to the topic, and nothing there is deleted except the command.
   const sent = api.called('sendMessage').filter((c) => c.params.chat_id === OTHER.id);
-  assert.equal(sent.length, 2);
-  assert.ok(sent.every((c) => c.params.message_thread_id === 77));
-  assert.match(sent[0].params.text, /будут приходить сюда/);
-  assert.match(sent[1].params.text, new RegExp(CHANGES[0].title));
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].params.message_thread_id, 77);
+  assert.match(sent[0].params.text, new RegExp(CHANGES[0].title));
+  assert.match(toOwner(api).at(-1).params.text, /Готово: новости об обновлениях Фини теперь приходят в «Сквад Новости», в этот топик/);
   assert.deepEqual(await getSetting('changelog_target'), { chat_id: OTHER.id, thread_id: 77, title: 'Сквад Новости' });
   assert.equal(await getSetting('changelog_posted'), CHANGES[0].id);
-  assert.ok(api.called('deleteMessage').some((c) => c.params.message_id === cmd.message_id));
+  assert.deepEqual(api.called('deleteMessage').map((c) => c.params.message_id), [cmd.message_id]);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM autodelete WHERE chat_id = ?', [OTHER.id])).c, 0);
   assert.equal(posts(api).length, 0);
+
+  // Binding again (nothing pending) puts the latest news there once more, still nothing deleted.
+  await onMessage(groupMessage(OTHER, OWNER, '/log_on', otherTopic));
+  const again = api.called('sendMessage').filter((c) => c.params.chat_id === OTHER.id);
+  assert.equal(again.length, 2);
+  assert.match(again[1].params.text, new RegExp(CHANGES[0].title));
+  assert.equal(await getSetting('changelog_posted'), CHANGES[0].id);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM autodelete WHERE chat_id = ?', [OTHER.id])).c, 0);
 
   await onMessage(privateMessage(OWNER, '/log'));
   assert.match(toOwner(api).at(-2).params.text, /Куда: Сквад Новости · топик/);

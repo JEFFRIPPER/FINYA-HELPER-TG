@@ -5,7 +5,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from './config.js';
-import { deleteLater, getSetting, logError, setSetting } from './store.js';
+import { getSetting, logError, setSetting } from './store.js';
 import { withPremium } from './emoji.js';
 import { boldHtml, escapeHtml, nowInt, truncate } from './util.js';
 
@@ -24,6 +24,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
+  {
+    id: '2026-10-22-log-keep',
+    date: '22 октября 2026',
+    title: 'Новости больше не пропадают',
+    items: [
+      '📰 В топике новостей Финя ничего не удаляет: после /log_on туда сразу приходит свежая новость, а «готово» Финя пишет владельцу в личку.',
+    ],
+  },
   {
     id: '2026-10-22-daily-achievements',
     date: '22 октября 2026',
@@ -199,7 +207,9 @@ async function dropCommand(message) {
   }
 }
 
-// /log_on in a topic: the news go there from now on, and the pending one right away.
+// /log_on in a topic: the news go there from now on. The topic gets a real news post
+// right away (the pending one, else the latest), which also checks that Финя may write
+// there; nothing in the topic is ever deleted. The owner hears «готово» in the private chat.
 export async function bindCommand(message, owner, squad) {
   const chat = message.chat;
   if (!['group', 'supergroup'].includes(chat.type)) {
@@ -213,28 +223,31 @@ export async function bindCommand(message, owner, squad) {
     thread_id: message.is_topic_message && message.message_thread_id ? message.message_thread_id : null,
     title: truncate(chat.title || '', 64),
   };
-  let sent;
+  const { posted, list } = await pending();
+  const entry = list[0] || CHANGES[0];
   try {
-    sent = await withPremium(inTarget(t, {
-      text: boldHtml('📰 Готово: новости об обновлениях Фини будут приходить сюда.'), parse_mode: 'HTML',
+    await withPremium(inTarget(t, {
+      text: newsText(entry), parse_mode: 'HTML', link_preview_options: { is_disabled: true },
     }), (p) => api.sendMessage(p));
   } catch (err) {
     await logError('changelog.bind', err);
-    try {
-      await api.sendMessage({
-        chat_id: OWNER_USER_ID, parse_mode: 'HTML',
-        text: boldHtml(`📰 Не могу писать в этот топик: ${escapeHtml(reason(err))}\n\nДай Фине право писать сообщения и повтори /log_on.`),
-      });
-    } catch {
-      // The owner's chat is closed: the error log has it.
-    }
+    await tellOwner(`📰 Не могу писать в этот топик: ${escapeHtml(reason(err))}\n\nДай Фине право писать сообщения и повтори /log_on.`);
     return;
   }
   await setSetting('changelog_target', t);
   await setSetting('changelog_failed_at', null);
   await setSetting('changelog_warned', null);
-  await deleteLater(chat.id, [sent && sent.message_id], 60);
-  await postNext({ manual: true });
+  if (list.length) await setPosted(posted, entry.id);
+  await tellOwner(`📰 Готово: новости об обновлениях Фини теперь приходят в «${escapeHtml(t.title || 'чат')}»` +
+    `${t.thread_id ? ', в этот топик' : ''}. Свежая новость уже там.`);
+}
+
+async function tellOwner(text) {
+  try {
+    await api.sendMessage({ chat_id: OWNER_USER_ID, parse_mode: 'HTML', text: boldHtml(text) });
+  } catch {
+    // The owner's chat is closed: the error log has it.
+  }
 }
 
 // /log — the next news; /log post — post it now instead of waiting for pump().
