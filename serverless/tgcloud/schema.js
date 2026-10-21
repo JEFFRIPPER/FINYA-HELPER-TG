@@ -386,3 +386,39 @@ export const awards = table('awards', {
 }, (t) => ({
   byUser: index('awards_by_user').on(t.user_id, t.given_at),
 }));
+
+// «+ник Вася»: how Финя calls the member in tops, the profile and RP.
+export const nicks = table('nicks', {
+  user_id: integer('user_id').primaryKey(),
+  nick: text('nick').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
+// XP spent besides the shop: gifts to others and casino stakes. The balance is
+// XP minus purchases minus these; the rank keeps counting all XP earned.
+export const xp_spend = table('xp_spend', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  user_id: integer('user_id').notNull(),
+  kind: text('kind').notNull(),
+  amount: integer('amount').notNull(),
+  other_id: integer('other_id'),
+  at: integer('at').notNull(),
+}, (t) => ({
+  byUser: index('xp_spend_by_user').on(t.user_id, t.kind, t.at),
+}));
+
+// «Финя, напомни через 2ч …»: sent from pump() when due.
+export const reminders = table('reminders', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  user_id: integer('user_id').notNull(),
+  name: text('name').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  thread_id: integer('thread_id'),
+  message_id: integer('message_id'),
+  text: text('text').notNull(),
+  due_at: integer('due_at').notNull(),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  byDue: index('reminders_by_due').on(t.due_at),
+  byUser: index('reminders_by_user').on(t.user_id, t.due_at),
+}));

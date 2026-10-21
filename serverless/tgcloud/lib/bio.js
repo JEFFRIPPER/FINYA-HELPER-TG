@@ -56,3 +56,28 @@ export async function removeAward(userId, n) {
   await db.run(sql`DELETE FROM awards WHERE id = ${award.id}`);
   return award.text;
 }
+
+// ---- nick ------------------------------------------------------------------------
+
+export const NICK_MAX = 24;
+
+export async function nickOf(userId) {
+  const row = await db.get(sql`SELECT nick FROM nicks WHERE user_id = ${userId}`);
+  return row ? row.nick : null;
+}
+
+// One line, up to NICK_MAX characters; no links or mentions.
+export async function setNick(userId, value) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!clean) throw new BioError('Напиши ник после «+Ник»: «+Ник Вася».');
+  if (Array.from(clean).length > NICK_MAX) throw new BioError(`Ник — до ${NICK_MAX} символов.`);
+  if (/@|https?:|t\.me\//iu.test(clean)) throw new BioError('В нике не должно быть ссылок и @.');
+  await db.run(sql`INSERT INTO nicks (user_id, nick, updated_at) VALUES (${userId}, ${clean}, ${nowInt()})
+    ON CONFLICT(user_id) DO UPDATE SET nick = excluded.nick, updated_at = excluded.updated_at`);
+  return clean;
+}
+
+export async function clearNick(userId) {
+  const r = await db.run(sql`DELETE FROM nicks WHERE user_id = ${userId}`);
+  return r.rowsAffected > 0;
+}

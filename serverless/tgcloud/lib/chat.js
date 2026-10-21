@@ -4,16 +4,19 @@
 import { api, BotApiError, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, WEBAPP_URL } from './config.js';
+import { squadChatIds } from './xpchat.js';
 import { deleteLater, getSetting, setSetting } from './store.js';
-import { answer, button, getMe, keyboard } from './tg.js';
+import { answer, button, getMe, keyboard, sendWithFloodWait } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, nowInt, truncate } from './util.js';
 import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
 import { withPremium } from './emoji.js';
+import * as games from './games.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
+import * as reminders from './reminders.js';
 import * as social from './social.js';
 import * as xp from './xp.js';
 
@@ -74,6 +77,16 @@ async function say(message, text, { markup, temp = false, replyTo = message.mess
 
 const person = (u) => ({ id: u.id, name: fullName(u) || u.username || 'Участник', isBot: Boolean(u.is_bot), user: u });
 
+// The nick («+ник») instead of the Telegram name, when set.
+async function withNick(p) {
+  const nick = p && !p.isBot ? await bio.nickOf(p.id) : null;
+  return nick ? { ...p, name: nick } : p;
+}
+
+async function nameFor(u) {
+  return (await bio.nickOf(u.id)) || fullName(u) || u.username || 'Участник';
+}
+
 // The member replied to, or the first @mention. In a discussion group every comment
 // «replies» to the channel post, and in a forum to the topic: those are no target.
 export async function targetOf(message) {
@@ -81,17 +94,17 @@ export async function targetOf(message) {
   const topicRoot = r && message.is_topic_message && r.message_id === message.message_thread_id;
   if (r && r.from && !r.sender_chat && !r.is_automatic_forward && !r.forum_topic_created && !topicRoot &&
       r.from.id !== members.TELEGRAM_SERVICE_ID) {
-    return person(r.from);
+    return withNick(person(r.from));
   }
   const me = await getMe();
   const text = String(message.text || '');
   for (const e of message.entities || []) {
-    if (e.type === 'text_mention' && e.user) return person(e.user);
+    if (e.type === 'text_mention' && e.user) return withNick(person(e.user));
     if (e.type === 'mention') {
       const username = text.slice(e.offset + 1, e.offset + e.length);
       if (username.toLowerCase() === String(me.username || '').toLowerCase()) continue;
       const found = await members.byUsername(message.chat.id, username);
-      if (found) return { id: found.id, name: found.name, isBot: false };
+      if (found) return withNick({ id: found.id, name: found.name, isBot: false });
     }
   }
   return null;
@@ -316,12 +329,16 @@ const placeMark = (i) => MEDALS[i] || `${i + 1}.`;
 const statsKeyboard = (period) => keyboard([Object.entries(STAT_PERIODS).map(([key, [label]]) =>
   button(key === period ? `• ${label}` : label, { callback_data: `stat:${key}` }))]);
 
-async function statsPanel(chatId, period) {
+async function statsPanel(chatId, period, viewer = null) {
   const s = await members.periodStats(chatId, period, STAT_LIST);
   let text = `📊 Стата чата · ${STAT_PERIODS[period][1]}\n\n👥 Участников: ${s.members} · писали: ${s.writers}\n`;
   if (!s.top.length) text += '\nПока никто не писал: напиши что-нибудь, и ты первый в списке 😉\n';
   s.top.forEach((r, i) => { text += `\n${placeMark(i)} ${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`; });
   if (s.writers > s.top.length) text += `\n…и ещё ${s.writers - s.top.length}`;
+  if (viewer) {
+    const mine = await members.placeOf(chatId, period, viewer.id);
+    text += `\n\n📍 ${escapeHtml(truncate(viewer.name, 35))}: ${mine ? `№${mine.place} · ${msgsWord(mine.n)}` : 'сообщений за период нет'}`;
+  }
   text += `\n\n💬 Всего сообщений: ${fmtThousands(s.messages)}`;
   return { text, markup: statsKeyboard(period) };
 }
@@ -330,7 +347,7 @@ async function statsPanel(chatId, period) {
 
 async function farm(message) {
   const u = message.from;
-  const name = escapeHtml(truncate(fullName(u), 40));
+  const name = escapeHtml(truncate(await nameFor(u), 40));
   const result = await xp.farm(u, xp.farmRoll());
   if (!result) return;
   if (result.wait) {
@@ -355,7 +372,7 @@ async function plusRep(message, target) {
   const n = await social.plus(message.chat.id, message.message_id, from.id, target.id);
   if (n == null) return;
   // «Спасибо» is common: the confirmation goes away, the reputation stays.
-  await say(message, `❤️ ${mention(from.id, fullName(from))} ➜ ${mention(target.id, target.name)}\nРепутация +1, теперь ${n}`, { temp: true });
+  await say(message, `❤️ ${mention(from.id, await nameFor(from))} ➜ ${mention(target.id, target.name)}\nРепутация +1, теперь ${n}`, { temp: true });
 }
 
 // ---- marriages -------------------------------------------------------------------
@@ -383,7 +400,7 @@ async function propose(message, target) {
     await say(message, `💍 ${err.message}`, { temp: true });
     return;
   }
-  const a = mention(from.id, fullName(from));
+  const a = mention(from.id, await nameFor(from));
   const b = mention(target.id, target.name);
   const sent = await say(message, `💍 ${a} делает предложение ${b}!\n\n${b}, твой ответ?`, {
     markup: keyboard([[
@@ -429,7 +446,7 @@ async function rp(message, found, target) {
   const m = /^([^\p{L}\p{N}]+?)\s+(.+)$/u.exec(found.action);
   const [emoji, verb] = m ? [escapeHtml(m[1]), m[2]] : ['✨', found.action];
   const who = target.id === actor.id ? 'себя' : mention(target.id, target.name);
-  let text = `${emoji} ${mention(actor.id, fullName(actor))} ${escapeHtml(verb)} ${who}`;
+  let text = `${emoji} ${mention(actor.id, await nameFor(actor))} ${escapeHtml(verb)} ${who}`;
   if (found.rest) text += `\n💬 «${escapeHtml(truncate(found.rest, 200))}»`;
   // In a group the command itself goes away: Финя's line answers the target's message.
   if (!isGroupChat(message.chat)) {
@@ -488,36 +505,276 @@ async function fun(message, rest) {
   return false;
 }
 
+// ---- nick, balance, ID, admins ------------------------------------------------------
+
+async function nickText(who, self) {
+  const nick = await bio.nickOf(who.id);
+  if (self) return nick ? `🏷 Твой ник: «${escapeHtml(nick)}». Сменить: «+Ник Новый», убрать: «-Ник».` : '🏷 Ника нет. Поставить: «+Ник Вася».';
+  return nick ? `🏷 Ник: «${escapeHtml(nick)}»` : '🏷 У участника нет ника.';
+}
+
+async function balanceText(self) {
+  const p = await db.get(sql`SELECT xp FROM profiles WHERE user_id = ${self.id}`);
+  const b = await games.balanceOf(self.id);
+  return `💰 ${escapeHtml(truncate(self.name, 40))}, на балансе ${fmtThousands(b)} XP из ${fmtThousands(p ? p.xp : 0)}.\n` +
+    'Баланс тратится в лавке, на переводы и в казино. Звание считает весь заработанный XP.';
+}
+
+async function idText(message, self, target) {
+  if (target && target.id !== self.id) {
+    if (!(await canAward(message.chat.id, self.id))) return '🆔 Чужой ID видят только админы чата.';
+    return `🆔 ${escapeHtml(truncate(target.name, 40))}: <code>${target.id}</code>`;
+  }
+  let text = `🆔 Твой ID: <code>${self.id}</code>`;
+  if (isGroupChat(message.chat)) text += `\n💬 ID чата: <code>${message.chat.id}</code>`;
+  return text;
+}
+
+async function adminsText(chatId) {
+  let list;
+  try {
+    list = await api.getChatAdministrators({ chat_id: chatId });
+  } catch {
+    return '⭐ Не получилось получить список админов.';
+  }
+  const people = (list || []).filter((m) => m.user && !m.user.is_bot);
+  people.sort((a, b) => (a.status === 'creator' ? -1 : 0) - (b.status === 'creator' ? -1 : 0));
+  if (!people.length) return '⭐ Админов-людей в чате нет.';
+  const rows = [];
+  for (const m of people) {
+    const tag = m.custom_title ? ` · «${escapeHtml(truncate(m.custom_title, 30))}»` : '';
+    rows.push(`${m.status === 'creator' ? '👑' : '⭐'} ${escapeHtml(truncate(await nameFor(m.user), 40))}${tag}`);
+  }
+  return `⭐ Админы чата · ${people.length}\n\n${rows.join('\n')}`;
+}
+
+async function repTopText() {
+  const rows = await db.all(sql`SELECT user_id, points FROM reputation WHERE points > 0 ORDER BY points DESC, user_id LIMIT 15`);
+  if (!rows.length) return '❤️ Топ репутации пока пуст.\nОтветь «+» или «Спасибо» на сообщение, чтобы поднять кому-то репутацию.';
+  const lines = [];
+  for (const [i, r] of rows.entries()) {
+    lines.push(`${placeMark(i)} ${escapeHtml(truncate(await members.nameOf(r.user_id), 35))} — ${fmtThousands(r.points)}`);
+  }
+  return `❤️ Топ репутации Сквада\n\n${lines.join('\n')}`;
+}
+
+// ---- summon ------------------------------------------------------------------------
+
+export const SUMMON_COOLDOWN = 30 * 60;
+const SUMMON_LIMIT = 50;
+const SUMMON_PER_MESSAGE = 5;
+
+// «Финя, созови»: the latest active members, tagged five to a message (Iris does the same).
+async function summon(message, self, text) {
+  const chatId = message.chat.id;
+  if (!(await canAward(chatId, self.id))) {
+    await say(message, '📣 Созывать могут только админы чата.', { temp: true });
+    return;
+  }
+  const key = `summon_at:${chatId}`;
+  const last = Number(await getSetting(key)) || 0;
+  const ts = nowInt();
+  if (ts - last < SUMMON_COOLDOWN) {
+    await say(message, `📣 Созыв был недавно. Следующий через ${fmtWait(last + SUMMON_COOLDOWN - ts)}.`, { temp: true });
+    return;
+  }
+  const rows = await db.all(sql`SELECT m.user_id AS id, COALESCE((SELECT nick FROM nicks WHERE nicks.user_id = m.user_id), m.name) AS name
+    FROM chat_members m WHERE m.chat_id = ${chatId} AND m.status = 'member' AND m.user_id != ${self.id}
+    ORDER BY m.last_active DESC LIMIT ${SUMMON_LIMIT}`);
+  if (!rows.length) {
+    await say(message, '📣 Созывать пока некого: Финя ещё никого здесь не видела.', { temp: true });
+    return;
+  }
+  await setSetting(key, ts);
+  const note = String(text || '').trim();
+  const head = `📣 ${mention(self.id, self.name)} созывает всех!` + (note ? `\n<blockquote>${escapeHtml(truncate(note, 300))}</blockquote>` : '');
+  for (let i = 0; i < rows.length; i += SUMMON_PER_MESSAGE) {
+    const tags = rows.slice(i, i + SUMMON_PER_MESSAGE).map((r) => mention(r.id, r.name)).join(', ');
+    const body = i === 0 ? `${head}\n\n${tags}` : tags;
+    await sendWithFloodWait(() => say(message, body, { replyTo: i === 0 ? message.message_id : null }));
+  }
+}
+
+// ---- XP: gifts and the casino -------------------------------------------------------
+
+async function giftCommand(message, self, target, amount) {
+  try {
+    const r = await games.gift(message.from, target, amount);
+    let text = `🎁 ${mention(self.id, self.name)} ➜ ${mention(target.id, target.name)}: +${fmtThousands(r.amount)} XP`;
+    if (r.promoted && r.newRank) text += `\n🎖 Новое звание: ${r.newRank[1]} · ${escapeHtml(r.newRank[2])}!`;
+    if (message.from.id !== OWNER_USER_ID) text += `\n💰 У тебя на балансе: ${fmtThousands(await games.balanceOf(self.id))} XP`;
+    await say(message, text);
+  } catch (err) {
+    if (!(err instanceof games.GameError)) throw err;
+    await say(message, `🎁 ${err.message}`, { temp: true });
+  }
+}
+
+const CASINO_RULES = '🎰 Казино на XP с баланса\n\n' +
+  `«Казино 50» — слоты: 777 ×20, три в ряд ×7, две семёрки ×2.\n«Кости 50» — кубик: 6 ×2,5, 4–5 ×1,5.\n\n` +
+  `Ставка от ${games.STAKE_MIN} до ${games.STAKE_MAX} XP, до ${games.GAMES_PER_DAY} игр в день. Баланс: «Баланс».`;
+
+async function casino(message, self, emoji, amount) {
+  let bet;
+  try {
+    bet = await games.stake(message.from, amount);
+  } catch (err) {
+    if (!(err instanceof games.GameError)) throw err;
+    await say(message, `${emoji} ${err.message}`, { temp: true });
+    return;
+  }
+  let dice;
+  try {
+    dice = await api.sendDice({
+      chat_id: message.chat.id, emoji,
+      reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
+    });
+  } catch (err) {
+    await games.refund(bet);
+    throw err;
+  }
+  if (!dice || !dice.dice) {
+    await games.refund(bet);
+    return;
+  }
+  const r = await games.settle(message.from, bet, emoji, dice.dice.value);
+  const name = escapeHtml(truncate(self.name, 40));
+  const result = r.won
+    ? `+${fmtThousands(r.won)} XP (×${String(r.times).replace('.', ',')})`
+    : `−${fmtThousands(bet.amount)} XP`;
+  await say(message, `${emoji} ${name}: ${r.line} · ${result}\n💰 Баланс: ${fmtThousands(r.balance)} XP`,
+    { replyTo: dice.message_id, temp: true });
+  if (isGroupChat(message.chat)) await deleteLater(message.chat.id, [dice.message_id]);
+}
+
+// ---- reminders ---------------------------------------------------------------------
+
+async function remindCommand(message, self, words, addressed) {
+  const parsed = reminders.parse(words);
+  if (!parsed) {
+    if (!addressed) return false;
+    await say(message, '⏰ Не поняла, когда. Так: «Финя, напомни через 2ч позвонить», «…в 18:30 …», «…завтра в 10:00 …».', { temp: true });
+    return true;
+  }
+  try {
+    const r = await reminders.add(message, message.from, self.name, parsed);
+    await say(message, `⏰ Напомню ${reminders.whenText(r.due)} (МСК)${r.text ? `:\n<blockquote>${escapeHtml(r.text)}</blockquote>` : '.'}`, { temp: true });
+  } catch (err) {
+    if (!(err instanceof reminders.ReminderError)) throw err;
+    await say(message, `⏰ ${err.message}`, { temp: true });
+  }
+  return true;
+}
+
+async function remindersText(self) {
+  const list = await reminders.listOf(self.id);
+  if (!list.length) return '⏰ Напоминаний нет. Поставить: «Финя, напомни через 2ч позвонить».';
+  return '⏰ Твои напоминания (МСК)\n\n' +
+    list.map((r, i) => `${i + 1}. ${reminders.whenText(r.due_at)}${r.text ? ` — ${escapeHtml(truncate(r.text, 60))}` : ''}`).join('\n') +
+    '\n\nУдалить: «-Напоминание N».';
+}
+
+// ---- anniversaries -----------------------------------------------------------------
+
+const ANNIVERSARY_DAYS = new Set([7, 30, 50, 100, 200, 300, 500, 1000]);
+export const isAnniversary = (days) => ANNIVERSARY_DAYS.has(days) || (days > 0 && days % 365 === 0);
+
+function anniversaryWord(days) {
+  if (days % 365 === 0) {
+    const y = days / 365;
+    return `${y} ${plural(y, 'год', 'года', 'лет')} вместе`;
+  }
+  return `${daysWord(days)} вместе`;
+}
+
+// Once a day from 12:00 МСК: couples with a round number of days, in each Squad chat
+// where one of them is a member.
+async function anniversaries(ts = nowInt()) {
+  if (Math.floor((ts + 3 * 3600) % 86400 / 3600) < 12) return;
+  const day = members.mskDay(ts);
+  if ((await getSetting('anniversary_day')) === day) return;
+  await setSetting('anniversary_day', day);
+  const pairs = (await social.couples(1000)).filter((c) => isAnniversary(social.marriedDays(c.since, ts)));
+  if (!pairs.length) return;
+  for (const chatId of await squadChatIds()) {
+    const lines = [];
+    for (const c of pairs) {
+      const here = await db.get(sql`SELECT 1 AS x FROM chat_members WHERE chat_id = ${chatId} AND status = 'member'
+        AND user_id IN (${c.a}, ${c.b}) LIMIT 1`);
+      if (!here) continue;
+      lines.push(`💍 ${mention(c.a, await members.nameOf(c.a))} + ${mention(c.b, await members.nameOf(c.b))} — ${anniversaryWord(social.marriedDays(c.since, ts))}!`);
+    }
+    if (!lines.length) continue;
+    try {
+      await withPremium({
+        chat_id: chatId, text: boldHtml(`💒 Годовщина в Скваде!\n\n${lines.join('\n')}\n\nСовет да любовь 🥂`), parse_mode: 'HTML',
+      }, (p) => api.sendMessage(p));
+    } catch {
+      // No rights in that chat any more.
+    }
+  }
+}
+
 // ---- help --------------------------------------------------------------------------
 
-// Each command with its description quoted under it.
-function helpText(owner, moderation) {
-  const rows = [
+// The help: a menu of sections, each a list of commands with the description
+// quoted under it. Switched by buttons (help:<section>) in place.
+const HELP = {
+  profile: ['👤 Профиль', () => [
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
+    ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
     ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
-    ['🏅 Награды (ответом) · Наградить Текст (ответом)', 'Награды участника. Награждают и снимают («Снять Награду N») админы чата'],
-    ['🏆 Финя, Топ', 'Топ Сквада по XP'],
-    ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и список участников, период переключается кнопками'],
-    ['🌾 Фарм', `Случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}, иногда редкий — до ${xp.FARM_RARE_MAX}`],
-    ['❤️ + или «Спасибо» (ответом)', 'Репутация участнику, без лимита'],
-    ['💍 Брак (ответом) · Развод · Браки', 'Предложение руки и сердца, развод и все пары Сквада'],
+    ['🏅 Награды (ответом)', 'Награды участника от админов чата'],
+  ]],
+  people: ['💞 Люди', () => [
+    ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
+    ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. С годовщинами Финя поздравляет сама'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
+  ]],
+  games: ['🎲 XP и игры', () => [
+    ['🏆 Финя, Топ', 'Топ Сквада по XP'],
+    ['🌾 Фарм', `Случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}, иногда редкий — до ${xp.FARM_RARE_MAX}`],
+    ['💰 Баланс', 'Сколько XP можно потратить: в лавке, на переводы и в казино'],
+    ['🎁 Передать 100 (ответом)', `Перевод XP со своего баланса, до ${games.GIFT_MAX} за раз и ${games.GIFTS_PER_DAY} раз в день`],
+    ['🎰 Казино 50 · 🎲 Кости 50', `Ставка XP от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Правила: «Казино»`],
+  ]],
+  useful: ['🛠 Полезное', () => [
+    ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата с графиком и твоё место, период переключается кнопками'],
+    ['⏰ Финя, Напомни Через 2ч Текст', 'Ещё «… В 18:30 …», «… Завтра В 10:00 …». Список: «Напоминания», удалить: «-Напоминание N»'],
+    ['🆔 Ид', 'Твой ID и ID чата. Чужой ID ответом — для админов'],
+    ['⭐ Админы', 'Админы этого чата'],
     ['🔮 Финя, Кто… · Финя, Инфа…', 'Финя выберет участника или назовёт шанс в процентах'],
     ['🤔 Финя, Выбери А или Б · Финя, Вопрос?', 'Выбор из вариантов и ответ «да» или «нет»'],
-  ];
-  if (moderation) {
-    rows.push(['🛡 Мут 1ч · Размут · Бан · Разбан · Кик · Варн · Снять Варн · Варны',
-      'Для админов, ответом на сообщение. Причину пиши с новой строки']);
+  ]],
+  admin: ['🛡 Админам', (moderation) => [
+    ['🏅 Наградить Текст (ответом) · Снять Награду N', 'Награды в профиле участника'],
+    ['📣 Финя, Созови Текст', `Тегает активных участников по ${SUMMON_PER_MESSAGE} в сообщении, не чаще раза в ${fmtWait(SUMMON_COOLDOWN)}`],
+    ...(moderation ? [['🛡 Мут 1ч · Размут · Бан · Разбан · Кик · Варн · Снять Варн · Варны',
+      'Ответом на сообщение. Причину пиши с новой строки']] : []),
+  ]],
+  owner: ['👑 Владельцу', () => [
+    ['👑 +РП Команда = Действие · -РП Команда', 'Свои РП-действия'],
+    ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
+    ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
+    ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop'],
+  ]],
+};
+
+function helpKeyboard(owner, current = null) {
+  const keys = Object.keys(HELP).filter((k) => owner || k !== 'owner');
+  const rows = [];
+  for (let i = 0; i < keys.length; i += 2) {
+    rows.push(keys.slice(i, i + 2).map((k) => button(k === current ? `• ${HELP[k][0]}` : HELP[k][0], { callback_data: `help:${k}:${owner ? 1 : 0}` })));
   }
-  if (owner) {
-    rows.push(
-      ['👑 +РП Команда = Действие · -РП Команда', 'Владельцу: свои РП-действия'],
-      ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Владельцу: защита чата'],
-      ['✨ Эмодзи (в личке)', 'Владельцу: премиум-эмодзи Фини'],
-      ['📥 Обновить Инфо', 'Владельцу: подтянуть старую историю чата из экспорта Telegram Desktop'],
-    );
+  return keyboard(rows);
+}
+
+function helpText(section, moderation) {
+  if (!HELP[section]) {
+    return '🤖 Финя в чате\n\nКоманды пишутся словами, как у Ириса. Выбери раздел кнопкой ниже 👇';
   }
-  return '🤖 Финя в чате\n\n' + rows.map(([cmd, about]) => `${cmd}\n<blockquote>${about}</blockquote>`).join('\n');
+  const [title, rows] = HELP[section];
+  return `${title}\n\n` + rows(moderation).map(([cmd, about]) => `${cmd}\n<blockquote>${about}</blockquote>`).join('\n');
 }
 
 // ---- owner settings ----------------------------------------------------------------
@@ -601,7 +858,7 @@ export async function handleText(message) {
   const owner = message.from.id === OWNER_USER_ID;
   const [addressed, rest] = await address(text);
   const cmd = bare(rest);
-  const self = person(message.from);
+  const self = await withNick(person(message.from));
 
   if (owner && (await ownerCommand(message, rest))) return true;
 
@@ -610,7 +867,7 @@ export async function handleText(message) {
     return true;
   }
   if (cmd === 'команды' || (addressed && ['помощь', 'help'].includes(cmd))) {
-    await say(message, helpText(owner, await getSetting('chat_moderation')), { temp: true });
+    await say(message, helpText(null), { markup: helpKeyboard(owner), temp: true });
     return true;
   }
   if (['кто я', 'профиль', 'мой профиль', 'кто ты'].includes(cmd)) {
@@ -633,7 +890,7 @@ export async function handleText(message) {
     await farm(message);
     return true;
   }
-  if (['браки', 'пары', 'список браков'].includes(cmd)) {
+  if (['браки', 'пары', 'список браков', 'топ пар'].includes(cmd)) {
     await say(message, await couplesText(), { temp: true });
     return true;
   }
@@ -675,6 +932,63 @@ export async function handleText(message) {
     return true;
   }
 
+  // Nick, balance, ID, reputation top, casino and reminders work in the private chat too.
+  const nickSet = /^\+\s?ник(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
+  if (nickSet) {
+    try {
+      const nick = await bio.setNick(self.id, nickSet[1]);
+      await say(message, `🏷 Теперь ты «${escapeHtml(nick)}». Так Финя зовёт тебя в топах, профиле и РП.`, { temp: true });
+    } catch (err) {
+      if (!(err instanceof bio.BioError)) throw err;
+      await say(message, `❌ ${err.message}`, { temp: true });
+    }
+    return true;
+  }
+  if (cmd === '-ник' || cmd === '- ник') {
+    const removed = await bio.clearNick(self.id);
+    await say(message, removed ? '🗑 Ник убран: снова зову по имени из Telegram.' : 'Ника и так нет.', { temp: true });
+    return true;
+  }
+  if (/^ник(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = group ? await targetOf(message) : null;
+    await say(message, await nickText(asked || self, !asked || asked.id === self.id), { temp: true });
+    return true;
+  }
+  if (['баланс', 'мой баланс'].includes(cmd)) {
+    await say(message, await balanceText(self), { temp: true });
+    return true;
+  }
+  if (['ид', 'айди', 'id', 'мой ид', 'мой id'].includes(cmd)) {
+    const asked = group ? await targetOf(message) : null;
+    await say(message, await idText(message, self, asked), { temp: true });
+    return true;
+  }
+  if (['топ репы', 'топ репутации', 'топ репа', 'топ рептуации'].includes(cmd)) {
+    await say(message, await repTopText(), { temp: true });
+    return true;
+  }
+  if (['казино', 'слоты', 'кости'].includes(cmd)) {
+    await say(message, CASINO_RULES, { temp: true });
+    return true;
+  }
+  const bet = /^(казино|слоты|слот|кости|кубик|кубики)\s+(\d{1,7})(?:\s*(?:xp|хп))?$/u.exec(cmd);
+  if (bet) {
+    await casino(message, self, ['кости', 'кубик', 'кубики'].includes(bet[1]) ? '🎲' : '🎰', Number(bet[2]));
+    return true;
+  }
+  const remind = /^напомни(?:\s+мне)?\s+([\s\S]+)$/iu.exec(rest.trim());
+  if (remind && (await remindCommand(message, self, remind[1], addressed))) return true;
+  if (['напоминания', 'мои напоминания'].includes(cmd)) {
+    await say(message, await remindersText(self), { temp: true });
+    return true;
+  }
+  const unremind = /^(?:-\s?напоминание|удалить напоминание)\s+(\d{1,2})$/u.exec(cmd);
+  if (unremind) {
+    const removed = await reminders.remove(self.id, Number(unremind[1]));
+    await say(message, removed ? '🗑 Напоминание удалено.' : 'Такого напоминания нет. Список: «Напоминания».', { temp: true });
+    return true;
+  }
+
   if (!group) {
     if (cmd === 'брак') {
       await marriageStatus(message);
@@ -689,8 +1003,17 @@ export async function handleText(message) {
 
   // ---- group only ----
   if (STAT_WORDS[cmd]) {
-    const { text: stats, markup } = await statsPanel(message.chat.id, STAT_WORDS[cmd]);
+    const { text: stats, markup } = await statsPanel(message.chat.id, STAT_WORDS[cmd], self);
     await say(message, stats, { markup, temp: true });
+    return true;
+  }
+  if (['админы', 'кто админ', 'список админов', 'админы чата'].includes(cmd)) {
+    await say(message, await adminsText(message.chat.id), { temp: true });
+    return true;
+  }
+  const call = /^(?:созови(?:\s+всех)?|созыв|созвать всех|позови всех|тегни всех)(?:[\s,:]+([\s\S]*))?$/iu.exec(rest.trim());
+  if (call && (addressed || /^(?:созыв|созвать всех)$/u.test(cmd))) {
+    await summon(message, self, call[1]);
     return true;
   }
   const hint = message.reply_to_message || (message.entities || []).some((e) => ['mention', 'text_mention'].includes(e.type));
@@ -698,6 +1021,11 @@ export async function handleText(message) {
   if (cmd === 'брак') {
     if (target && target.id !== self.id) await propose(message, target);
     else await marriageStatus(message);
+    return true;
+  }
+  const gift = /^(?:передать|перевести|подарить)\s+(\d{1,7})(?:\s*(?:xp|хп|опыта?))?$/u.exec(cmd);
+  if (gift && target) {
+    await giftCommand(message, self, target, Number(gift[1]));
     return true;
   }
   if (THANKS.has(cmd) && target) {
@@ -795,7 +1123,7 @@ async function marryButton(query, yes, fromId, toId) {
     return;
   }
   const a = mention(fromId, await members.nameOf(fromId));
-  const b = mention(toId, presser === toId ? fullName(query.from) : await members.nameOf(toId));
+  const b = mention(toId, presser === toId ? await nameFor(query.from) : await members.nameOf(toId));
   if (!yes) {
     const had = await social.decline(fromId, toId);
     await answer(query);
@@ -830,20 +1158,32 @@ async function divorceButton(query, yes, userId, partnerId) {
     await edit(query, '💔 Этого брака уже нет.');
     return;
   }
-  await edit(query, `💔 ${mention(userId, fullName(query.from))} и ${mention(partnerId, await members.nameOf(partnerId))} больше не в браке.`);
+  await edit(query, `💔 ${mention(userId, await nameFor(query.from))} и ${mention(partnerId, await members.nameOf(partnerId))} больше не в браке.`);
 }
 
 // Anyone in the chat switches the period; the panel is edited in place.
 async function statsButton(query, period) {
-  await answer(query);
-  const { text, markup } = await statsPanel(query.message.chat.id, period);
+  const viewer = await withNick(person(query.from));
+  const mine = await members.placeOf(query.message.chat.id, period, viewer.id);
+  await answer(query, mine ? `Ты №${mine.place} · ${msgsWord(mine.n)}` : 'За этот период у тебя сообщений нет');
+  const { text, markup } = await statsPanel(query.message.chat.id, period, viewer);
   await edit(query, text, markup);
+}
+
+// Anyone switches the help section; the owner's one opens only for the owner.
+async function helpButton(query, section, ownerMenu) {
+  if (section === 'owner' && query.from.id !== OWNER_USER_ID) {
+    await answer(query, 'Этот раздел только для владельца 🙂', true);
+    return;
+  }
+  await answer(query);
+  await edit(query, helpText(section, await getSetting('chat_moderation')), helpKeyboard(ownerMenu, section));
 }
 
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|cap|mod|stat):/.exec(data);
+  const m = /^(marry|div|cap|mod|stat|help):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -855,6 +1195,7 @@ export async function handleCallback(query) {
   else if ((p = /^cap:(\d+)$/.exec(data))) await moder.captchaButton(query, Number(p[1]));
   else if ((p = /^mod:unmute:(\d+)$/.exec(data))) await moder.unmuteButton(query, Number(p[1]));
   else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);
+  else if ((p = /^help:(\w+):([01])$/.exec(data))) await helpButton(query, p[1], p[2] === '1');
   else await answer(query);
   return true;
 }
@@ -862,6 +1203,8 @@ export async function handleCallback(query) {
 // From pump().
 export async function tick(leftMs) {
   await moder.tick(leftMs);
+  await reminders.tick(leftMs);
+  await anniversaries();
 }
 
 // For the Mini App profile.

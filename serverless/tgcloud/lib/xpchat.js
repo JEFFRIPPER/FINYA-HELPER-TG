@@ -1,6 +1,6 @@
 // Which group counts for XP: the one bound with /xpchat, else the channel's
 // linked discussion group (re-checked at most every 5 minutes).
-import { api } from 'sdk';
+import { api, db } from 'sdk';
 import { SQUAD_CHANNEL_ID } from './config.js';
 import { getSetting, setSetting } from './store.js';
 import { isAdminStatus } from './tg.js';
@@ -56,4 +56,13 @@ export async function xpSetupText() {
     'Общий лимит: 100 XP в день.\n\n' +
     'Настройка: /xpchat в группе — подключить; /xpchat auto — вернуться к группе канала.\n' +
     'XP хранится в базе Telegram Serverless.';
+}
+
+// Every Squad chat: the XP discussion group and the chats bound with /posts_on.
+export async function squadChatIds() {
+  const rows = await db.all('SELECT chat_id FROM relay_targets');
+  const ids = new Set(rows.map((r) => r.chat_id));
+  const xpChat = await resolveXpChat();
+  if (xpChat) ids.add(xpChat);
+  return [...ids];
 }

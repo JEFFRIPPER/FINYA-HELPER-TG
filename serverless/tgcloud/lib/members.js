@@ -77,6 +77,8 @@ export async function handleChatMember(event) {
 
 // The freshest known name of a member, from any Squad chat or the XP profiles.
 export async function nameOf(userId) {
+  const nick = await db.get(sql`SELECT nick FROM nicks WHERE user_id = ${userId}`);
+  if (nick) return nick.nick;
   const row = await db.get(sql`SELECT name FROM chat_members WHERE user_id = ${userId}
     ORDER BY last_active DESC LIMIT 1`);
   if (row) return row.name;
@@ -118,14 +120,17 @@ export function periodStart(period, ts = nowInt()) {
   return null;
 }
 
+// A member's nick when set («+ник»), else the name from the chat (alias m).
+const NAME = sql.raw('COALESCE((SELECT nick FROM nicks WHERE nicks.user_id = m.user_id), m.name)');
+
 // Members still in the chat with the most messages in the period (null = all time).
 export async function activityTop(chatId, period, limit = 10) {
   const from = periodStart(period);
   if (from == null) {
-    return db.all(sql`SELECT user_id, name, msgs AS n FROM chat_members
+    return db.all(sql`SELECT user_id, ${NAME} AS name, msgs AS n FROM chat_members m
       WHERE chat_id = ${chatId} AND status = 'member' AND msgs > 0 ORDER BY msgs DESC, user_id LIMIT ${limit}`);
   }
-  return db.all(sql`SELECT m.user_id, m.name, SUM(a.msgs) AS n FROM chat_activity a
+  return db.all(sql`SELECT m.user_id, ${NAME} AS name, SUM(a.msgs) AS n FROM chat_activity a
     JOIN chat_members m ON m.chat_id = a.chat_id AND m.user_id = a.user_id
     WHERE a.chat_id = ${chatId} AND a.day >= ${from} AND m.status = 'member'
     GROUP BY a.user_id ORDER BY n DESC, a.user_id LIMIT ${limit}`);
@@ -157,6 +162,35 @@ export async function periodStats(chatId, period, limit = 20) {
       WHERE a.chat_id = ${chatId} AND a.day >= ${from} AND m.status = 'member'`)).n;
   }
   return { messages, members: people.n, writers, top: await activityTop(chatId, period, limit) };
+}
+
+// A member's place among those still in the chat, by messages in the period.
+// → { place, n }, or null when they wrote nothing then.
+export async function placeOf(chatId, period, userId) {
+  const from = periodStart(period);
+  let n;
+  if (from == null) {
+    const row = await db.get(sql`SELECT msgs FROM chat_members WHERE chat_id = ${chatId} AND user_id = ${userId}`);
+    n = row ? row.msgs : 0;
+    if (!n) return null;
+    const above = await db.get(sql`SELECT COUNT(*) AS c FROM chat_members WHERE chat_id = ${chatId} AND status = 'member'
+      AND (msgs > ${n} OR (msgs = ${n} AND user_id < ${userId}))`);
+    return { place: above.c + 1, n };
+  }
+  n = await messagesSince(chatId, from, userId);
+  if (!n) return null;
+  const above = await db.get(sql`SELECT COUNT(*) AS c FROM (SELECT a.user_id, SUM(a.msgs) AS s FROM chat_activity a
+    JOIN chat_members m ON m.chat_id = a.chat_id AND m.user_id = a.user_id
+    WHERE a.chat_id = ${chatId} AND a.day >= ${from} AND m.status = 'member' GROUP BY a.user_id)
+    WHERE s > ${n} OR (s = ${n} AND user_id < ${userId})`);
+  return { place: above.c + 1, n };
+}
+
+// Messages per Moscow day in the whole chat, from `fromDay` on.
+export async function chatDays(chatId, fromDay) {
+  const rows = await db.all(sql`SELECT day, SUM(msgs) AS n FROM chat_activity
+    WHERE chat_id = ${chatId} AND day >= ${fromDay} GROUP BY day`);
+  return new Map(rows.map((r) => [r.day, r.n]));
 }
 
 export const CHART_DAYS = 365;

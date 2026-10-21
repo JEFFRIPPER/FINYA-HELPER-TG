@@ -223,7 +223,8 @@ async function wardrobe(userId) {
 }
 
 async function spent(userId) {
-  const row = await db.get(sql`SELECT COALESCE(SUM(price), 0) AS s FROM purchases WHERE user_id = ${userId}`);
+  const row = await db.get(sql`SELECT COALESCE((SELECT SUM(price) FROM purchases WHERE user_id = ${userId}), 0)
+    + COALESCE((SELECT SUM(amount) FROM xp_spend WHERE user_id = ${userId}), 0) AS s`);
   return row.s;
 }
 
@@ -246,7 +247,7 @@ async function equip(userId, slot, item) {
   else await db.run(sql`UPDATE wardrobe SET title = ${item}, updated_at = ${ts} WHERE user_id = ${userId}`);
 }
 
-// Buying spends the balance (XP minus earlier purchases); XP and rank stay.
+// Buying spends the balance (XP minus purchases, gifts and stakes); XP and rank stay.
 export async function buy(user, itemId) {
   const item = SHOP_BY_ID.get(itemId);
   if (!item) throw new ClubError('Такой вещи нет в лавке.');
@@ -257,7 +258,8 @@ export async function buy(user, itemId) {
     const r = await db.run(sql`INSERT OR IGNORE INTO purchases (user_id, item, price, bought_at)
       SELECT ${user.id}, ${item.id}, ${item.price}, ${ts}
       WHERE (SELECT xp FROM profiles WHERE user_id = ${user.id})
-        - (SELECT COALESCE(SUM(price), 0) FROM purchases WHERE user_id = ${user.id}) >= ${item.price}`);
+        - (SELECT COALESCE(SUM(price), 0) FROM purchases WHERE user_id = ${user.id})
+        - (SELECT COALESCE(SUM(amount), 0) FROM xp_spend WHERE user_id = ${user.id}) >= ${item.price}`);
     if (r.rowsAffected !== 1) {
       const have = await db.get(sql`SELECT 1 AS x FROM purchases WHERE user_id = ${user.id} AND item = ${item.id}`);
       if (!have) throw new ClubError('Не хватает XP на балансе.');

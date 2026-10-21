@@ -96,6 +96,8 @@
     poll: ['how_to_vote_fill', 'Голос в опросе', ''],
     weekly: ['trophy_fill', 'Бонус за топ недели', 'gold'],
     farm: ['bolt_fill', 'Фарм в чате', 'gold'],
+    gift: ['redeem_fill', 'Перевод от участника', 'primary'],
+    casino: ['diamond_fill', 'Выигрыш в казино', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
