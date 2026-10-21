@@ -158,6 +158,11 @@ async function start(message, s, args = []) {
       '👤 Профиль Фини\n\nРанг, прогресс до следующего звания, топ Сквада и история XP.', profileAppKeyboard()));
     return;
   }
+  // «Обновить Инфо» in a group leads the owner here: t.me/<bot>?start=history.
+  if (args[0] === 'history' && message.chat.type === 'private' && message.from.id === OWNER_USER_ID) {
+    await tidyPrivate(message, s, await replyBold(message, chat.HISTORY_TEXT, await chat.historyKeyboard(message.chat)));
+    return;
+  }
   // "Все ссылки Сквада" in a group leads here: t.me/<bot>?start=squad.
   if (args[0] === 'squad' && message.chat.type === 'private') {
     await tidyPrivate(message, s, await replyBold(message, SQUAD_TEXT, await squadKeyboard(message.chat)));
