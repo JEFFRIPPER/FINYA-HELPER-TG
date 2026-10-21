@@ -451,6 +451,7 @@
       h('div', { class: 'chips' },
         h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
         streakChip(me.streak), marriageChip(me.marriage), repChip(me.rep)),
+      jobChips(me.positions),
       total,
       progress,
       note ? h('div', { class: 'note', text: note }) : null,
@@ -462,6 +463,14 @@
     if (!m) return null;
     return h('span', { class: 'love-chip', title: 'Брак в чате Сквада' }, icon('favorite_fill'),
       h('span', { text: 'Пара: ' + m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }));
+  }
+
+  // Positions in the Squad team («+должность» from the owner).
+  function jobChips(list) {
+    if (!list || !list.length) return null;
+    return h('div', { class: 'chips job-chips' }, list.map(function (j) {
+      return h('span', { class: 'job-chip', title: 'Должность в Скваде' }, h('i', { text: j.emoji }), h('span', { text: j.title }));
+    }));
   }
 
   // «+» in the chat.
@@ -788,9 +797,29 @@
       })));
   }
 
+  // «Штаб Сквада»: positions and who holds them; a tap shows the duties.
+  function teamCard(team) {
+    if (!team || !team.length) return null;
+    var busy = team.filter(function (t) { return t.people.length; }).length;
+    return h('section', { class: 'card team' },
+      h('div', { class: 'card-title' }, h('h3', { text: 'Штаб Сквада' }), h('span', { class: 'count-chip', text: busy + ' из ' + team.length })),
+      h('ul', { class: 'list' }, withDividers(team.map(function (t) {
+        return h('li', { class: 'item ripple', onclick: function () {
+          haptic();
+          snackbar(h('div', { class: 'snack-ach' },
+            h('span', { class: 'snack-ach-task', text: t.duties.join(' · ') }),
+            h('b', { text: t.motto })));
+        } },
+          h('div', { class: 'lead team-emoji' + (t.people.length ? '' : ' muted') }, h('span', { text: t.emoji })),
+          h('div', { class: 'body' }, h('b', { text: t.title }),
+            h('span', { text: t.people.length ? t.people.join(', ') : 'Вакансия' })));
+      }))));
+  }
+
   function squadBody(sq) {
     var c = state.data.club;
-    return [newsCard(sq)].concat(c.polls.map(pollCard)).concat([referralCard(c.referral), birthdayCard(c.birthday), quickGrid(sq)])
+    return [newsCard(sq), teamCard(sq.team)].filter(Boolean).concat(c.polls.map(pollCard))
+      .concat([referralCard(c.referral), birthdayCard(c.birthday), quickGrid(sq)])
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
       .concat([projectsSection()]);
   }

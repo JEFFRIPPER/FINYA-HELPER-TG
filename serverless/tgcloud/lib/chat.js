@@ -19,6 +19,7 @@ import * as members from './members.js';
 import * as moder from './moder.js';
 import * as reminders from './reminders.js';
 import * as social from './social.js';
+import * as staff from './staff.js';
 import * as xp from './xp.js';
 
 const { mention } = moder;
@@ -179,6 +180,8 @@ async function profileCard(chat, who, self) {
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
   const role = group ? await chatRole(chat.id, who.id) : null;
   if (role) head.push(role);
+  const jobs = await staff.positionsOf(who.id);
+  if (jobs.length) head.push(`💼 Должность: ${jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}`).join(', ')}`);
   if (spouse) {
     const partner = await members.nameOf(spouse.partner_id);
     head.push(`💍 В браке с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
@@ -720,6 +723,81 @@ async function anniversaries(ts = nowInt()) {
   }
 }
 
+// ---- positions ---------------------------------------------------------------------
+
+const dutiesQuote = (p) => `<blockquote>${p.duties.map((d) => `• ${escapeHtml(d)}`).join('\n')}\n${escapeHtml(p.motto)}</blockquote>`;
+const positionList = () => staff.POSITIONS.map((p) => `${p.emoji} ${escapeHtml(p.title)}`).join(', ');
+
+async function teamText() {
+  const lines = [];
+  for (const { position, people } of await staff.team()) {
+    const names = [];
+    for (const r of people) names.push(escapeHtml(truncate(await members.nameOf(r.user_id), 30)));
+    lines.push(`${position.emoji} ${escapeHtml(position.title)} — ${names.length ? names.join(', ') : 'вакансия'}`);
+  }
+  return `⛓️ Штаб Сквада\n\n${lines.join('\n')}\n\nОбязанности: «Должность Креативщик». Чья должность: «Должность» ответом.`;
+}
+
+async function positionText(position) {
+  const { people } = (await staff.team()).find((t) => t.position.code === position.code);
+  const names = [];
+  for (const r of people) names.push(escapeHtml(truncate(await members.nameOf(r.user_id), 30)));
+  return `${position.emoji} ${escapeHtml(position.title)}\n${dutiesQuote(position)}\n` +
+    `👥 ${names.length ? `Сейчас: ${names.join(', ')}` : 'Вакансия: пока никого'}`;
+}
+
+async function memberPositionsText(who, self) {
+  const jobs = await staff.positionsOf(who.id);
+  const name = escapeHtml(truncate(who.name, 40));
+  if (!jobs.length) return `💼 ${self ? 'У тебя' : `У ${name}`} пока нет должности в Скваде. Весь штаб: «Штаб».`;
+  return `💼 ${self ? 'Твоя должность' : `Должность ${name}`}\n\n` +
+    jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}\n${dutiesQuote(j)}`).join('\n');
+}
+
+// «+должность Креативщик» / «-должность …» in reply, by the owner only.
+async function positionCommand(message, self, target, add, words) {
+  if (self.id !== OWNER_USER_ID) {
+    await say(message, '💼 Назначать должности может только владелец Сквада.', { temp: true });
+    return;
+  }
+  if (!target || target.isBot) {
+    await say(message, '💼 Ответь этой командой на сообщение человека.', { temp: true });
+    return;
+  }
+  const who = mention(target.id, target.name);
+  if (!add && !String(words || '').trim()) {
+    const jobs = await staff.positionsOf(target.id);
+    for (const j of jobs) await staff.dismiss(target.id, j);
+    await say(message, jobs.length ? `💼 ${who} больше без должности.` : `💼 У ${who} и так нет должности.`);
+    return;
+  }
+  const position = staff.find(String(words || '').replace(/^@\w+\s*/u, ''));
+  if (!position) {
+    await say(message, `💼 Такой должности нет. Есть: ${positionList()}.`, { temp: true });
+    return;
+  }
+  if (!add) {
+    const removed = await staff.dismiss(target.id, position);
+    await say(message, removed
+      ? `💼 ${who} снимается с должности «${escapeHtml(position.title)}».`
+      : `💼 У ${who} нет должности «${escapeHtml(position.title)}».`, { temp: !removed });
+    return;
+  }
+  try {
+    const fresh = await staff.appoint(target.id, position, self.id, target.user ? fullName(target.user) : target.name);
+    if (!fresh) {
+      await say(message, `💼 ${who} уже ${escapeHtml(position.title)}.`, { temp: true });
+      return;
+    }
+  } catch (err) {
+    if (!(err instanceof staff.StaffError)) throw err;
+    await say(message, `💼 ${err.message}`, { temp: true });
+    return;
+  }
+  // The appointment stays in the chat: it is news for the whole Squad.
+  await say(message, `⛓️ ${who} назначается на должность\n${position.emoji} ${escapeHtml(position.title)}\n${dutiesQuote(position)}`);
+}
+
 // ---- achievements ------------------------------------------------------------------
 
 const ACH_TTL = 600;
@@ -842,6 +920,7 @@ const HELP = {
     ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
     ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. С годовщинами Финя поздравляет сама'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
+    ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
   ]],
   games: ['🎲 XP и игры', () => [
     ['🏆 Финя, Топ', 'Топ Сквада по XP'],
@@ -866,6 +945,7 @@ const HELP = {
   ]],
   owner: ['👑 Владельцу', () => [
     ['👑 +РП Команда = Действие · -РП Команда', 'Свои РП-действия'],
+    ['👑 +Должность Креативщик · -Должность … (ответом)', `Назначить или снять должность, до ${staff.PER_USER} на человека. «-Должность» без названия снимает все`],
     ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
     ['👑 Итоги Дня Вкл/Выкл', 'Топ-3 дня в каждом чате Сквада в 23:55 МСК'],
     ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
@@ -1038,6 +1118,28 @@ export async function handleText(message) {
     await say(message, removed ? '🗑 Описание удалено.' : 'Описания и так нет.', { temp: true });
     return true;
   }
+  if (['штаб', 'состав', 'должности', 'штаб сквада', 'команда сквада'].includes(cmd)) {
+    await say(message, await teamText(), { temp: true });
+    return true;
+  }
+  const job = /^должность(?:\s+([\s\S]+))?$/u.exec(cmd);
+  if (job && !(job[1] && /^@\w+$/u.test(job[1]))) {
+    const position = job[1] ? staff.find(job[1]) : null;
+    if (job[1] && !position) {
+      await say(message, `💼 Такой должности нет. Есть: ${positionList()}.`, { temp: true });
+      return true;
+    }
+    if (position) {
+      await say(message, await positionText(position), { temp: true });
+      return true;
+    }
+  }
+  if (job) {
+    const asked = group ? await targetOf(message) : null;
+    const who = asked && !asked.isBot ? asked : self;
+    await say(message, await memberPositionsText(who, who.id === self.id), { temp: true });
+    return true;
+  }
   if (/^(?:мои )?ачивки(?:\s+@\w+)?$/u.test(cmd)) {
     const asked = group ? await targetOf(message) : null;
     const who = asked && !asked.isBot ? asked : self;
@@ -1144,6 +1246,11 @@ export async function handleText(message) {
   if (cmd === 'брак') {
     if (target && target.id !== self.id) await propose(message, target);
     else await marriageStatus(message);
+    return true;
+  }
+  const appoint = /^([+-])\s?должность(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
+  if (appoint) {
+    await positionCommand(message, self, target, appoint[1] === '+', appoint[2]);
     return true;
   }
   const gift = /^(?:передать|перевести|подарить)\s+(\d{1,7})(?:\s*(?:xp|хп|опыта?))?$/u.exec(cmd);
@@ -1345,5 +1452,6 @@ export async function profileExtras(userId) {
       days: social.marriedDays(s.since),
     };
   }
-  return { rep: rep.points, marriage };
+  const jobs = await staff.positionsOf(userId);
+  return { rep: rep.points, marriage, positions: jobs.map((j) => ({ emoji: j.emoji, title: j.title })) };
 }

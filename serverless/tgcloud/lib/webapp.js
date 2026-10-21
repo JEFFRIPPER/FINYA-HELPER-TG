@@ -8,6 +8,8 @@ import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 import * as chat from './chat.js';
 import * as club from './club.js';
+import { nameOf } from './members.js';
+import * as staff from './staff.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -117,7 +119,19 @@ async function squad() {
     channel: SQUAD_CHANNEL_URL,
     lastPost: lastPost ? `${SQUAD_CHANNEL_URL}/${lastPost}` : null,
     links: SQUAD_LINKS,
+    team: await teamView(),
   };
+}
+
+// «Штаб Сквада»: every position with the names of those who hold it.
+async function teamView() {
+  const out = [];
+  for (const { position, people } of await staff.team()) {
+    const names = [];
+    for (const r of people) names.push(truncate(await nameOf(r.user_id), 40));
+    out.push({ emoji: position.emoji, title: position.title, duties: position.duties, motto: position.motto, people: names });
+  }
+  return out;
 }
 
 export async function profileData(user) {
@@ -160,6 +174,7 @@ export async function profileData(user) {
       // Reputation and marriage from the chats («+», «брак»).
       rep: social.rep,
       marriage: social.marriage,
+      positions: social.positions,
     },
     admin: founder,
     chart: await chart(user.id, ts),

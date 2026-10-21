@@ -457,3 +457,14 @@ export const history_queue = table('history_queue', {
 }, (t) => ({
   byImport: index('history_queue_by_import').on(t.import_id, t.id),
 }));
+
+// Positions in the Squad («+должность Креативщик» from the owner): the team behind
+// the channel and the chats, apart from the XP ranks.
+export const positions = table('positions', {
+  user_id: integer('user_id').notNull(),
+  code: text('code').notNull(),
+  given_by: integer('given_by').notNull(),
+  given_at: integer('given_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user_id, t.code] }),
+}));
