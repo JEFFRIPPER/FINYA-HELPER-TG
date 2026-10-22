@@ -828,7 +828,7 @@
 
   var MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   var MONTHS_NOM = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
-  var SLOTS = [['frame', 'Рамки аватара'], ['color', 'Цвет ника'], ['title', 'Титулы']];
+  var SLOTS = [['frame', 'Рамки аватара'], ['color', 'Цвет ника'], ['title', 'Титулы'], ['chart', 'Темы графиков']];
   var busy = false;
 
   // Runs a club action. The endpoint answers with the whole profile, so the
@@ -1045,6 +1045,12 @@
   function shopSample(it, me) {
     if (it.slot === 'frame') return avatar(me, it.id);
     if (it.slot === 'color') return h('b', { class: 'nick-sample nick ' + it.id, text: Array.from(me.name).slice(0, 10).join('') });
+    // A tiny activity chart in the theme's colours, the last bars brighter like this week.
+    if (it.slot === 'chart') {
+      return h('div', { class: 'chart-sample ' + it.id }, [40, 65, 30, 85, 55, 100, 75].map(function (v, i) {
+        return h('i', { class: i >= 5 ? 'hot' : '', style: 'height:' + v + '%' });
+      }));
+    }
     return h('span', { class: 'title-chip', text: it.name });
   }
 

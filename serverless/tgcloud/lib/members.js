@@ -225,3 +225,39 @@ export async function memberCard(chatId, userId, ts = nowInt()) {
     days: new Map(rows.map((r) => [r.day, r.msgs])),
   };
 }
+
+// The whole chat, for «Чат инфо»: members, who wrote today, messages per period,
+// the record day, since when Финя knows it, and messages per day (the chart).
+export async function chatCard(chatId, ts = nowInt()) {
+  const people = await db.get(sql`SELECT COUNT(*) AS n, MIN(CASE WHEN first_seen > 0 THEN first_seen END) AS since,
+    COALESCE(SUM(CASE WHEN first_seen >= ${weekStart(ts)} THEN 1 ELSE 0 END), 0) AS fresh
+    FROM chat_members WHERE chat_id = ${chatId} AND status = 'member'`);
+  const total = await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS n FROM chat_members WHERE chat_id = ${chatId}`);
+  const rows = await db.all(sql`SELECT day, SUM(msgs) AS n, COUNT(*) AS w FROM chat_activity
+    WHERE chat_id = ${chatId} GROUP BY day`);
+  const today = mskDay(ts);
+  const days = new Map();
+  let record = null;
+  let first = null;
+  let writers = 0;
+  for (const r of rows) {
+    if (r.day > today - CHART_DAYS) days.set(r.day, r.n);
+    if (!record || r.n > record.n) record = { day: r.day, n: r.n };
+    if (first == null || r.day < first) first = r.day;
+    if (r.day === today) writers = r.w;
+  }
+  const sum = (from) => rows.reduce((n, r) => (r.day >= from ? n + r.n : n), 0);
+  return {
+    members: people.n,
+    fresh: people.fresh,
+    writers,
+    // The oldest of the first message and the first member seen.
+    since: Math.min(people.since || Infinity, first != null ? first * DAY - MSK_OFFSET : Infinity),
+    day: sum(periodStart('day', ts)),
+    week: sum(periodStart('week', ts)),
+    month: sum(periodStart('month', ts)),
+    total: total.n,
+    record,
+    days,
+  };
+}

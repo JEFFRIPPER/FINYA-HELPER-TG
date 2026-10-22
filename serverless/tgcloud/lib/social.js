@@ -46,6 +46,10 @@ export async function propose(chatId, fromId, toId) {
   if (fromId === toId) throw new SocialError('Жениться на себе нельзя, даже в Скваде 😏');
   if (await spouseOf(fromId)) throw new SocialError('Ты уже в браке. Сначала «Развод».');
   if (await spouseOf(toId)) throw new SocialError('Этот участник уже в браке.');
+  const mine = await partnerOf(fromId);
+  if (mine && mine.partner_id !== toId) throw new SocialError('Ты встречаешься с другим человеком. Сначала «Расстаться».');
+  const theirs = await partnerOf(toId);
+  if (theirs && theirs.partner_id !== fromId) throw new SocialError('Этот участник встречается с другим.');
   await db.run(sql`INSERT INTO proposals (from_id, to_id, chat_id, message_id, created_at)
     VALUES (${fromId}, ${toId}, ${chatId}, NULL, ${nowInt()})
     ON CONFLICT(from_id, to_id) DO UPDATE SET chat_id = excluded.chat_id, message_id = NULL,
@@ -72,6 +76,9 @@ export async function accept(fromId, toId) {
     WHERE NOT EXISTS (SELECT 1 FROM spouses WHERE user_id IN (${fromId}, ${toId}))`);
   if (r.rowsAffected !== 2) throw new SocialError('Кто-то из вас уже успел вступить в брак.');
   await db.run(sql`DELETE FROM proposals WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
+  // Dating grows into the marriage.
+  await db.run(sql`DELETE FROM dating WHERE user_id IN (${fromId}, ${toId}) OR partner_id IN (${fromId}, ${toId})`);
+  await db.run(sql`DELETE FROM date_offers WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
   return ts;
 }
 
@@ -94,6 +101,75 @@ export async function couples(limit = 15) {
 
 export async function coupleCount() {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM spouses WHERE user_id < partner_id`);
+  return row.c;
+}
+
+// ---- dating -----------------------------------------------------------------------
+// «Встречаться» is the step before marriage. It never runs out by itself: only
+// «Расстаться» or a marriage ends it.
+
+export async function partnerOf(userId) {
+  return db.get(sql`SELECT partner_id, since FROM dating WHERE user_id = ${userId}`);
+}
+
+// An offer waits for the other one's button for an hour, like a proposal.
+// toName: so the pair lists name someone Финя has not seen writing yet.
+export async function offerDate(chatId, fromId, toId, toName = null) {
+  if (fromId === toId) throw new SocialError('Встречаться с собой можно и без Фини 😏');
+  if (await spouseOf(fromId)) throw new SocialError('Ты уже в браке.');
+  if (await spouseOf(toId)) throw new SocialError('Этот участник уже в браке.');
+  const mine = await partnerOf(fromId);
+  if (mine && mine.partner_id === toId) throw new SocialError('Вы и так встречаетесь 💞 Следующий шаг: «Брак».');
+  if (mine) throw new SocialError('Ты уже встречаешься. Сначала «Расстаться».');
+  if (await partnerOf(toId)) throw new SocialError('Этот участник уже встречается с другим.');
+  if (toName) await db.run(sql`INSERT OR IGNORE INTO profiles (user_id, name) VALUES (${toId}, ${truncate(toName, 100)})`);
+  await db.run(sql`INSERT INTO date_offers (from_id, to_id, chat_id, message_id, created_at)
+    VALUES (${fromId}, ${toId}, ${chatId}, NULL, ${nowInt()})
+    ON CONFLICT(from_id, to_id) DO UPDATE SET chat_id = excluded.chat_id, message_id = NULL,
+      created_at = excluded.created_at`);
+}
+
+export async function setDateOfferMessage(fromId, toId, messageId) {
+  await db.run(sql`UPDATE date_offers SET message_id = ${messageId} WHERE from_id = ${fromId} AND to_id = ${toId}`);
+}
+
+async function takeDateOffer(fromId, toId) {
+  const r = await db.run(sql`DELETE FROM date_offers WHERE from_id = ${fromId} AND to_id = ${toId}
+    AND created_at >= ${nowInt() - PROPOSAL_TTL} RETURNING from_id`);
+  return r.rowsAffected === 1;
+}
+
+export async function acceptDate(fromId, toId) {
+  if (!(await takeDateOffer(fromId, toId))) throw new SocialError('Предложение уже не действует.');
+  const ts = nowInt();
+  // Both rows in one statement, and only if neither of them paired up meanwhile.
+  const r = await db.run(sql`INSERT INTO dating (user_id, partner_id, since)
+    SELECT u, p, s FROM (SELECT ${fromId} AS u, ${toId} AS p, ${ts} AS s UNION ALL SELECT ${toId}, ${fromId}, ${ts})
+    WHERE NOT EXISTS (SELECT 1 FROM dating WHERE user_id IN (${fromId}, ${toId}))
+      AND NOT EXISTS (SELECT 1 FROM spouses WHERE user_id IN (${fromId}, ${toId}))`);
+  if (r.rowsAffected !== 2) throw new SocialError('Кто-то из вас уже занят.');
+  await db.run(sql`DELETE FROM date_offers WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
+  return ts;
+}
+
+export async function declineDate(fromId, toId) {
+  return takeDateOffer(fromId, toId);
+}
+
+// → true when they were together and are not any more.
+export async function breakUp(userId, partnerId) {
+  const r = await db.run(sql`DELETE FROM dating
+    WHERE (user_id = ${userId} AND partner_id = ${partnerId}) OR (user_id = ${partnerId} AND partner_id = ${userId})`);
+  return r.rowsAffected > 0;
+}
+
+export async function datingCouples(limit = 15) {
+  return db.all(sql`SELECT user_id AS a, partner_id AS b, since FROM dating
+    WHERE user_id < partner_id ORDER BY since, user_id LIMIT ${limit}`);
+}
+
+export async function datingCount() {
+  const row = await db.get(sql`SELECT COUNT(*) AS c FROM dating WHERE user_id < partner_id`);
   return row.c;
 }
 
