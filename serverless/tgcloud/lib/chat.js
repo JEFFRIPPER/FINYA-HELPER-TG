@@ -187,6 +187,11 @@ async function profileCard(chat, who, self) {
     const partner = await members.nameOf(spouse.partner_id);
     head.push(`💍 В браке с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
   }
+  const dating = spouse ? null : await social.partnerOf(who.id);
+  if (dating) {
+    const partner = await members.nameOf(dating.partner_id);
+    head.push(`💞 Встречается с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}`);
+  }
 
   const stats = [
     `🎖 [${rank[1]}] Звание: ${escapeHtml(rank[2])}`,
@@ -240,11 +245,11 @@ async function sayPhoto(message, png, caption, { markup, temp = false } = {}) {
 }
 
 // The member's messages per day in this chat: the last year, or a month for a newcomer.
-function chartOf(card, ts) {
+function chartOf(card, ts, theme = null) {
   const today = members.mskDay(ts);
   const first = card.days.size ? Math.min(...card.days.keys()) : today;
   const from = Math.min(today - 29, Math.max(first, today - members.CHART_DAYS + 1));
-  return activityChart(card.days, from, today, members.periodStart('week', ts));
+  return activityChart(card.days, from, today, members.periodStart('week', ts), theme);
 }
 
 async function showProfile(message, who, self) {
@@ -261,7 +266,7 @@ async function showProfile(message, who, self) {
   // With the chart on top, as Iris does; no right to send photos — just the text.
   if (card && visibleLength(text) <= CAPTION_MAX) {
     try {
-      await sayPhoto(message, chartOf(card, nowInt()), text, { markup, temp: true });
+      await sayPhoto(message, chartOf(card, nowInt(), await club.chartTheme(who.id)), text, { markup, temp: true });
       return;
     } catch (err) {
       if (!(err instanceof BotApiError)) throw err;
@@ -313,6 +318,12 @@ async function anketaCard(who, self) {
     about.push(`🕐 Час пик: ${pad2(d.peak)}:00–${pad2((d.peak + 1) % 24)}:00 · ${mood}`);
   }
   if (d.favourite) about.push(`❤️ Любимый чат: «${escapeHtml(truncate(d.favourite.title, 40))}»`);
+  const spouse = await social.spouseOf(who.id);
+  const dating = spouse || await social.partnerOf(who.id);
+  if (dating) {
+    const partner = escapeHtml(truncate(await members.nameOf(dating.partner_id), 40));
+    about.push(`${spouse ? '💍 В браке с' : '💞 Встречается с'} ${partner} · ${daysWord(social.marriedDays(dating.since))}`);
+  }
   const blocks = [head.join('\n'), about.join('\n')];
 
   if (d.homes.length) {
@@ -349,7 +360,7 @@ async function showAnketa(message, who, self) {
   // The chart over all chats on top, as Iris does; in the private chat too.
   if (days.size && visibleLength(text) <= CAPTION_MAX) {
     try {
-      await sayPhoto(message, chartOf({ days }, nowInt()), text, { temp: true });
+      await sayPhoto(message, chartOf({ days }, nowInt(), await club.chartTheme(who.id)), text, { temp: true });
       return;
     } catch (err) {
       if (!(err instanceof BotApiError)) throw err;
@@ -562,6 +573,155 @@ async function divorcePrompt(message) {
       button('Нет', { callback_data: `div:n:${uid}:${s.partner_id}` }),
     ]]),
   });
+}
+
+// ---- dating: «Встречаться» before «Брак»; it ends only with «Расстаться» ----------
+
+async function datingStatus(message, who, self) {
+  const spouse = await social.spouseOf(who.id);
+  const d = spouse ? null : await social.partnerOf(who.id);
+  const name = escapeHtml(truncate(who.name, 40));
+  if (spouse) {
+    const partner = escapeHtml(truncate(await members.nameOf(spouse.partner_id), 40));
+    await say(message, `💍 ${self ? 'Ты в браке' : `${name} в браке`} с ${partner}: это уже больше, чем отношения.`, { temp: true });
+    return;
+  }
+  if (!d) {
+    await say(message, self
+      ? '💔 Ты ни с кем не встречаешься.\nЧтобы предложить, ответь «Встречаться» на сообщение человека.'
+      : `💔 ${name} ни с кем не встречается.`, { temp: true });
+    return;
+  }
+  const partner = escapeHtml(truncate(await members.nameOf(d.partner_id), 40));
+  await say(message, `💞 ${self ? 'Ты встречаешься' : `${name} встречается`} с ${partner} уже ${daysWord(social.marriedDays(d.since))}.` +
+    (self ? '\nСледующий шаг: «Брак» ответом.' : ''), { temp: true });
+}
+
+async function offerDate(message, target) {
+  const from = message.from;
+  if (target.isBot) {
+    await say(message, '🤖 С ботами не встречаемся 😅', { temp: true });
+    return;
+  }
+  try {
+    await social.offerDate(message.chat.id, from.id, target.id, target.name);
+  } catch (err) {
+    if (!(err instanceof social.SocialError)) throw err;
+    await say(message, `💞 ${err.message}`, { temp: true });
+    return;
+  }
+  const a = mention(from.id, await nameFor(from));
+  const b = mention(target.id, target.name);
+  const sent = await say(message, `💞 ${a} предлагает ${b} встречаться!\n\n${b}, что скажешь?`, {
+    markup: keyboard([[
+      button('💞 Да', { callback_data: `date:y:${from.id}:${target.id}` }),
+      button('💔 Нет', { callback_data: `date:n:${from.id}:${target.id}` }),
+    ]]),
+  });
+  if (sent && sent.message_id) await social.setDateOfferMessage(from.id, target.id, sent.message_id);
+}
+
+async function breakUpPrompt(message) {
+  const d = await social.partnerOf(message.from.id);
+  if (!d) {
+    await say(message, '💔 Ты и так ни с кем не встречаешься.', { temp: true });
+    return;
+  }
+  const partner = await members.nameOf(d.partner_id);
+  const uid = message.from.id;
+  await say(message, `💔 Точно расстаться с ${escapeHtml(truncate(partner, 40))}?`, {
+    markup: keyboard([[
+      button('Да, расстаться', { callback_data: `part:y:${uid}:${d.partner_id}` }),
+      button('Нет', { callback_data: `part:n:${uid}:${d.partner_id}` }),
+    ]]),
+  });
+}
+
+async function datingListText() {
+  const rows = await social.datingCouples(15);
+  if (!rows.length) return '💞 В Скваде пока никто не встречается.\nОтветь «Встречаться» на сообщение человека, чтобы стать первыми.';
+  let text = `💞 Кто встречается: ${await social.datingCount()}\n`;
+  for (const [i, r] of rows.entries()) {
+    const a = escapeHtml(truncate(await members.nameOf(r.a), 30));
+    const b = escapeHtml(truncate(await members.nameOf(r.b), 30));
+    text += `\n${placeMark(i)} ${a} + ${b} — ${daysWord(social.marriedDays(r.since))}`;
+  }
+  return text;
+}
+
+// ---- «Чат инфо»: the whole chat with its chart -------------------------------------
+
+async function chatInfo(message) {
+  const ts = nowInt();
+  const c = await members.chatCard(message.chat.id, ts);
+  const title = escapeHtml(truncate(message.chat.title || 'Чат', 60));
+  const lines = [`🏙 Чат «${title}»`, ''];
+  lines.push(`👥 Население: ${fmtThousands(c.members)}${c.fresh ? ` · новичков за неделю: ${c.fresh}` : ''}`);
+  lines.push(`✍️ Пишут сегодня: ${c.writers}`);
+  if (Number.isFinite(c.since)) {
+    lines.push(`📅 Финя знает чат с ${fmtMsk(c.since).slice(0, 10)} (${ts - c.since < 86400 ? 'сегодня' : ageText(ts - c.since)})`);
+  }
+  lines.push(`💬 Сообщения (д|н|м|всего): ${[c.day, c.week, c.month, c.total].map(compact).join(' | ')}`);
+  if (c.record) lines.push(`🏆 Рекордный день: ${msgsWord(c.record.n)}, ${dateOfDay(c.record.day)}`);
+  const top = await members.activityTop(message.chat.id, null, 3);
+  if (top.length) {
+    lines.push('', '👑 Самые активные за всё время:');
+    for (const [i, r] of top.entries()) lines.push(`${placeMark(i)} ${escapeHtml(truncate(r.name, 30))} — ${msgsWord(r.n)}`);
+  }
+  const text = lines.join('\n');
+  if (c.days.size && visibleLength(text) <= CAPTION_MAX) {
+    try {
+      await sayPhoto(message, chartOf({ days: c.days }, ts), text, { temp: true });
+      return;
+    } catch (err) {
+      if (!(err instanceof BotApiError)) throw err;
+    }
+  }
+  await say(message, text, { temp: true });
+}
+
+// ---- chart themes from the shop ----------------------------------------------------
+
+const THEME_NAMES = {
+  'алая': null, 'алый': null, 'обычная': null, 'красная': null,
+  'ледяная': 'chart_ice', 'ледяной': 'chart_ice', 'лед': 'chart_ice',
+  'токсичная': 'chart_toxic', 'токсичный': 'chart_toxic', 'токсик': 'chart_toxic',
+  'неон': 'chart_neon', 'неоновая': 'chart_neon', 'неоновый': 'chart_neon',
+  'золотая': 'chart_gold', 'золотой': 'chart_gold', 'золото': 'chart_gold',
+};
+
+async function themeText(self) {
+  const current = await club.chartTheme(self.id);
+  const items = club.SHOP.filter((i) => i.slot === 'chart');
+  const lines = ['🎨 Темы графиков «Кто Я» и «Моя Анкета»', ''];
+  lines.push(`${current ? '▫️' : '✅'} Алая — бесплатно`);
+  for (const i of items) {
+    const owned = await club.ownsItem(self.id, i.id);
+    lines.push(`${current === i.id ? '✅' : owned ? '▫️' : '🔒'} ${i.name.replace(' график', '')} — ${owned ? 'куплена' : `${i.price} XP`}`);
+  }
+  lines.push('', 'Купить: Лавка в Mini App. Надеть: «Тема Графика Неон», вернуть обычную: «Тема Графика Алая».');
+  return lines.join('\n');
+}
+
+async function themeCommand(message, self, name) {
+  if (!name) {
+    await say(message, await themeText(self), { markup: keyboard([await profileRow(message.chat, '🛍 Лавка в Mini App')]), temp: true });
+    return;
+  }
+  const key = norm(name);
+  if (!(key in THEME_NAMES)) {
+    await say(message, '🎨 Такой темы нет. Есть: Алая, Ледяная, Токсичная, Неон, Золотая.', { temp: true });
+    return;
+  }
+  const id = THEME_NAMES[key];
+  if (id && !(await club.ownsItem(self.id, id))) {
+    const item = club.findItem(id);
+    await say(message, `🔒 «${item.name}» стоит ${item.price} XP. Купи в Лавке, потом надень этой же командой.`,
+      { markup: keyboard([await profileRow(message.chat, '🛍 Лавка в Mini App')]), temp: true });
+    return;
+  }
+  await club.wear(message.from, 'chart', id);
+  await say(message, id ? `🎨 Надела: ${club.findItem(id).name}. Смотри «Кто Я».` : '🎨 Вернула алый график.', { temp: true });
 }
 
 // ---- RP --------------------------------------------------------------------------
@@ -1033,6 +1193,8 @@ const HELP = {
   profile: ['👤 Профиль', () => [
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
     ['📋 Моя Анкета · Анкета (ответом)', 'Анкета по всем чатам Сквада сразу: график, стаж, актив, серия дней, рекордный день, час пик, чаты и мешок'],
+    ['🎨 Тема Графика · Тема Графика Неон', 'Цвет графиков в «Кто Я» и анкете. Темы покупаются в Лавке за XP'],
+    ['🏙 Чат Инфо', 'Карточка чата: график, население, сообщения за день, неделю, месяц и всё время, рекордный день и самые активные'],
     ['🎂 +ДР 16.12.1999 · +Пол М · +Город Москва', 'Данные для анкеты. Убрать: «-ДР», «-Пол», «-Город»'],
     ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
     ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
@@ -1041,6 +1203,7 @@ const HELP = {
   ]],
   people: ['💞 Люди', () => [
     ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
+    ['💞 Встречаться (ответом) · Мои Отношения · Расстаться · Кто Встречается', 'Отношения до брака. Сами не заканчиваются, только по «Расстаться» или когда пара женится'],
     ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. С годовщинами Финя поздравляет сама'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
     ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
@@ -1227,6 +1390,29 @@ export async function handleText(message) {
     await divorcePrompt(message);
     return true;
   }
+  if (['мои отношения', 'мои отны', 'отношения', 'отны'].includes(cmd)) {
+    const asked = ['отношения', 'отны'].includes(cmd) && group ? await targetOf(message) : null;
+    const who = asked && !asked.isBot ? asked : self;
+    await datingStatus(message, who, who.id === self.id);
+    return true;
+  }
+  if (['расстаться', 'расстаемся'].includes(cmd)) {
+    await breakUpPrompt(message);
+    return true;
+  }
+  if (['кто встречается', 'список отношений', 'список отнош', 'отношения список'].includes(cmd)) {
+    await say(message, await datingListText(), { temp: true });
+    return true;
+  }
+  const theme = /^тема графика(?:\s+(.+))?$/u.exec(cmd);
+  if (theme) {
+    await themeCommand(message, self, theme[1]);
+    return true;
+  }
+  if (group && ['чат инфо', 'инфо чата', 'инфо чат', 'о чате', 'чат стата'].includes(cmd)) {
+    await chatInfo(message);
+    return true;
+  }
   if (['рп', 'рп список', 'список рп', 'рп команды'].includes(cmd)) {
     await say(message, await rpListText(), { temp: true });
     return true;
@@ -1378,6 +1564,11 @@ export async function handleText(message) {
     else await marriageStatus(message);
     return true;
   }
+  if (cmd === 'встречаться') {
+    if (target && target.id !== self.id) await offerDate(message, target);
+    else await datingStatus(message, self, true);
+    return true;
+  }
   const appoint = /^([+-])\s?должность(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
   if (appoint) {
     await positionCommand(message, self, target, appoint[1] === '+', appoint[2]);
@@ -1505,6 +1696,51 @@ async function marryButton(query, yes, fromId, toId) {
   await edit(query, `💒 ${a} и ${b} теперь в браке!\nСовет да любовь 🥂`);
 }
 
+async function dateButton(query, yes, fromId, toId) {
+  const presser = query.from.id;
+  if (presser !== toId && !(presser === fromId && !yes)) {
+    await answer(query, presser === fromId ? 'Ждём ответа 💞' : 'Это предложение не тебе 🙂', true);
+    return;
+  }
+  const a = mention(fromId, await members.nameOf(fromId));
+  const b = mention(toId, presser === toId ? await nameFor(query.from) : await members.nameOf(toId));
+  if (!yes) {
+    const had = await social.declineDate(fromId, toId);
+    await answer(query);
+    if (had) await edit(query, presser === fromId ? `💞 ${a} передумывает.` : `💔 ${b} отвечает ${a} отказом.`);
+    else await edit(query, '💞 Предложение уже не действует.');
+    return;
+  }
+  try {
+    await social.acceptDate(fromId, toId);
+  } catch (err) {
+    if (!(err instanceof social.SocialError)) throw err;
+    await answer(query, err.message, true);
+    await edit(query, `💞 ${err.message}`);
+    return;
+  }
+  await answer(query, 'Любви вам! 💞');
+  await edit(query, `💞 ${a} и ${b} теперь встречаются!\nКогда будете готовы: «Брак» ответом 💍`);
+}
+
+async function breakUpButton(query, yes, userId, partnerId) {
+  if (query.from.id !== userId) {
+    await answer(query, 'Это решение не за тобой 🙂', true);
+    return;
+  }
+  await answer(query);
+  if (!yes) {
+    await edit(query, '💞 Отношения сохранены.');
+    return;
+  }
+  // The button names the partner: an old prompt cannot end newer relations.
+  if (!(await social.breakUp(userId, partnerId))) {
+    await edit(query, '💔 Этих отношений уже нет.');
+    return;
+  }
+  await edit(query, `💔 ${mention(userId, await nameFor(query.from))} и ${mention(partnerId, await members.nameOf(partnerId))} больше не встречаются.`);
+}
+
 async function divorceButton(query, yes, userId, partnerId) {
   if (query.from.id !== userId) {
     await answer(query, 'Это решение не за тобой 🙂', true);
@@ -1545,7 +1781,7 @@ async function helpButton(query, section, ownerMenu) {
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|cap|mod|stat|help):/.exec(data);
+  const m = /^(marry|div|date|part|cap|mod|stat|help):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -1554,6 +1790,8 @@ export async function handleCallback(query) {
   let p;
   if ((p = /^marry:([yn]):(\d+):(\d+)$/.exec(data))) await marryButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^div:([yn]):(\d+):(\d+)$/.exec(data))) await divorceButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = /^date:([yn]):(\d+):(\d+)$/.exec(data))) await dateButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = /^part:([yn]):(\d+):(\d+)$/.exec(data))) await breakUpButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^cap:(\d+)$/.exec(data))) await moder.captchaButton(query, Number(p[1]));
   else if ((p = /^mod:unmute:(\d+)$/.exec(data))) await moder.unmuteButton(query, Number(p[1]));
   else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);

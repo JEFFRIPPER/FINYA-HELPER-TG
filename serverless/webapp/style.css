@@ -1392,6 +1392,13 @@ em.nm { font-style: normal; }
 .shop-item > b { font-weight: 500; }
 .shop-sample { display: grid; place-items: center; height: 66px; max-width: 100%; }
 .shop-sample .title-chip { font-size: 12px; padding: 4px 10px; }
+.chart-sample { --bg: #0b0405; --bar: #960e22; --hot: #ff2d48; display: flex; align-items: flex-end; gap: 3px; height: 46px; padding: 6px 8px; border-radius: 10px; background: var(--bg); box-sizing: border-box; }
+.chart-sample i { width: 7px; border-radius: 2px 2px 0 0; background: var(--bar); }
+.chart-sample i.hot { background: var(--hot); box-shadow: 0 0 6px var(--hot); }
+.chart-sample.chart_ice { --bg: #04090e; --bar: #2878be; --hot: #96e6ff; }
+.chart-sample.chart_toxic { --bg: #050a04; --bar: #3ca01e; --hot: #aaff3c; }
+.chart-sample.chart_neon { --bg: #07040e; --bar: #9628dc; --hot: #00ebff; }
+.chart-sample.chart_gold { --bg: #0c0903; --bar: #aa7814; --hot: #ffcd46; }
 .nick-sample { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 18px; line-height: 24px; font-weight: 500; }
 
 /* ---- polls ------------------------------------------------------------------------- */

@@ -205,9 +205,14 @@ export const SHOP = [
   { id: 'title_voice', slot: 'title', name: 'Голос Сквада', price: 350 },
   { id: 'title_blood', slot: 'title', name: 'Кровь Сквада', price: 600 },
   { id: 'title_legend', slot: 'title', name: 'Легенда', price: 1000 },
+  { id: 'chart_ice', slot: 'chart', name: 'Ледяной график', price: 250 },
+  { id: 'chart_toxic', slot: 'chart', name: 'Токсичный график', price: 250 },
+  { id: 'chart_neon', slot: 'chart', name: 'Неоновый график', price: 350 },
+  { id: 'chart_gold', slot: 'chart', name: 'Золотой график', price: 500 },
 ];
 const SHOP_BY_ID = new Map(SHOP.map((i) => [i.id, i]));
-const SLOTS = ['frame', 'color', 'title'];
+const SLOTS = ['frame', 'color', 'title', 'chart'];
+export const findItem = (id) => SHOP_BY_ID.get(id) || null;
 
 // Equipped cosmetics as shown to others: item ids, title as text.
 export function styleView(row) {
@@ -227,9 +232,20 @@ async function spent(userId) {
   return row.s;
 }
 
+// The chart theme a member put on («Кто Я», «Моя анкета»), or null for the scarlet one.
+export async function chartTheme(userId) {
+  const row = await db.get(sql`SELECT theme FROM chart_themes WHERE user_id = ${userId}`);
+  return row ? row.theme : null;
+}
+
+export async function ownsItem(userId, itemId) {
+  if (userId === OWNER_USER_ID) return true;
+  return Boolean(await db.get(sql`SELECT 1 AS x FROM purchases WHERE user_id = ${userId} AND item = ${itemId}`));
+}
+
 async function shopView(userId, totalXp, founder) {
   const owned = new Set((await db.all(sql`SELECT item FROM purchases WHERE user_id = ${userId}`)).map((r) => r.item));
-  const worn = (await wardrobe(userId)) || {};
+  const worn = { ...((await wardrobe(userId)) || {}), chart: await chartTheme(userId) };
   return {
     balance: Math.max(0, totalXp - (await spent(userId))),
     founder,
@@ -239,6 +255,16 @@ async function shopView(userId, totalXp, founder) {
 
 async function equip(userId, slot, item) {
   const ts = nowInt();
+  // Charts keep their own table: the wardrobe has no column for them.
+  if (slot === 'chart') {
+    if (item) {
+      await db.run(sql`INSERT INTO chart_themes (user_id, theme, updated_at) VALUES (${userId}, ${item}, ${ts})
+        ON CONFLICT(user_id) DO UPDATE SET theme = excluded.theme, updated_at = excluded.updated_at`);
+    } else {
+      await db.run(sql`DELETE FROM chart_themes WHERE user_id = ${userId}`);
+    }
+    return;
+  }
   await db.run(sql`INSERT INTO wardrobe (user_id, updated_at) VALUES (${userId}, ${ts})
     ON CONFLICT(user_id) DO NOTHING`);
   if (slot === 'frame') await db.run(sql`UPDATE wardrobe SET frame = ${item}, updated_at = ${ts} WHERE user_id = ${userId}`);

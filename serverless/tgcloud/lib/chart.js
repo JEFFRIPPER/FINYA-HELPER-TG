@@ -23,6 +23,27 @@ const PALETTE = [
   [196, 156, 162], [120, 32, 44], [74, 20, 27], [58, 9, 16],
 ];
 
+// Chart themes from the shop (lib/club.js SHOP, slot «chart»), in the order above:
+// background, grid, bar, this week, labels, year line, baseline, glow.
+export const THEMES = {
+  chart_ice: [
+    [4, 9, 14], [14, 34, 50], [40, 120, 190], [150, 230, 255],
+    [170, 195, 215], [40, 80, 110], [25, 55, 80], [15, 50, 70],
+  ],
+  chart_toxic: [
+    [5, 10, 4], [18, 40, 12], [60, 160, 30], [170, 255, 60],
+    [175, 205, 160], [50, 100, 30], [30, 70, 20], [25, 60, 10],
+  ],
+  chart_neon: [
+    [7, 4, 14], [30, 16, 50], [150, 40, 220], [0, 235, 255],
+    [185, 170, 215], [80, 40, 120], [50, 25, 80], [20, 60, 85],
+  ],
+  chart_gold: [
+    [12, 9, 3], [42, 33, 10], [170, 120, 20], [255, 205, 70],
+    [215, 195, 150], [120, 90, 30], [80, 60, 20], [70, 50, 10],
+  ],
+};
+
 // 5×7 glyphs, drawn twice the size.
 const FONT = {
   0: ['.###.', '#...#', '#..##', '#.#.#', '##..#', '#...#', '.###.'],
@@ -83,7 +104,8 @@ const pad = (n) => String(n).padStart(2, '0');
 
 // counts: Map day → messages; days are Moscow days (lib/members.js mskDay).
 // hotFrom: the first day drawn brighter (this week).
-export function activityChart(counts, fromDay, toDay, hotFrom) {
+// theme: a THEMES key; anything else draws the Squad's scarlet.
+export function activityChart(counts, fromDay, toDay, hotFrom, theme = null) {
   const px = new Uint8Array(W * H).fill(BG);
   const n = Math.max(1, toDay - fromDay + 1);
   let max = 0;
@@ -131,5 +153,5 @@ export function activityChart(counts, fromDay, toDay, hotFrom) {
     centered(px, `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}`, centerOf(i), Y1 + 10, LABEL);
     if (k === 0) centered(px, String(d.getUTCFullYear()), centerOf(i), Y1 + 30, LABEL);
   }
-  return encodePng(W, H, PALETTE, px);
+  return encodePng(W, H, THEMES[theme] || PALETTE, px);
 }

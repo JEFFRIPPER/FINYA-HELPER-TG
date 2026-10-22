@@ -323,6 +323,31 @@ export const proposals = table('proposals', {
   pk: primaryKey({ columns: [t.from_id, t.to_id] }),
 }));
 
+// Dating («Встречаться»): the step before marriage. Both rows, like spouses; it lasts
+// until one of them says «Расстаться» or they marry.
+export const dating = table('dating', {
+  user_id: integer('user_id').primaryKey(),
+  partner_id: integer('partner_id').notNull(),
+  since: integer('since').notNull(),
+});
+
+export const date_offers = table('date_offers', {
+  from_id: integer('from_id').notNull(),
+  to_id: integer('to_id').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id'),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.from_id, t.to_id] }),
+}));
+
+// The chart theme bought in the shop (chart_*), for «Кто Я» and «Моя анкета».
+export const chart_themes = table('chart_themes', {
+  user_id: integer('user_id').primaryKey(),
+  theme: text('theme').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});
+
 // RP actions the owner added («+рп пощекотать = щекочет 🤭»).
 export const rp_actions = table('rp_actions', {
   cmd: text('cmd').primaryKey(),
