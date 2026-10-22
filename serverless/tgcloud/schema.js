@@ -60,6 +60,16 @@ export const relay_targets = table('relay_targets', {
   enabled_at: real('enabled_at').notNull(),
 });
 
+// What a member tells about themselves for «Моя анкета»: «+Пол», «+Город», the year
+// of «+ДР» (the day and month live in birthdays).
+export const profile_info = table('profile_info', {
+  user_id: integer('user_id').primaryKey(),
+  gender: text('gender').notNull().default(''),
+  city: text('city').notNull().default(''),
+  birth_year: integer('birth_year'),
+  updated_at: integer('updated_at').notNull(),
+});
+
 // Chats where Финя works as the chat manager without the channel's posts (/chat_on).
 export const squad_chats = table('squad_chats', {
   chat_id: integer('chat_id').primaryKey(),

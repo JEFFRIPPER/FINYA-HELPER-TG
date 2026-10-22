@@ -9,6 +9,7 @@ import { deleteLater, getSetting, logError, setSetting } from './store.js';
 import { answer, button, getMe, keyboard, sendWithFloodWait } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
+import * as anketa from './anketa.js';
 import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
@@ -124,12 +125,12 @@ async function place(userId, points) {
 function ageText(seconds) {
   const sec = Math.max(0, Math.floor(seconds));
   const days = Math.floor(sec / 86400);
-  if (days >= 365) {
+  if (days >= 366) {
     const y = Math.floor(days / 365.25);
     const mo = Math.floor((days - y * 365.25) / 30.44);
     return `${y} ${plural(y, 'год', 'года', 'лет')}${mo ? ` ${mo} мес` : ''}`;
   }
-  if (days >= 30) {
+  if (days >= 31) {
     const mo = Math.floor(days / 30.44);
     const d = Math.floor(days - mo * 30.44);
     return `${mo} мес${d ? ` ${d} дн` : ''}`;
@@ -267,6 +268,126 @@ async function showProfile(message, who, self) {
     }
   }
   await say(message, text, { markup, temp: true });
+}
+
+// ---- «Моя анкета»: the member across every Squad chat ------------------------------
+
+const pad2 = (n) => String(n).padStart(2, '0');
+// A Moscow day number as «14.10.2026».
+const dateOfDay = (day) => fmtMsk(day * 86400 - MSK_OFFSET + 12 * 3600).slice(0, 10);
+const HOUR_MOODS = [[5, '🦉 ночная сова'], [11, '🐦 жаворонок'], [18, '☀️ днём'], [24, '🌆 вечером']];
+const HOMES_SHOWN = 5;
+
+function birthText(birth, ts) {
+  const age = anketa.ageOf(birth, ts);
+  return `${pad2(birth.day)}.${pad2(birth.month)}${birth.year ? `.${birth.year}` : ''}` +
+    `${age != null ? ` (${age} ${plural(age, 'год', 'года', 'лет')})` : ''} · ${anketa.zodiac(birth.day, birth.month)}`;
+}
+
+// → { text, days } (days: messages per day over all Squad chats, for the chart).
+async function anketaCard(who, self) {
+  const ts = nowInt();
+  const info = await anketa.infoOf(who.id);
+  const d = await anketa.anketaData(who.id, ts);
+  const p = await db.get(sql`SELECT xp, manual_rank FROM profiles WHERE user_id = ${who.id}`);
+  const points = p ? p.xp : 0;
+  const [rank] = xp.rankFor(points, { founder: who.id === OWNER_USER_ID, manualRank: p ? p.manual_rank : null });
+
+  const head = [`📋 Анкета · ${escapeHtml(truncate(who.name, 60))}`];
+  if (self) head.push(`🆔 <code>${who.id}</code>`);
+
+  const about = [];
+  if (d.since) about.push(`⏱ В Скваде: с ${fmtMsk(d.since).slice(0, 10)} (${ts - d.since < 86400 ? 'сегодня' : ageText(ts - d.since)})`);
+  if (info.gender) about.push(info.gender === 'f' ? '👩 Пол: женский' : '👨 Пол: мужской');
+  if (info.birth) about.push(`🎂 Дата рождения: ${birthText(info.birth, ts)}`);
+  if (info.city) about.push(`🏙 Город: ${escapeHtml(info.city)}`);
+  about.push(`💬 Актив (д|н|м|всего): ${[d.day, d.week, d.month, d.total].map(compact).join(' | ')}`);
+  if (d.streak.best) {
+    about.push(d.streak.current
+      ? `🔥 Серия: ${daysWord(d.streak.current)} подряд · рекорд ${d.streak.best}`
+      : `🔥 Рекорд серии: ${daysWord(d.streak.best)} подряд`);
+  }
+  if (d.record) about.push(`🏆 Рекордный день: ${msgsWord(d.record.n)}, ${dateOfDay(d.record.day)}`);
+  if (d.peak != null) {
+    const mood = HOUR_MOODS.find(([until]) => d.peak < until)[1];
+    about.push(`🕐 Час пик: ${pad2(d.peak)}:00–${pad2((d.peak + 1) % 24)}:00 · ${mood}`);
+  }
+  if (d.favourite) about.push(`❤️ Любимый чат: «${escapeHtml(truncate(d.favourite.title, 40))}»`);
+  const blocks = [head.join('\n'), about.join('\n')];
+
+  if (d.homes.length) {
+    const lines = d.homes.slice(0, HOMES_SHOWN).map((h) => `• «${escapeHtml(truncate(h.title, 40))}» ` +
+      (h.since > 0 ? `${ts - h.since < 86400 ? 'с сегодня' : `${ageText(ts - h.since)} (с ${fmtMsk(h.since).slice(0, 10)})`}` : ''));
+    if (d.homes.length > HOMES_SHOWN) lines.push(`…и ещё ${d.homes.length - HOMES_SHOWN}`);
+    blocks.push(`🏠 Житель чатов:\n${lines.join('\n')}`);
+  }
+
+  const balance = await games.balanceOf(who.id);
+  const ach = await db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`);
+  const rep = await social.repOf(who.id);
+  blocks.push('💰 В мешке:\n' + [
+    `⚡ ${fmtThousands(points)} XP · на балансе ${fmtThousands(balance)}`,
+    `🎖 [${rank[1]}] ${escapeHtml(rank[2])}`,
+    `🏆 Ачивок: ${ach.c} · ❤️ Репутация: ${rep.points}`,
+  ].join('\n'));
+
+  if (self) {
+    const missing = [
+      !info.gender && '«+Пол М»', !info.birth && '«+ДР 16.12.1999»', !info.city && '«+Город Москва»',
+    ].filter(Boolean);
+    if (missing.length) blocks.push(`✍️ Дополни анкету: ${missing.join(', ')}`);
+  }
+  return { text: blocks.join('\n\n'), days: d.days };
+}
+
+async function showAnketa(message, who, self) {
+  if (who.isBot) {
+    await say(message, '🤖 Это бот, у ботов нет анкеты в Скваде.', { temp: true });
+    return;
+  }
+  const { text, days } = await anketaCard(who, self);
+  // The chart over all chats on top, as Iris does; in the private chat too.
+  if (days.size && visibleLength(text) <= CAPTION_MAX) {
+    try {
+      await sayPhoto(message, chartOf({ days }, nowInt()), text, { temp: true });
+      return;
+    } catch (err) {
+      if (!(err instanceof BotApiError)) throw err;
+    }
+  }
+  await say(message, text, { temp: true });
+}
+
+const INFO_FIELDS = { 'пол': 'gender', 'город': 'city', 'др': 'birth', 'дата рождения': 'birth', 'день рождения': 'birth' };
+
+// «+Пол М», «+Город Москва», «+ДР 16.12.1999» and «-Пол» and so on. → true when handled.
+async function anketaInfoCommand(message, self, rest) {
+  const set = /^\+\s?(пол|город|др|дата рождения|день рождения)(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
+  if (set) {
+    const field = INFO_FIELDS[set[1].toLowerCase()];
+    try {
+      let done;
+      if (field === 'gender') {
+        done = (await anketa.setGender(self.id, set[2])) === 'f' ? '👩 Пол: женский.' : '👨 Пол: мужской.';
+      } else if (field === 'city') {
+        done = `🏙 Город: ${escapeHtml(await anketa.setCity(self.id, set[2]))}.`;
+      } else {
+        done = `🎂 Дата рождения: ${birthText(await anketa.setBirth(message.from, set[2]), nowInt())}. В этот день Финя поздравит.`;
+      }
+      await say(message, `${done} Посмотреть: «Моя Анкета».`, { temp: true });
+    } catch (err) {
+      if (!(err instanceof anketa.AnketaError)) throw err;
+      await say(message, `❌ ${err.message}`, { temp: true });
+    }
+    return true;
+  }
+  const unset = /^-\s?(пол|город|др|дата рождения|день рождения)$/u.exec(bare(rest));
+  if (unset) {
+    const removed = await anketa.clear(self.id, INFO_FIELDS[unset[1]]);
+    await say(message, removed ? '🗑 Убрала из анкеты.' : 'В анкете этого и так нет.', { temp: true });
+    return true;
+  }
+  return false;
 }
 
 // «Описание»: the whole «о себе» of a member.
@@ -911,6 +1032,8 @@ async function dailySummary(ts = nowInt()) {
 const HELP = {
   profile: ['👤 Профиль', () => [
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
+    ['📋 Моя Анкета · Анкета (ответом)', 'Анкета по всем чатам Сквада сразу: график, стаж, актив, серия дней, рекордный день, час пик, чаты и мешок'],
+    ['🎂 +ДР 16.12.1999 · +Пол М · +Город Москва', 'Данные для анкеты. Убрать: «-ДР», «-Пол», «-Город»'],
     ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
     ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
     ['🏅 Награды (ответом)', 'Награды участника от админов чата'],
@@ -1076,6 +1199,13 @@ export async function handleText(message) {
     }
     return true;
   }
+  if (['моя анкета', 'анкета'].includes(cmd) || /^анкета\s+@\w+$/u.test(cmd)) {
+    const asked = cmd !== 'моя анкета' && group ? await targetOf(message) : null;
+    const who = asked || self;
+    await showAnketa(message, who, who.id === self.id);
+    return true;
+  }
+  if (await anketaInfoCommand(message, self, rest)) return true;
   // A bare «топ» is too often praise («топ!»), so it needs «Финя, топ».
   if ((addressed && cmd === 'топ') || ['топ xp', 'топ хп', 'топ сквада'].includes(cmd)) {
     await say(message, await xpTopText(false), { temp: true });

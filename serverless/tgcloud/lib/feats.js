@@ -71,9 +71,11 @@ export async function bump(userId, key, by = 1) {
     ON CONFLICT(user_id, key) DO UPDATE SET n = n + ${by}`);
 }
 
-// A message at night (0–5 МСК) or early in the morning (5–8 МСК) counts for those badges.
+// A message at night (0–5 МСК) or early in the morning (5–8 МСК) counts for those badges;
+// every hour (h0–h23) counts for the peak hour of «Моя анкета».
 export async function bumpHour(userId, ts) {
   const hour = Math.floor(((Math.floor(ts) + MSK_OFFSET) % DAY) / 3600);
+  await bump(userId, `h${hour}`);
   if (hour < 5) await bump(userId, 'night');
   else if (hour < 8) await bump(userId, 'early');
 }
