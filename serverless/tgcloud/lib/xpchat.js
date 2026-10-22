@@ -1,10 +1,11 @@
 // Which group counts for XP: the one bound with /xpchat, else the channel's
 // linked discussion group (re-checked at most every 5 minutes).
 import { api, db } from 'sdk';
+import { sql } from 'sdk/db';
 import { SQUAD_CHANNEL_ID } from './config.js';
 import { getSetting, setSetting } from './store.js';
 import { isAdminStatus } from './tg.js';
-import { nowInt } from './util.js';
+import { nowInt, truncate } from './util.js';
 
 const DISCOVERY_SECONDS = 300;
 
@@ -58,9 +59,27 @@ export async function xpSetupText() {
     'XP хранится в базе Telegram Serverless.';
 }
 
-// Every Squad chat: the XP discussion group and the chats bound with /posts_on.
+// ---- chats bound with /chat_on ---------------------------------------------------
+
+export async function isAddedChat(chatId) {
+  return Boolean(await db.get(sql`SELECT 1 AS x FROM squad_chats WHERE chat_id = ${chatId}`));
+}
+
+// → true when the chat was not added before.
+export async function addChat(chatId, title, byId) {
+  const r = await db.run(sql`INSERT INTO squad_chats (chat_id, title, added_by, added_at)
+    VALUES (${chatId}, ${truncate(title || String(chatId), 100)}, ${byId}, ${nowInt()})
+    ON CONFLICT(chat_id) DO NOTHING`);
+  return r.rowsAffected === 1;
+}
+
+export async function removeChat(chatId) {
+  await db.run(sql`DELETE FROM squad_chats WHERE chat_id = ${chatId}`);
+}
+
+// Every Squad chat: the XP discussion group and the chats bound with /posts_on or /chat_on.
 export async function squadChatIds() {
-  const rows = await db.all('SELECT chat_id FROM relay_targets');
+  const rows = await db.all('SELECT chat_id FROM relay_targets UNION SELECT chat_id FROM squad_chats');
   const ids = new Set(rows.map((r) => r.chat_id));
   const xpChat = await resolveXpChat();
   if (xpChat) ids.add(xpChat);

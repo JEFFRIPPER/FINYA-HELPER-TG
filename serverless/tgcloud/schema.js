@@ -60,6 +60,14 @@ export const relay_targets = table('relay_targets', {
   enabled_at: real('enabled_at').notNull(),
 });
 
+// Chats where Финя works as the chat manager without the channel's posts (/chat_on).
+export const squad_chats = table('squad_chats', {
+  chat_id: integer('chat_id').primaryKey(),
+  title: text('title').notNull(),
+  added_by: integer('added_by').notNull(),
+  added_at: integer('added_at').notNull(),
+});
+
 export const relay_outbox = table('relay_outbox', {
   source_chat_id: integer('source_chat_id').notNull(),
   source_message_id: integer('source_message_id').notNull(),
