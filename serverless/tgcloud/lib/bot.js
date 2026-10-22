@@ -18,7 +18,7 @@ import {
 } from './ui.js';
 import { base64ToBytes, boldHtml, escapeHtml, now, truncate } from './util.js';
 import { INFO_JPG_BASE64 } from './photo_data.js';
-import { explicitXpChatId, resolveXpChat, xpSourceChannelId } from './xpchat.js';
+import { addChat, explicitXpChatId, isAddedChat, removeChat, resolveXpChat, xpSourceChannelId } from './xpchat.js';
 import { handleAdminCallback } from './admin.js';
 import * as blacklist from './blacklist.js';
 import * as chat from './chat.js';
@@ -118,7 +118,7 @@ async function deleteDue(deadline, limit = 20) {
 }
 
 // The «/» menu: three commands for everyone, the owner also sees his own.
-const COMMANDS_VERSION = '4';
+const COMMANDS_VERSION = '5';
 async function ensureCommands() {
   if ((await getSetting('commands_version')) === COMMANDS_VERSION) return;
   const common = [
@@ -134,6 +134,8 @@ async function ensureCommands() {
       commands: [
         ...common, { command: 'admin', description: 'Админ-панель' }, { command: 'cancel', description: 'Отменить действие' },
         { command: 'log', description: 'Новость об обновлении: /log post — в топик, /log_on в топике — привязать' },
+        { command: 'chat_on', description: 'Включить Финю в этом чате (без постов канала)' },
+        { command: 'chat_off', description: 'Выключить Финю в этом чате' },
       ],
       scope: { type: 'chat', chat_id: OWNER_USER_ID },
     });
@@ -318,6 +320,55 @@ async function postsOffCommand(message, args) {
   await reply(message, 'Отправка постов в этот чат отключена, ожидающие отправки отменены. Накопленный XP сохраняется.');
 }
 
+// /chat_on: Финя works in this chat as in the Squad's own (commands in words, profiles,
+// tops, achievements, captcha), but the channel's posts do not come here.
+async function chatOnCommand(message, args) {
+  if (!isAdminUser(message.from)) return;
+  if (!relayCommandAllowed(message, args)) {
+    await reply(message, 'Отправь /chat_on в том чате, где Финя должна работать чат-менеджером.');
+    return;
+  }
+  const chat = message.chat;
+  try {
+    const me = await getMe();
+    const member = await api.getChatMember({ chat_id: chat.id, user_id: me.id });
+    if (!isAdminStatus(member)) {
+      await reply(message, 'Назначь Финю администратором этого чата: без этого не работают капча и уборка команд. Затем повтори /chat_on.');
+      return;
+    }
+  } catch {
+    await reply(message, 'Не удалось проверить права Фини в этом чате. Повтори /chat_on чуть позже.');
+    return;
+  }
+  const isNew = await addChat(chat.id, chat.title, message.from.id);
+  await reply(message, isNew
+    ? 'Готово: Финя работает в этом чате. Команды словами, профили, топы, ачивки и итоги дня включены, посты канала сюда не приходят. Отключить: /chat_off.'
+    : 'Финя уже работает в этом чате. Отключить: /chat_off.');
+}
+
+async function chatOffCommand(message, args) {
+  if (!isAdminUser(message.from)) return;
+  if (!relayCommandAllowed(message, args)) {
+    await reply(message, 'Отправь /chat_off в чате, где Финя больше не должна работать.');
+    return;
+  }
+  const chatId = message.chat.id;
+  if (await relay.enabled(chatId)) {
+    await reply(message, 'Сюда ещё приходят посты канала: сначала /posts_off, затем /chat_off.');
+    return;
+  }
+  if (chatId === (await explicitXpChatId() || await resolveXpChat())) {
+    await reply(message, 'Это обсуждения канала: здесь Финя работает всегда.');
+    return;
+  }
+  const was = (await isAddedChat(chatId)) || (await relay.hasTarget(chatId));
+  await removeChat(chatId);
+  await relay.forget(chatId);
+  await reply(message, was
+    ? 'Финя больше не работает в этом чате. Накопленный XP и профили сохранены. Включить снова: /chat_on.'
+    : 'Финя и так не работает в этом чате. Включить: /chat_on.');
+}
+
 async function postsRetryCommand(message, args) {
   if (!isAdminUser(message.from)) return;
   if (!['group', 'supergroup'].includes(message.chat.type) || args.length !== 1 ||
@@ -418,6 +469,7 @@ async function notifyPromotion(user, award) {
 async function xpChatMatches(chatId) {
   if (await isMaintenance()) return false;
   if (await relay.hasTarget(chatId)) return true;
+  if (await isAddedChat(chatId)) return true;
   const explicit = await explicitXpChatId();
   const target = explicit || await resolveXpChat();
   return chatId === target;
@@ -488,6 +540,8 @@ const COMMANDS = {
   posts_on: (m, s, a) => postsOnCommand(m, a),
   posts_off: (m, s, a) => postsOffCommand(m, a),
   posts_retry: (m, s, a) => postsRetryCommand(m, a),
+  chat_on: (m, s, a) => chatOnCommand(m, a),
+  chat_off: (m, s, a) => chatOffCommand(m, a),
   log: async (m, s, a) => changelog.command(m, a, isAdminUser(m.from), await inSquadChat(m)),
   log_on: async (m) => changelog.bindCommand(m, isAdminUser(m.from), await inSquadChat(m)),
 };

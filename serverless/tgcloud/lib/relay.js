@@ -28,6 +28,11 @@ export async function enable(chatId, title) {
   return !already;
 }
 
+// Forget a chat whose posts are off: it stops counting as a Squad chat.
+export async function forget(chatId) {
+  await db.run(sql`DELETE FROM relay_targets WHERE chat_id = ${chatId} AND enabled = 0`);
+}
+
 export async function disable(chatId) {
   await db.run(sql`UPDATE relay_targets SET enabled = 0 WHERE chat_id = ${chatId}`);
   await db.run(sql`UPDATE relay_outbox SET status = 'cancelled', error = 'Рассылка отключена владельцем.'
