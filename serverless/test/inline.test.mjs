@@ -3,7 +3,8 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import handler from '../tgcloud/handlers/inline_query.js';
 import { onMessage } from '../tgcloud/lib/bot.js';
-import { checkErrors, OWNER, privateMessage, setup, user } from './helpers.mjs';
+import { db } from 'sdk';
+import { apiError, checkErrors, OWNER, privateMessage, setup, user } from './helpers.mjs';
 
 afterEach(checkErrors);
 
@@ -49,4 +50,24 @@ test('a prefix narrows the list; the owner\'s own actions and the nick are there
   assert.deepEqual(texts(answered(api)), ['✨ <a href="tg://user?id=3">Котик</a> щекочет 🤭 тебя']);
   await handler(inline(user(3), 'абракадабра'));
   assert.equal(answered(api).results.length, 0);
+});
+
+test('premium emoji from the owner\'s packs; plain ones if Telegram refuses', async () => {
+  let refuse = false;
+  const api = await setup({
+    answerInlineQuery: (p) => {
+      if (refuse && /tg-emoji/.test(p.results[0].input_message_content.message_text)) throw apiError('answerInlineQuery', 400, 'Bad Request: DOCUMENT_INVALID');
+      return true;
+    },
+  });
+  await db.run("INSERT INTO premium_emoji (base, custom_id, set_name, picked, added_at) VALUES ('🤗', '5368324170671202286', 'pack', 1, 0), ('💬', '5368324170671202287', 'pack', 1, 0)");
+  await handler(inline(user(2, { first_name: 'Аня' }), 'обнять @vasya скучала'));
+  assert.deepEqual(texts(answered(api)), [
+    '<tg-emoji emoji-id="5368324170671202286">🤗</tg-emoji> <a href="tg://user?id=2">Аня</a> обнимает @vasya\n' +
+      '<tg-emoji emoji-id="5368324170671202287">💬</tg-emoji> «скучала»',
+  ]);
+  refuse = true;
+  await handler(inline(user(2, { first_name: 'Аня' }), 'обнять'));
+  assert.equal(api.called('answerInlineQuery').length, 3);
+  assert.deepEqual(texts(answered(api)), ['🤗 <a href="tg://user?id=2">Аня</a> обнимает тебя']);
 });
