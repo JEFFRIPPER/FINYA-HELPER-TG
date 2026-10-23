@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-23-rp-no-stickers',
+    date: '23 октября 2026',
+    title: 'РП снова без стикеров',
+    items: [
+      '🤗 После РП-действия Финя больше не кидает стикер: остаётся только строка вроде «Kira обнимает Jeff».',
+    ],
+  },
+  {
     id: '2026-10-23-rp-stickers',
     date: '23 октября 2026',
     title: 'РП со стикерами Фини',
