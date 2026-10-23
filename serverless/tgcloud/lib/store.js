@@ -163,7 +163,8 @@ export async function feedbackCount() {
 
 // ---- bot replies that clean themselves up --------------------------------
 
-export const GROUP_REPLY_TTL = 120;
+// A day in the chat; «✖️ Закрыть» removes an answer at once.
+export const GROUP_REPLY_TTL = 24 * 3600;
 
 // Messages in a group that pump() deletes later (see autodelete in schema.js).
 export async function deleteLater(chatId, messageIds, ttl = GROUP_REPLY_TTL) {

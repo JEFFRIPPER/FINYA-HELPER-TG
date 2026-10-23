@@ -5,8 +5,8 @@ import { api, BotApiError, db, InputFile } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, WEBAPP_URL } from './config.js';
 import { squadChatIds } from './xpchat.js';
-import { deleteLater, getSetting, logError, setSetting } from './store.js';
-import { answer, button, getMe, keyboard, sendWithFloodWait } from './tg.js';
+import { deleteLater, getSetting, GROUP_REPLY_TTL, logError, setSetting } from './store.js';
+import { answer, button, CLOSE_PREFIX, closeRowOf, getMe, keyboard, sendWithFloodWait, withClose } from './tg.js';
 import { profileRow, xpTopText } from './ui.js';
 import { boldHtml, escapeHtml, fmtMsk, fmtThousands, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as anketa from './anketa.js';
@@ -70,7 +70,8 @@ async function say(message, text, { markup, temp = false, replyTo = message.mess
     link_preview_options: { is_disabled: true },
     ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : sameThread(message)),
   };
-  if (markup) params.reply_markup = markup;
+  const closable = temp && isGroupChat(message.chat) && message.from;
+  if (markup || closable) params.reply_markup = closable ? withClose(markup, message.from.id) : markup;
   const sent = await withPremium(params, (p) => api.sendMessage(p));
   if (temp && isGroupChat(message.chat)) await deleteLater(message.chat.id, [message.message_id, sent && sent.message_id]);
   return sent;
@@ -244,7 +245,8 @@ async function sayPhoto(message, png, caption, { markup, temp = false } = {}) {
     caption: boldHtml(caption), parse_mode: 'HTML',
     reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
   };
-  if (markup) params.reply_markup = markup;
+  const closable = temp && isGroupChat(message.chat) && message.from;
+  if (markup || closable) params.reply_markup = closable ? withClose(markup, message.from.id) : markup;
   const sent = await withPremium(params, (p) => api.sendPhoto(p));
   if (temp && isGroupChat(message.chat)) await deleteLater(message.chat.id, [message.message_id, sent && sent.message_id]);
   return sent;
@@ -1125,7 +1127,6 @@ async function positionCommand(message, self, target, add, words) {
 
 // ---- achievements ------------------------------------------------------------------
 
-const ACH_TTL = 600;
 const ACH_SHOWN = 5;
 
 // «🏆 … открывает ачивку»: under the message, not as a reply, and gone after a while.
@@ -1140,11 +1141,12 @@ async function announceAchievements(message, who, fresh) {
       shown.map((a) => `«${escapeHtml(a.title)}» — ${escapeHtml(a.text)}`).join('\n') +
       (fresh.length > shown.length ? `\n…и ещё ${fresh.length - shown.length}` : '') + '</blockquote>';
   text += '\nВсе ачивки — в профиле Фини.';
+  const group = isGroupChat(message.chat);
   const sent = await withPremium({
     chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML', link_preview_options: { is_disabled: true },
-    ...sameThread(message),
+    ...sameThread(message), ...(group ? { reply_markup: withClose(null, who.id) } : {}),
   }, (p) => api.sendMessage(p));
-  if (isGroupChat(message.chat) && sent) await deleteLater(message.chat.id, [sent.message_id], ACH_TTL);
+  if (group && sent) await deleteLater(message.chat.id, [sent.message_id], GROUP_REPLY_TTL);
 }
 
 // After a command or every 10th message: the author's chat achievements, and those of
@@ -1736,11 +1738,36 @@ async function edit(query, text, markup) {
     chat_id: query.message.chat.id, message_id: query.message.message_id, text: boldHtml(text), parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
   };
+  // A new keyboard keeps «✖️ Закрыть».
+  const close = closeRowOf(query.message);
+  if (close && !closeRowOf({ reply_markup: markup })) markup = { inline_keyboard: [...((markup && markup.inline_keyboard) || []), close] };
   if (markup) params.reply_markup = markup;
   try {
     await withPremium(params, (p) => api.editMessageText(p));
   } catch {
     // Too old or unchanged.
+  }
+}
+
+// «✖️ Закрыть»: the one who asked, a chat admin or the owner removes the answer and
+// the command it answered.
+async function closeButton(query, userId) {
+  const chatId = query.message.chat.id;
+  if (query.from.id !== userId && !(await canAward(chatId, query.from.id))) {
+    await answer(query, 'Закрыть может тот, кто вызвал, или админ 🙂', true);
+    return;
+  }
+  await answer(query);
+  const ids = [query.message.message_id];
+  const asked = query.message.reply_to_message;
+  if (asked && asked.from && asked.from.id === userId) ids.push(asked.message_id);
+  for (const id of ids) {
+    try {
+      await api.deleteMessage({ chat_id: chatId, message_id: id });
+    } catch {
+      // Already gone or older than 48 hours.
+    }
+    await db.run(sql`DELETE FROM autodelete WHERE chat_id = ${chatId} AND message_id = ${id}`);
   }
 }
 
@@ -1856,7 +1883,7 @@ async function helpButton(query, section, ownerMenu) {
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|date|part|cap|mod|stat|help):/.exec(data);
+  const m = /^(marry|div|date|part|cap|mod|stat|help|close):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -1865,6 +1892,7 @@ export async function handleCallback(query) {
   let p;
   if ((p = /^marry:([yn]):(\d+):(\d+)$/.exec(data))) await marryButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^div:([yn]):(\d+):(\d+)$/.exec(data))) await divorceButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = new RegExp(`^${CLOSE_PREFIX}(\\d+)$`).exec(data))) await closeButton(query, Number(p[1]));
   else if ((p = /^date:([yn]):(\d+):(\d+)$/.exec(data))) await dateButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^part:([yn]):(\d+):(\d+)$/.exec(data))) await breakUpButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^cap:(\d+)$/.exec(data))) await moder.captchaButton(query, Number(p[1]));

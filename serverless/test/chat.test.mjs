@@ -293,7 +293,7 @@ test('«Финя, …»: who, chance, choice and a yes/no answer', async () => {
   await say(user(1), 'финя, команды');
   assert.match(lastSent(api), /Выбери раздел/);
   const menu = sent(api).at(-1).params.reply_markup.inline_keyboard.flat().map((b) => b.text);
-  assert.deepEqual(menu, ['👤 Профиль', '💞 Люди', '🎲 XP и игры', '🛠 Полезное', '🛡 Админам']);
+  assert.deepEqual(menu, ['👤 Профиль', '💞 Люди', '🎲 XP и игры', '🛠 Полезное', '🛡 Админам', '✖️ Закрыть']);
   await onCallbackQuery(groupButton(user(1), 'help:profile:0'));
   const shown = api.called('editMessageText').at(-1).params;
   assert.match(shown.text, /👤 Кто Я · Кто Ты \(ответом\)\n<blockquote>Профиль с графиком актива/);

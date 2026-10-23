@@ -5,7 +5,7 @@ import {
   HOME_TEXT, INFO_TEXT, MORE_TEXT, OWNER_USER_ID, PARTNERS, SQUAD_CHANNEL_USERNAME, SQUAD_TEXT, WEBAPP_URL,
 } from './config.js';
 import {
-  answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, isRetryAfter, keyboard, reply, replyBold,
+  answer, button, editOrSend, getMe, isAdminStatus, isBadRequest, isRetryAfter, keyboard, reply, replyBold, withClose,
 } from './tg.js';
 import {
   addFeedback, deleteLater, getSetting, getUser, GROUP_REPLY_TTL, isAdminUser, isMaintenance, logError, setSetting,
@@ -227,11 +227,14 @@ async function shopKeyCommand(message, s, args) {
 }
 
 const isGroup = (chat) => Boolean(chat) && ['group', 'supergroup'].includes(chat.type);
-const xpMenu = async (chat) => xpKeyboard(await profileRow(chat), { group: isGroup(chat) });
+const xpMenu = async (chat, userId = null) => {
+  const markup = xpKeyboard(await profileRow(chat), { group: isGroup(chat) });
+  return isGroup(chat) && userId ? withClose(markup, userId) : markup;
+};
 
 async function rankCommand(message, s) {
   if (message.chat.type === 'private') await trackUser(message.from);
-  const sent = await replyBold(message, await xpProfileText(message.from), await xpMenu(message.chat));
+  const sent = await replyBold(message, await xpProfileText(message.from), await xpMenu(message.chat, message.from.id));
   await tidyPrivate(message, s, sent);
   await cleanUpLater(message, sent);
 }
@@ -239,7 +242,7 @@ async function rankCommand(message, s) {
 async function topCommand(message, s, args) {
   if (message.chat.type === 'private') await trackUser(message.from);
   const weekly = Boolean(args.length && ['week', 'неделя'].includes(args[0].toLowerCase()));
-  const sent = await replyBold(message, await xpTopText(weekly), await xpMenu(message.chat));
+  const sent = await replyBold(message, await xpTopText(weekly), await xpMenu(message.chat, message.from.id));
   await tidyPrivate(message, s, sent);
   await cleanUpLater(message, sent);
 }
