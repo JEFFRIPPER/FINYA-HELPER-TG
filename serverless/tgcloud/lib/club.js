@@ -6,6 +6,7 @@ import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_ID, SQUAD_LINKS } from './config.js';
 import { withPremium } from './emoji.js';
 import { CHAT_ACHIEVEMENTS, chatStats, unlock } from './feats.js';
+import { nameOf } from './members.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
 import { escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
@@ -332,7 +333,7 @@ async function pollView(poll, userId, owner) {
   const open = poll.status === 'open';
   // Results stay hidden until you vote, so the first votes don't steer the rest.
   const reveal = !open || Boolean(mine) || owner;
-  return {
+  const view = {
     id: poll.id,
     question: poll.question,
     open,
@@ -341,6 +342,20 @@ async function pollView(poll, userId, owner) {
     options: options.map((text, i) => ({ text, votes: reveal ? counts[i] : null })),
     at: poll.created_at,
   };
+  if (owner) await addVoters(view);
+  return view;
+}
+
+// Only the owner sees who chose what, in the order they voted.
+async function addVoters(view) {
+  for (const o of view.options) o.voters = [];
+  const rows = await db.all(sql`SELECT v.user_id, v.option, v.voted_at, p.username FROM poll_votes v
+    LEFT JOIN profiles p ON p.user_id = v.user_id
+    WHERE v.poll_id = ${view.id} ORDER BY v.voted_at, v.user_id`);
+  for (const r of rows) {
+    const o = view.options[r.option];
+    if (o) o.voters.push({ id: r.user_id, name: await nameOf(r.user_id), username: r.username || '', at: r.voted_at });
+  }
 }
 
 async function pollsView(userId, owner) {
