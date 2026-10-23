@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-23-inline-premium',
+    date: '23 октября 2026',
+    title: 'Премиум-эмодзи в РП из любого чата',
+    items: [
+      '✨ РП через «@finya_helper_Squad_bot» теперь приходят с премиум-эмодзи Сквада, как ответы Фини в чатах.',
+    ],
+  },
+  {
     id: '2026-10-23-inline-rp',
     date: '23 октября 2026',
     title: 'РП в любом чате',

@@ -1,8 +1,9 @@
 // Inline mode: «@бот обнять @ник текст» in any chat, even a private one between two
 // people where Финя is not a member. Needs Inline Mode on in BotFather.
-import { api } from 'sdk';
+import { api, BotApiError } from 'sdk';
 import { escapeHtml, fullName, truncate } from './util.js';
 import * as bio from './bio.js';
+import { premiumMap, wrap } from './emoji.js';
 import { mention } from './moder.js';
 import * as social from './social.js';
 
@@ -60,11 +61,26 @@ export async function results(query) {
 
 export async function onInlineQuery(query) {
   const list = await results(query);
-  await api.answerInlineQuery({
+  const answer = (items) => api.answerInlineQuery({
     inline_query_id: query.id,
-    results: list,
+    results: items,
     // The actor's name is in the text: results are per person.
     is_personal: true,
     cache_time: 10,
   });
+  // Premium emoji from the owner's packs, as in the chats; plain ones if Telegram refuses.
+  const map = await premiumMap();
+  const fancy = list.map((r) => ({
+    ...r, input_message_content: { ...r.input_message_content, message_text: wrap(r.input_message_content.message_text, map) },
+  }));
+  if (fancy.every((r, i) => r.input_message_content.message_text === list[i].input_message_content.message_text)) {
+    await answer(list);
+    return;
+  }
+  try {
+    await answer(fancy);
+  } catch (err) {
+    if (!(err instanceof BotApiError) || err.code !== 400) throw err;
+    await answer(list);
+  }
 }
