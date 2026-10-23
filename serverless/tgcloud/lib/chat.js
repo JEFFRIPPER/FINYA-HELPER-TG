@@ -181,6 +181,12 @@ async function profileCard(chat, who, self) {
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
   const role = group ? await chatRole(chat.id, who.id) : null;
   if (role) head.push(role);
+  const home = await anketa.citizenshipOf(who.id);
+  if (home) {
+    head.push(group && home.chat_id === chat.id
+      ? `🏡 Гражданин этого чата · ${ts - home.since < 86400 ? 'с сегодня' : ageText(ts - home.since)}`
+      : `🏡 Гражданин чата «${escapeHtml(truncate(await anketa.chatTitle(home.chat_id), 40))}»`);
+  }
   const jobs = await staff.positionsOf(who.id);
   if (jobs.length) head.push(`💼 Должность: ${jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}`).join(', ')}`);
   if (spouse) {
@@ -316,6 +322,11 @@ async function anketaCard(who, self) {
   if (d.peak != null) {
     const mood = HOUR_MOODS.find(([until]) => d.peak < until)[1];
     about.push(`🕐 Час пик: ${pad2(d.peak)}:00–${pad2((d.peak + 1) % 24)}:00 · ${mood}`);
+  }
+  if (d.citizen) {
+    const c = d.citizen;
+    about.push(`🏡 Гражданин чата «${escapeHtml(truncate(c.title, 40))}» ` +
+      (ts - c.since < 86400 ? 'с сегодня' : `${ageText(ts - c.since)} (с ${fmtMsk(c.since).slice(0, 10)})`));
   }
   if (d.favourite) about.push(`❤️ Любимый чат: «${escapeHtml(truncate(d.favourite.title, 40))}»`);
   const spouse = await social.spouseOf(who.id);
@@ -469,7 +480,10 @@ async function statsPanel(chatId, period, viewer = null) {
   const s = await members.periodStats(chatId, period, STAT_LIST);
   let text = `📊 Стата чата · ${STAT_PERIODS[period][1]}\n\n👥 Участников: ${s.members} · писали: ${s.writers}\n`;
   if (!s.top.length) text += '\nПока никто не писал: напиши что-нибудь, и ты первый в списке 😉\n';
-  s.top.forEach((r, i) => { text += `\n${placeMark(i)} ${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`; });
+  const home = await anketa.citizenIds(chatId);
+  s.top.forEach((r, i) => {
+    text += `\n${placeMark(i)} ${home.has(r.user_id) ? '🏡 ' : ''}${escapeHtml(truncate(r.name, 35))} — ${msgsWord(r.n)}`;
+  });
   if (s.writers > s.top.length) text += `\n…и ещё ${s.writers - s.top.length}`;
   if (viewer) {
     const mine = await members.placeOf(chatId, period, viewer.id);
@@ -658,6 +672,8 @@ async function chatInfo(message) {
   const lines = [`🏙 Чат «${title}»`, ''];
   lines.push(`👥 Население: ${fmtThousands(c.members)}${c.fresh ? ` · новичков за неделю: ${c.fresh}` : ''}`);
   lines.push(`✍️ Пишут сегодня: ${c.writers}`);
+  const citizens = await anketa.citizenCount(message.chat.id);
+  if (citizens) lines.push(`🏡 Граждан: ${citizens}`);
   if (Number.isFinite(c.since)) {
     lines.push(`📅 Финя знает чат с ${fmtMsk(c.since).slice(0, 10)} (${ts - c.since < 86400 ? 'сегодня' : ageText(ts - c.since)})`);
   }
@@ -678,6 +694,34 @@ async function chatInfo(message) {
     }
   }
   await say(message, text, { temp: true });
+}
+
+// ---- citizenship: «+Гражданство» makes the chat home --------------------------------
+
+async function citizenCommand(message, self) {
+  try {
+    const r = await anketa.becomeCitizen(message.chat.id, self.id);
+    const ts = nowInt();
+    const title = escapeHtml(truncate(message.chat.title || 'Чат', 40));
+    let text = `🏡 ${mention(self.id, self.name)} теперь гражданин чата «${title}»` +
+      (ts - r.since >= 86400 ? `, здесь с ${fmtMsk(r.since).slice(0, 10)} (${ageText(ts - r.since)})` : '') + '.';
+    if (r.moved) text += `\nПрежнее гражданство «${escapeHtml(truncate(await anketa.chatTitle(r.moved), 40))}» снято: дом у каждого один.`;
+    await say(message, text, { temp: true });
+  } catch (err) {
+    if (!(err instanceof anketa.AnketaError)) throw err;
+    await say(message, err.message, { temp: true });
+  }
+}
+
+async function citizensText(chatId, title) {
+  const list = await anketa.citizensOf(chatId, 30);
+  const head = `🏡 Граждане чата «${escapeHtml(truncate(title || 'Чат', 40))}»`;
+  if (!list.length) return `${head}\n\nПока никого. Стань первым: «+Гражданство».`;
+  const ts = nowInt();
+  const total = await anketa.citizenCount(chatId);
+  const lines = list.map((r, i) => `${i + 1}. ${escapeHtml(truncate(r.name, 30))} — ${ts - r.since < 86400 ? 'с сегодня' : ageText(ts - r.since)}`);
+  if (total > list.length) lines.push(`…и ещё ${total - list.length}`);
+  return `${head}: ${total}\n\n${lines.join('\n')}`;
 }
 
 // ---- chart themes from the shop ----------------------------------------------------
@@ -1194,6 +1238,7 @@ const HELP = {
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
     ['📋 Моя Анкета · Анкета (ответом)', 'Анкета по всем чатам Сквада сразу: график, стаж, актив, серия дней, рекордный день, час пик, чаты и мешок'],
     ['🎨 Тема Графика · Тема Графика Неон', 'Цвет графиков в «Кто Я» и анкете. Темы покупаются в Лавке за XP'],
+    ['🏡 +Гражданство · -Гражданство · Кто Граждане', 'Сделай этот чат своим домом: «Гражданин чата» в анкете и «Кто Я», 🏡 рядом с именем в стате. Гражданство одно, новое заменяет старое'],
     ['🏙 Чат Инфо', 'Карточка чата: график, население, сообщения за день, неделю, месяц и всё время, рекордный день и самые активные'],
     ['🎂 +ДР 16.12.1999 · +Пол М · +Город Москва', 'Данные для анкеты. Убрать: «-ДР», «-Пол», «-Город»'],
     ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
@@ -1204,6 +1249,7 @@ const HELP = {
   people: ['💞 Люди', () => [
     ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
     ['💞 Встречаться (ответом) · Мои Отношения · Расстаться · Кто Встречается', 'Отношения до брака. Сами не заканчиваются, только по «Расстаться» или когда пара женится'],
+    ['📅 Начало Отношений 01.05.2024 · Начало Брака 01.05.2024', 'Если пара была вместе ещё до Фини: дни и годовщины посчитаются с этой даты. Бесплатно, раз в месяц'],
     ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. С годовщинами Финя поздравляет сама'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
     ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
@@ -1396,6 +1442,21 @@ export async function handleText(message) {
     await datingStatus(message, who, who.id === self.id);
     return true;
   }
+  const start = /^(?:начало|дата|старт)\s+(брака|отношений|отнош|отнов)(?:\s+(\S+))?$/u.exec(cmd);
+  if (start) {
+    const kind = start[1] === 'брака' ? 'marriage' : 'dating';
+    try {
+      const partnerId = await social.setPairSince(kind, self.id, start[2]);
+      const pair = kind === 'marriage' ? await social.spouseOf(self.id) : await social.partnerOf(self.id);
+      const partner = escapeHtml(truncate(await members.nameOf(partnerId), 40));
+      await say(message, `${kind === 'marriage' ? '💍 Брак' : '💞 Отношения'} с ${partner} теперь ${kind === 'marriage' ? 'считается' : 'считаются'} с ` +
+        `${fmtMsk(pair.since).slice(0, 10)}: ${daysWord(social.marriedDays(pair.since))} вместе. Поменять снова можно через месяц.`, { temp: true });
+    } catch (err) {
+      if (!(err instanceof social.SocialError)) throw err;
+      await say(message, `❌ ${err.message}`, { temp: true });
+    }
+    return true;
+  }
   if (['расстаться', 'расстаемся'].includes(cmd)) {
     await breakUpPrompt(message);
     return true;
@@ -1407,6 +1468,20 @@ export async function handleText(message) {
   const theme = /^тема графика(?:\s+(.+))?$/u.exec(cmd);
   if (theme) {
     await themeCommand(message, self, theme[1]);
+    return true;
+  }
+  if (cmd === '+гражданство' || cmd === '+ гражданство') {
+    if (group) await citizenCommand(message, self);
+    else await say(message, '🏡 Гражданство берут в чате: напиши там «+Гражданство».', { temp: true });
+    return true;
+  }
+  if (cmd === '-гражданство' || cmd === '- гражданство') {
+    const removed = await anketa.dropCitizenship(self.id);
+    await say(message, removed ? '🏡 Гражданство снято.' : 'Гражданства и так нет. Взять: «+Гражданство» в своём чате.', { temp: true });
+    return true;
+  }
+  if (group && ['кто граждане', 'все граждане', 'кто гражданин', 'граждане', 'гражданство'].includes(cmd)) {
+    await say(message, await citizensText(message.chat.id, message.chat.title), { temp: true });
     return true;
   }
   if (group && ['чат инфо', 'инфо чата', 'инфо чат', 'о чате', 'чат стата'].includes(cmd)) {
