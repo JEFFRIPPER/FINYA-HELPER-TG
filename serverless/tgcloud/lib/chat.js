@@ -14,6 +14,7 @@ import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
 import { withPremium } from './emoji.js';
+import { DATIVE } from './inline.js';
 import * as feats from './feats.js';
 import * as games from './games.js';
 import * as members from './members.js';
@@ -784,7 +785,7 @@ async function rp(message, found, target) {
   const actor = message.from;
   const m = /^([^\p{L}\p{N}]+?)\s+(.+)$/u.exec(found.action);
   const [emoji, verb] = m ? [escapeHtml(m[1]), m[2]] : ['✨', found.action];
-  const who = target.id === actor.id ? 'себя' : mention(target.id, target.name);
+  const who = target.id === actor.id ? (DATIVE.test(verb) ? 'себе' : 'себя') : mention(target.id, target.name);
   let text = `${emoji} ${mention(actor.id, await nameFor(actor))} ${escapeHtml(verb)} ${who}`;
   if (found.rest) text += `\n💬 «${escapeHtml(truncate(found.rest, 200))}»`;
   // In a group the command itself goes away: Финя's line answers the target's message.
