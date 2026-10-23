@@ -147,7 +147,8 @@
   ];
   var GITHUB = 'https://github.com/JEFFRIPPER/';
   // Telegram's header and bottom bar blend into the page (see style.css).
-  var BG = '#070203';
+  var HEADER = '#6b0a0a';
+  var BG = '#2e0505';
   var BAR = '#090203';
   // Material 3 fade through: the old content fades out for 90 ms.
   var FADE_OUT_MS = 90;
@@ -273,7 +274,7 @@
 
   function paintTelegram() {
     if (!tg) return;
-    try { tg.setHeaderColor(BG); } catch (e) { /* old client */ }
+    try { tg.setHeaderColor(HEADER); } catch (e) { /* old client */ }
     try { tg.setBackgroundColor(BG); } catch (e) { /* old client */ }
     try { tg.setBottomBarColor(BAR); } catch (e) { /* old client */ }
   }

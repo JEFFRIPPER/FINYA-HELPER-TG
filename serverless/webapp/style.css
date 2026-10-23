@@ -4,7 +4,10 @@
 /* "Профиль Фини": always dark, blood red with glow (the SQUAD VPN look),
    Material 3 shapes, type scale and motion. */
 :root {
-  --bg: #070203;
+  /* Background: the blood red of the Squad's COUNTER (its dark hero gradient). */
+  --bg: #2e0505;
+  --bg-top: #6b0a0a;
+  --bg-bottom: #140707;
   --surface: rgba(30, 8, 11, 0.78);
   --surface-high: rgba(46, 11, 16, 0.82);
   --surface-solid: #140507;
@@ -50,8 +53,9 @@ html, body {
 
 button { font: inherit; color: inherit; -webkit-user-select: none; user-select: none; }
 
-/* Backdrop: red light from above, embers drifting slowly. The top edge stays
-   at --bg so it meets Telegram's header without a seam. */
+/* Backdrop: blood red from the top left down to near black, scarlet light in
+   the top right, embers drifting slowly. The top edge stays at --bg-top so it
+   meets Telegram's header without a seam. */
 .backdrop {
   position: fixed;
   inset: 0;
@@ -59,11 +63,9 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(180deg, var(--bg) 0, rgba(7, 2, 3, 0) 72px),
-    radial-gradient(120% 60% at 50% -12%, rgba(150, 0, 24, 0.62), transparent 62%),
-    radial-gradient(90% 55% at 110% 105%, rgba(110, 0, 18, 0.42), transparent 60%),
-    radial-gradient(70% 40% at -10% 60%, rgba(90, 0, 14, 0.30), transparent 60%),
-    var(--bg);
+    linear-gradient(180deg, var(--bg-top) 0, rgba(107, 10, 10, 0) 72px),
+    radial-gradient(120% 140% at 100% 0%, rgba(255, 36, 0, 0.22), transparent 55%),
+    linear-gradient(135deg, var(--bg-top) 0%, var(--bg) 58%, var(--bg-bottom) 100%);
 }
 /* Soft gradient orbs instead of filter: blur, which is costly in mobile WebViews. */
 .backdrop i {
@@ -72,9 +74,9 @@ button { font: inherit; color: inherit; -webkit-user-select: none; user-select: 
   animation: drift 18s var(--ease-standard) infinite alternate;
   will-change: transform;
 }
-.backdrop i:nth-child(1) { width: 340px; height: 340px; left: -140px; top: 14%; background: radial-gradient(closest-side, rgba(138, 0, 24, 0.5), rgba(138, 0, 24, 0.25) 40%, rgba(138, 0, 24, 0.07) 70%, rgba(138, 0, 24, 0)); }
-.backdrop i:nth-child(2) { width: 300px; height: 300px; right: -130px; top: 48%; background: radial-gradient(closest-side, rgba(163, 0, 29, 0.42), rgba(163, 0, 29, 0.21) 40%, rgba(163, 0, 29, 0.06) 70%, rgba(163, 0, 29, 0)); animation-duration: 22s; animation-delay: -6s; }
-.backdrop i:nth-child(3) { width: 280px; height: 280px; left: 22%; bottom: -150px; background: radial-gradient(closest-side, rgba(109, 0, 18, 0.5), rgba(109, 0, 18, 0.25) 40%, rgba(109, 0, 18, 0.07) 70%, rgba(109, 0, 18, 0)); animation-duration: 26s; animation-delay: -12s; }
+.backdrop i:nth-child(1) { width: 340px; height: 340px; left: -140px; top: 14%; background: radial-gradient(closest-side, rgba(255, 36, 0, 0.16), rgba(255, 36, 0, 0.08) 40%, rgba(255, 36, 0, 0.02) 70%, rgba(255, 36, 0, 0)); }
+.backdrop i:nth-child(2) { width: 300px; height: 300px; right: -130px; top: 48%; background: radial-gradient(closest-side, rgba(224, 16, 0, 0.18), rgba(224, 16, 0, 0.09) 40%, rgba(224, 16, 0, 0.025) 70%, rgba(224, 16, 0, 0)); animation-duration: 22s; animation-delay: -6s; }
+.backdrop i:nth-child(3) { width: 280px; height: 280px; left: 22%; bottom: -150px; background: radial-gradient(closest-side, rgba(176, 0, 0, 0.3), rgba(176, 0, 0, 0.15) 40%, rgba(176, 0, 0, 0.04) 70%, rgba(176, 0, 0, 0)); animation-duration: 26s; animation-delay: -12s; }
 @keyframes drift {
   from { transform: translate3d(0, 0, 0) scale(1); }
   to { transform: translate3d(40px, -60px, 0) scale(1.15); }

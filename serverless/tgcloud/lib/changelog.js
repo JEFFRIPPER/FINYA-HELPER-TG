@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-23-scarlet-profile',
+    date: '23 октября 2026',
+    title: 'Алый фон профиля',
+    items: [
+      '🩸 Фон «Профиля Фини» теперь кроваво-алый: от яркого красного сверху до тёмного бордо внизу, с алым светом в углу.',
+    ],
+  },
+  {
     id: '2026-10-23-inline-rp',
     date: '23 октября 2026',
     title: 'РП в любом чате',
