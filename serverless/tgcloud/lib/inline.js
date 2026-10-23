@@ -11,12 +11,16 @@ import * as social from './social.js';
 const MAX_RESULTS = 50;
 const titleCase = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
+// Verbs whose object is in the dative: «даёт пять тебе», not «тебя».
+export const DATIVE = /^(?:да[её]т|дарит|жм[её]т|делает|шл[её]т|посылает|отправляет|показывает|пишет|говорит|желает|машет|подмигивает|кидает|бросает|протягивает|наливает|улыбается|аплодирует|кланяется)(?:\s|$)/u;
+
 // Who the action goes to when no @ник is given: the other person in a private chat,
-// Финя herself in the chat with her, everyone in a group.
-function defaultTarget(chatType) {
-  if (chatType === 'sender') return 'Финю';
-  if (chatType === 'group' || chatType === 'supergroup' || chatType === 'channel') return 'всех';
-  return 'тебя';
+// Финя herself in the chat with her, everyone in a group; in the case the verb needs.
+function defaultTarget(chatType, verb) {
+  const dative = DATIVE.test(verb);
+  if (chatType === 'sender') return dative ? 'Фине' : 'Финю';
+  if (chatType === 'group' || chatType === 'supergroup' || chatType === 'channel') return dative ? 'всем' : 'всех';
+  return dative ? 'тебе' : 'тебя';
 }
 
 // '🤗 обнимает' → ['🤗', 'обнимает'].
@@ -28,7 +32,7 @@ function splitAction(action) {
 export function rpText(actorId, actorName, action, rest, chatType) {
   const [emoji, verb] = splitAction(action);
   const at = /^(@\w{3,32})(?:\s+([\s\S]*))?$/u.exec(rest || '');
-  const target = at ? at[1] : defaultTarget(chatType);
+  const target = at ? at[1] : defaultTarget(chatType, verb);
   const comment = (at ? at[2] : rest || '').trim();
   let text = `${escapeHtml(emoji)} ${mention(actorId, actorName)} ${escapeHtml(verb)} ${escapeHtml(target)}`;
   if (comment) text += `\n💬 «${escapeHtml(truncate(comment, 200))}»`;

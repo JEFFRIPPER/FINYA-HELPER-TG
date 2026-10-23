@@ -36,6 +36,17 @@ test('a command with @ник and a comment; without @ник it goes to the other
   assert.match(texts(answered(api))[0], /обнимает всех$/);
   await handler(inline(anya, 'обнять', 'sender'));
   assert.match(texts(answered(api))[0], /обнимает Финю$/);
+  // «даёт пять всем», not «всех».
+  await handler(inline(anya, 'дать пять', 'supergroup'));
+  assert.match(texts(answered(api))[0], /даёт пять всем$/);
+  await handler(inline(anya, 'пожать руку'));
+  assert.match(texts(answered(api))[0], /жмёт руку тебе$/);
+  await handler(inline(anya, 'подарить цветы', 'sender'));
+  assert.match(texts(answered(api))[0], /дарит цветы Фине$/);
+  await handler(inline(anya, 'кусь'));
+  assert.match(texts(answered(api))[0], /делает кусь тебе$/);
+  await handler(inline(anya, 'угостить чаем'));
+  assert.match(texts(answered(api))[0], /угощает чаем тебя$/);
 });
 
 test('a prefix narrows the list; the owner\'s own actions and the nick are there too', async () => {
