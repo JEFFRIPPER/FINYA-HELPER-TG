@@ -441,6 +441,12 @@ export const awards = table('awards', {
   byUser: index('awards_by_user').on(t.user_id, t.given_at),
 }));
 
+// The degree of an award, 1–8 (🎗…🏵), like Iris has it. No row: degree 1.
+export const award_degrees = table('award_degrees', {
+  award_id: integer('award_id').primaryKey(),
+  degree: integer('degree').notNull(),
+});
+
 // «+ник Вася»: how Финя calls the member in tops, the profile and RP.
 export const nicks = table('nicks', {
   user_id: integer('user_id').primaryKey(),

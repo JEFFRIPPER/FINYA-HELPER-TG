@@ -228,7 +228,7 @@ async function profileCard(chat, who, self) {
   }
   const awards = await bio.awardsOf(who.id);
   if (awards.length) {
-    const shown = awards.slice(0, 5).map((a) => `🎖 ${escapeHtml(a.text)}, ${ageText(ts - a.given_at)}`);
+    const shown = awards.slice(0, 5).map((a) => `${bio.degreeIcon(a.degree)} ${escapeHtml(a.text)}`);
     if (awards.length > 5) shown.push(`…и ещё ${awards.length - 5}: «Награды»${self ? '' : ' ответом'}`);
     blocks.push(`🏅 Награды:\n${shown.join('\n')}`);
   }
@@ -422,13 +422,12 @@ async function aboutText(who, self) {
   return `📝 О себе · ${name}\n<blockquote>${escapeHtml(about)}</blockquote>`;
 }
 
-// «Награды»: all awards, numbered for «Снять Награду N».
+// «Награды»: all awards, numbered for «Снять Награду N», as Iris shows them.
 async function awardsText(who) {
   const list = await bio.awardsOf(who.id);
-  const name = escapeHtml(truncate(who.name, 60));
-  if (!list.length) return `🏅 Награды · ${name}\nПока пусто. Наградить могут админы чата: «Наградить Текст» ответом.`;
-  const ts = nowInt();
-  return `🏅 Награды · ${name}\n\n` + list.map((a, i) => `${i + 1}. ${escapeHtml(a.text)}, ${ageText(ts - a.given_at)}`).join('\n');
+  const name = mention(who.id, truncate(who.name, 60));
+  if (!list.length) return `🏆 Награды ${name}\nПока пусто. Наградить могут админы чата: «Наградить 1–8» ответом, текст с новой строки.`;
+  return `🏆 Награды ${name}:\n` + list.map((a, i) => `${i + 1}. ${bio.degreeIcon(a.degree)} ${escapeHtml(a.text)}`).join('\n');
 }
 
 // Awards are handed out by the chat's creator and admins (and the owner).
@@ -448,9 +447,9 @@ async function awardCommand(message, self, target, value) {
     return;
   }
   try {
-    // «наградить @ник Текст»: the mention is not part of the award.
-    const award = await bio.giveAward(message.chat.id, self.id, target.id, String(value || '').replace(/^@\w+\s*/u, ''));
-    await say(message, `🏅 ${mention(target.id, target.name)} получает награду «${escapeHtml(award)}»!`);
+    const { degree, text } = bio.parseAward(value);
+    const award = await bio.giveAward(message.chat.id, self.id, target.id, text, degree);
+    await say(message, `${bio.degreeIcon(degree)} ${mention(target.id, target.name)} получает награду ${degree} степени:\n${escapeHtml(award)}`);
   } catch (err) {
     if (!(err instanceof bio.BioError)) throw err;
     await say(message, `❌ ${err.message}`, { temp: true });
@@ -1245,7 +1244,7 @@ const HELP = {
     ['🎂 +ДР 16.12.1999 · +Пол М · +Город Москва', 'Данные для анкеты. Убрать: «-ДР», «-Пол», «-Город»'],
     ['🏷 +Ник Вася · -Ник · Ник (ответом)', 'Как Финя зовёт тебя в топах, профиле и РП'],
     ['📝 +Описание Текст · -Описание · Описание (ответом)', 'Пара строк о себе в профиле. «Описание» покажет целиком'],
-    ['🏅 Награды (ответом)', 'Награды участника от админов чата'],
+    ['🏅 Награды (ответом) · Снять Награды От (ответом)', 'Награды участника от админов чата, степени от 🎗 1 до 🏵 8. «Снять Награды От» убирает с тебя всё, что дал этот человек'],
     ['🏆 Ачивки (ответом)', `Сколько открыто из ${club.ACHIEVEMENTS.length} и последние. Новые Финя объявляет в чате сама`],
   ]],
   people: ['💞 Люди', () => [
@@ -1272,7 +1271,7 @@ const HELP = {
     ['🤔 Финя, Выбери А или Б · Финя, Вопрос?', 'Выбор из вариантов и ответ «да» или «нет»'],
   ]],
   admin: ['🛡 Админам', (moderation) => [
-    ['🏅 Наградить Текст (ответом) · Снять Награду N', 'Награды в профиле участника'],
+    ['🏅 Наградить 4 (ответом или с @ником) · Снять Награду N · Снять Все Награды', 'Степень 1–8: 🎗 🥉 🥈 🥇 🎖 🏅 🏆 🏵. Текст награды с новой строки, например:\nНаградить 4 @ник\n«Агент ириса» с. Иван'],
     ['📣 Финя, Созови Текст', `Тегает активных участников по ${SUMMON_PER_MESSAGE} в сообщении, не чаще раза в ${fmtWait(SUMMON_COOLDOWN)}`],
     ...(moderation ? [['🛡 Мут 1ч · Размут · Бан · Разбан · Кик · Варн · Снять Варн · Варны',
       'Ответом на сообщение. Причину пиши с новой строки']] : []),
@@ -1672,7 +1671,21 @@ export async function handleText(message) {
       return true;
     }
     const removed = await bio.removeAward(target.id, Number(take[1]));
-    await say(message, removed ? `🗑 Награда «${escapeHtml(removed)}» снята.` : 'Такой награды нет. Номера — в «Награды» ответом.', { temp: true });
+    await say(message, removed ? `🗑 Награда ${bio.degreeIcon(removed.degree)} ${escapeHtml(removed.text)} снята.` : 'Такой награды нет. Номера — в «Награды» ответом.', { temp: true });
+    return true;
+  }
+  if (/^снять\s+все\s+награды(?:\s+@\w+)?$/u.test(cmd) && target) {
+    if (!(await canAward(message.chat.id, self.id))) {
+      await say(message, '🏅 Снимать награды могут только админы чата.', { temp: true });
+      return true;
+    }
+    const n = await bio.removeAllAwards(target.id);
+    await say(message, n ? `🗑 С ${mention(target.id, target.name)} сняты все награды: ${n}.` : 'Наград у участника нет.', { temp: true });
+    return true;
+  }
+  if (/^снять\s+награды\s+от(?:\s+@\w+)?$/u.test(cmd) && target) {
+    const n = await bio.removeAwardsFrom(self.id, target.id);
+    await say(message, n ? `🗑 Сняты твои награды от ${mention(target.id, target.name)}: ${n}.` : `От ${mention(target.id, target.name)} у тебя наград нет.`, { temp: true });
     return true;
   }
   const mod = target && MOD_VERBS.exec(rest.trim());
