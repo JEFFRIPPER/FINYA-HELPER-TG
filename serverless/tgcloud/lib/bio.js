@@ -31,30 +31,75 @@ export async function clearAbout(userId) {
   return r.rowsAffected > 0;
 }
 
-// Newest first; that order also numbers them for «снять награду N».
+// Degrees 1–8, as Iris has them.
+export const AWARD_DEGREES = ['🎗', '🥉', '🥈', '🥇', '🎖', '🏅', '🏆', '🏵'];
+export const degreeIcon = (degree) => AWARD_DEGREES[Math.min(Math.max(degree || 1, 1), AWARD_DEGREES.length) - 1];
+
+// Highest degree first, then newest; that order also numbers them for «снять награду N».
 export async function awardsOf(userId, limit = AWARDS_PER_USER) {
-  return db.all(sql`SELECT id, text, given_at FROM awards WHERE user_id = ${userId}
-    ORDER BY given_at DESC, id DESC LIMIT ${limit}`);
+  return db.all(sql`SELECT a.id, a.text, a.given_at, a.given_by, COALESCE(d.degree, 1) AS degree
+    FROM awards a LEFT JOIN award_degrees d ON d.award_id = a.id WHERE a.user_id = ${userId}
+    ORDER BY COALESCE(d.degree, 1) DESC, a.given_at DESC, a.id DESC LIMIT ${limit}`);
 }
 
-export async function giveAward(chatId, fromId, toId, value) {
+// «Наградить 4\n«Агент» с. Иван» or «Наградить 4 @ник\nТекст»: a first line of only a degree
+// (and maybe the mention) sets the degree. Anything else is the old «Наградить Текст»,
+// degree 1: «Наградить 1 место в квизе» stays a title. → { degree, text }
+export function parseAward(value) {
+  const raw = String(value || '');
+  const m = /^\s*(\d{1,2})(?:\s+@\w+)?\s*\n([\s\S]*)$/u.exec(raw);
+  if (m) {
+    const degree = Number(m[1]);
+    if (degree < 1 || degree > AWARD_DEGREES.length) {
+      throw new BioError(`Степень награды — от 1 до ${AWARD_DEGREES.length}: ${AWARD_DEGREES.join(' ')}.`);
+    }
+    return { degree, text: m[2] };
+  }
+  if (/^\s*\d{1,2}(?:\s+@\w+)?\s*$/u.test(raw)) throw new BioError('Текст награды пиши с новой строки: «Наградить 4» и ниже название.');
+  // «наградить @ник Текст»: the mention is not part of the award.
+  return { degree: 1, text: raw.replace(/^\s*@\w+\s*/u, '') };
+}
+
+export async function giveAward(chatId, fromId, toId, value, degree = 1) {
   const clean = String(value || '').replace(/\s+/g, ' ').trim();
-  if (!clean) throw new BioError('Напиши название награды: «Наградить Лучший мем недели».');
+  if (!clean) throw new BioError('Напиши название награды с новой строки: «Наградить 4» и ниже текст.');
   if (Array.from(clean).length > AWARD_MAX) throw new BioError(`Название награды — до ${AWARD_MAX} символов.`);
   const count = await db.get(sql`SELECT COUNT(*) AS c FROM awards WHERE user_id = ${toId}`);
   if (count.c >= AWARDS_PER_USER) throw new BioError(`У участника уже ${AWARDS_PER_USER} наград. Сними старую: «Снять Награду N».`);
-  await db.run(sql`INSERT INTO awards (user_id, text, chat_id, given_by, given_at)
+  const r = await db.run(sql`INSERT INTO awards (user_id, text, chat_id, given_by, given_at)
     VALUES (${toId}, ${clean}, ${chatId}, ${fromId}, ${nowInt()})`);
+  if (degree > 1) {
+    const row = await db.get(sql`SELECT id FROM awards WHERE user_id = ${toId} ORDER BY id DESC LIMIT 1`);
+    await db.run(sql`INSERT OR REPLACE INTO award_degrees (award_id, degree) VALUES (${row.id}, ${degree})`);
+  }
   return clean;
 }
 
-// n: the place in «награды», from 1. → the removed award's text, or null.
+async function dropAwards(ids) {
+  for (const id of ids) {
+    await db.run(sql`DELETE FROM awards WHERE id = ${id}`);
+    await db.run(sql`DELETE FROM award_degrees WHERE award_id = ${id}`);
+  }
+  return ids.length;
+}
+
+// n: the place in «награды», from 1. → the removed award ({ text, degree }), or null.
 export async function removeAward(userId, n) {
   const list = await awardsOf(userId);
   const award = list[n - 1];
   if (!award) return null;
-  await db.run(sql`DELETE FROM awards WHERE id = ${award.id}`);
-  return award.text;
+  await dropAwards([award.id]);
+  return award;
+}
+
+// «Снять все награды» → how many were removed.
+export async function removeAllAwards(userId) {
+  return dropAwards((await awardsOf(userId)).map((a) => a.id));
+}
+
+// «Снять награды от»: the member drops what the other one gave them. → how many.
+export async function removeAwardsFrom(userId, giverId) {
+  return dropAwards((await awardsOf(userId)).filter((a) => a.given_by === giverId).map((a) => a.id));
 }
 
 // ---- nick ------------------------------------------------------------------------
