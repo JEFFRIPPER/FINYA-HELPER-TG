@@ -253,3 +253,32 @@ test('anniversaries: round numbers of days, once a day from 12:00', async () => 
   await pump({ force: true });
   assert.equal(sent(api).filter((c) => /Годовщина/.test(c.params.text)).length, 1);
 });
+
+test('wedding names like in Russia: «мой брак», «браки» and the yearly greeting', async () => {
+  const social = await import('../tgcloud/lib/social.js');
+  assert.deepEqual(social.weddingOf(0), { years: 0, name: 'Зелёная', icon: '🌿' });
+  assert.equal(social.weddingOf(365 * 17).name, 'Хрустальная');
+  assert.equal(social.weddingOf(365 * 50).name, 'Золотая');
+  assert.deepEqual(social.nextWedding(300), { years: 1, name: 'Ситцевая', icon: '🧵', inDays: 65 });
+  assert.equal(social.nextWedding(365 * 75), null);
+  assert.equal(social.weddingOn(365 * 25).name, 'Серебряная');
+  assert.equal(social.weddingOn(365 * 16), null);
+
+  const api = await setup();
+  await setSetting('chat_captcha', false);
+  const now = Date.UTC(2026, 9, 21, 10, 0, 0);
+  Date.now = () => now;
+  const ts = nowInt();
+  await db.run('INSERT INTO spouses (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?)',
+    [ts - 365 * 5 * DAY - 60, ts - 365 * 5 * DAY - 60]);
+  await db.run(`INSERT INTO chat_members (chat_id, user_id, name, username, status, first_seen, last_active, msgs)
+    VALUES (?, 2, 'Аня', '', 'member', ?, ?, 1)`, [DISCUSSION.id, ts, ts]);
+  const texts = () => sent(api).map((c) => c.params.text).join('\n---\n');
+  await say(user(2, { first_name: 'Аня' }), 'мой брак');
+  assert.match(texts(), /🪵 Сейчас: деревянная свадьба \(5 лет\)\n⏳ Дальше: чугунная свадьба \(6 лет\) через 365 дней/);
+  await say(user(2, { first_name: 'Аня' }), 'браки');
+  assert.match(texts(), /1825 дней · 🪵 деревянная/);
+  await pump({ force: true });
+  const post = sent(api).find((c) => /Годовщина/.test(c.params.text));
+  assert.match(post.params.text, /5 лет вместе, деревянная свадьба 🪵!/);
+});

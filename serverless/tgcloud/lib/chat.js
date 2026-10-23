@@ -535,7 +535,14 @@ async function marriageStatus(message) {
     return;
   }
   const partner = await members.nameOf(s.partner_id);
-  await say(message, `💍 Ты в браке с ${escapeHtml(truncate(partner, 40))} уже ${daysWord(social.marriedDays(s.since))}.`, { temp: true });
+  const days = social.marriedDays(s.since);
+  const now = social.weddingOf(days);
+  const next = social.nextWedding(days);
+  const yearsText = now.years ? `${now.years} ${plural(now.years, 'год', 'года', 'лет')}` : 'первый год';
+  await say(message, `💍 Ты в браке с ${escapeHtml(truncate(partner, 40))} уже ${daysWord(days)}.\n` +
+    `${now.icon} Сейчас: ${now.name.toLowerCase()} свадьба (${yearsText})` +
+    (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : ''),
+  { temp: true });
 }
 
 async function propose(message, target) {
@@ -569,7 +576,9 @@ async function couplesText() {
   for (const [i, r] of rows.entries()) {
     const a = escapeHtml(truncate(await members.nameOf(r.a), 30));
     const b = escapeHtml(truncate(await members.nameOf(r.b), 30));
-    text += `\n${placeMark(i)} ${a} + ${b} — ${daysWord(social.marriedDays(r.since))}`;
+    const days = social.marriedDays(r.since);
+    const w = social.weddingOf(days);
+    text += `\n${placeMark(i)} ${a} + ${b} — ${daysWord(days)} · ${w.icon} ${w.name.toLowerCase()}`;
   }
   return text;
 }
@@ -1016,7 +1025,8 @@ export const isAnniversary = (days) => ANNIVERSARY_DAYS.has(days) || (days > 0 &
 function anniversaryWord(days) {
   if (days % 365 === 0) {
     const y = days / 365;
-    return `${y} ${plural(y, 'год', 'года', 'лет')} вместе`;
+    const w = social.weddingOn(days);
+    return `${y} ${plural(y, 'год', 'года', 'лет')} вместе` + (w ? `, ${w.name.toLowerCase()} свадьба ${w.icon}` : '');
   }
   return `${daysWord(days)} вместе`;
 }
@@ -1251,7 +1261,7 @@ const HELP = {
     ['❤️ + или «Спасибо» (ответом) · Топ Репы', 'Репутация участнику, без лимита, и топ репутации Сквада'],
     ['💞 Встречаться (ответом) · Мои Отношения · Расстаться · Кто Встречается', 'Отношения до брака. Сами не заканчиваются, только по «Расстаться» или когда пара женится'],
     ['📅 Начало Отношений 01.05.2024 · Начало Брака 01.05.2024', 'Если пара была вместе ещё до Фини: дни и годовщины посчитаются с этой даты. Бесплатно, раз в месяц'],
-    ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. С годовщинами Финя поздравляет сама'],
+    ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. «Мой Брак» покажет, какая сейчас свадьба (ситцевая, деревянная… золотая) и сколько до следующей. С годовщинами Финя поздравляет сама'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП»'],
     ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
   ]],
