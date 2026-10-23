@@ -6,18 +6,20 @@
 
 1. Создайте отдельную ветку от актуального `main`.
 2. Не добавляйте реальные токены, `.env`, логи и runtime-файлы.
-3. Сохраняйте совместимость с текущей архитектурой:
-   `watchdog.py -> run_background.py -> bot.py`.
+3. Рабочий код бота лежит в `serverless/` (Telegram Serverless). Python-файлы в корне — старая версия,
+   её не правят и не запускают.
+4. Новые данные кладите в новые таблицы `serverless/tgcloud/schema.js`, существующие не меняйте.
+5. Каждый выкат добавляет запись наверх `CHANGES` в `serverless/tgcloud/lib/changelog.js`.
 
 ## Проверка кода
 
 Перед отправкой изменений выполните:
 
 ```bash
-pip install -r requirements.txt
-python -m py_compile bot.py run_background.py watchdog.py
+cd serverless
+npm install
+npm test
 ```
-
 
 ## Коммиты
 
@@ -26,9 +28,8 @@ python -m py_compile bot.py run_background.py watchdog.py
 Примеры:
 
 ```text
-Fix Telegram reconnect handling
-Improve watchdog recovery
-Update GitVerse CI checks
+Финя: кнопка «Закрыть» на ответах в чатах
+Финя: награды со степенями 1–8
 ```
 
 ## Запрос на слияние
