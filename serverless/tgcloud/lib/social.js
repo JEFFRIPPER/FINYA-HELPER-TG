@@ -42,6 +42,38 @@ export async function spouseOf(userId) {
 
 export const marriedDays = (since, ts = nowInt()) => Math.max(0, Math.floor((ts - since) / DAY));
 
+// Wedding anniversaries as they are called in Russia. Year 0 is the first year, «зелёная».
+export const WEDDINGS = [
+  [0, 'Зелёная', '🌿'], [1, 'Ситцевая', '🧵'], [2, 'Бумажная', '📜'], [3, 'Кожаная', '👜'], [4, 'Льняная', '🌾'],
+  [5, 'Деревянная', '🪵'], [6, 'Чугунная', '⚙️'], [7, 'Медная', '🥉'], [8, 'Жестяная', '🥫'], [9, 'Фаянсовая', '🏺'],
+  [10, 'Оловянная', '🌹'], [11, 'Стальная', '🔩'], [12, 'Никелевая', '🪙'], [13, 'Кружевная', '🎀'], [14, 'Агатовая', '🪨'],
+  [15, 'Хрустальная', '🔮'], [18, 'Бирюзовая', '💠'], [20, 'Фарфоровая', '🍵'], [25, 'Серебряная', '🥈'],
+  [30, 'Жемчужная', '🦪'], [35, 'Коралловая', '🪸'], [40, 'Рубиновая', '❤️'], [45, 'Сапфировая', '💙'],
+  [50, 'Золотая', '🥇'], [55, 'Изумрудная', '💚'], [60, 'Бриллиантовая', '💎'], [65, 'Железная', '🛡'],
+  [70, 'Благодатная', '🙏'], [75, 'Коронная', '👑'],
+];
+const YEAR_DAYS = 365;
+
+// The anniversary already reached: { years, name, icon }.
+export function weddingOf(days) {
+  const years = Math.floor(days / YEAR_DAYS);
+  const [y, name, icon] = WEDDINGS.filter(([w]) => w <= years).at(-1);
+  return { years: y, name, icon };
+}
+
+// The next named one: { years, name, icon, inDays }, or null after the last.
+export function nextWedding(days) {
+  const next = WEDDINGS.find(([w]) => w * YEAR_DAYS > days);
+  return next ? { years: next[0], name: next[1], icon: next[2], inDays: next[0] * YEAR_DAYS - days } : null;
+}
+
+// Exactly on a named anniversary: its { years, name, icon }, else null.
+export function weddingOn(days) {
+  if (days <= 0 || days % YEAR_DAYS !== 0) return null;
+  const w = WEDDINGS.find(([y]) => y === days / YEAR_DAYS);
+  return w ? { years: w[0], name: w[1], icon: w[2] } : null;
+}
+
 // A proposal waits for the other one's button for an hour.
 export async function propose(chatId, fromId, toId) {
   if (fromId === toId) throw new SocialError('Жениться на себе нельзя, даже в Скваде 😏');
