@@ -5,11 +5,12 @@ import { apiMock, db } from 'sdk';
 import profileEndpoint from '../tgcloud/endpoints/profile.js';
 import { onCallbackQuery, onChatMember, onMessage, pump } from '../tgcloud/lib/bot.js';
 import * as moder from '../tgcloud/lib/moder.js';
+import * as rpStickers from '../tgcloud/lib/rp_stickers.js';
 import { setSetting } from '../tgcloud/lib/store.js';
 import { nowInt } from '../tgcloud/lib/util.js';
 import * as xp from '../tgcloud/lib/xp.js';
 import {
-  BOT, callback, channelRoot, checkErrors, DISCUSSION, FAMILY, groupMessage, OWNER, privateMessage, setup, user, replies } from './helpers.mjs';
+  apiError, BOT, callback, channelRoot, checkErrors, DISCUSSION, FAMILY, groupMessage, OWNER, privateMessage, setup, user, replies } from './helpers.mjs';
 
 const realNow = Date.now;
 const realRandom = Math.random;
@@ -522,3 +523,46 @@ test('private chat: фарм and кто я work, chat tops point to the chat', a
   await onMessage(privateMessage(user(1), 'фарм'));
   assert.equal(api.called('sendMessage').filter((c) => c.params.chat_id === OWNER.id).length, 1);
 });
+
+test('RP: Финя adds her sticker from the SquadCorporation pack', async () => {
+  let fetched = 0;
+  const api = await setup({
+    getStickerSet: (p) => {
+      fetched++;
+      assert.equal(p.name, 'SquadCorporation');
+      return { name: p.name, stickers: Array.from({ length: 25 }, (_, i) => ({ file_id: `S${i}` })) };
+    },
+  });
+  await rpStickers.forget();
+  const a = user(1, { first_name: 'Аня' });
+  const b = user(2, { first_name: 'Боря' });
+  await say(a, 'обнять', replyTo(b));
+  assert.match(lastSent(api), /обнимает/);
+  assert.equal(api.called('sendSticker').at(-1).params.sticker, 'S17');
+  assert.equal(api.called('sendSticker').at(-1).params.chat_id, DISCUSSION.id);
+  await say(a, 'ударить', replyTo(b));
+  assert.equal(api.called('sendSticker').at(-1).params.sticker, 'S6');
+  // The pack is fetched once and kept.
+  assert.equal(fetched, 1);
+  // No fitting sticker: the line alone.
+  const before = api.called('sendSticker').length;
+  await say(a, 'пожать руку', replyTo(b));
+  assert.match(lastSent(api), /жмёт руку/);
+  assert.equal(api.called('sendSticker').length, before);
+  // In a forum the sticker stays in the topic.
+  await say(a, 'покормить', { ...replyTo(b), message_thread_id: 77, is_topic_message: true });
+  assert.equal(api.called('sendSticker').at(-1).params.sticker, 'S4');
+  assert.equal(api.called('sendSticker').at(-1).params.message_thread_id, 77);
+});
+
+test('RP: a sticker that cannot be sent does not break the line', async () => {
+  const api = await setup({
+    getStickerSet: () => ({ stickers: [{ file_id: 'gone' }] }),
+    sendSticker: () => { throw apiError('sendSticker', 400, 'Bad Request: wrong file identifier/HTTP URL specified'); },
+  });
+  await rpStickers.forget();
+  await say(user(1), 'угостить чаем', replyTo(user(2)));
+  assert.match(lastSent(api), /угощает чаем/);
+  assert.equal(api.called('sendSticker').length, 1);
+});
+
