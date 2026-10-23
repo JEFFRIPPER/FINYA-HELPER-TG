@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-23-command-help',
+    date: '23 октября 2026',
+    title: 'Подсказка к любой команде',
+    items: [
+      '❓ Допиши «помощь» к команде, и Финя покажет, как ей пользоваться, с примерами: «Награды Помощь», «Брак Помощь», «Финя, Напомни Помощь». Работает со всеми командами и РП-действиями.',
+    ],
+  },
+  {
     id: '2026-10-23-poll-voters',
     date: '23 октября 2026',
     title: 'Кто как ответил в опросе',
