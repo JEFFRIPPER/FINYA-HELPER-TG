@@ -94,7 +94,7 @@ test('«кто я»: the activity chart with the profile like Iris has it', asyn
   const other = photos(api).at(-1).params;
   assert.match(other.caption, /⭐ Админ этого чата · «Модер»/);
   assert.match(other.caption, /🕒 Последний актив: 2 ч назад/);
-  assert.equal(other.reply_markup, undefined);
+  assert.deepEqual(other.reply_markup.inline_keyboard.flat().map((b) => b.text), ['✖️ Закрыть']);
 });
 
 test('no right to send photos: the profile comes as text', async () => {

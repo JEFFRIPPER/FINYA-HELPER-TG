@@ -53,6 +53,21 @@ export function keyboard(rows) {
   return { inline_keyboard: rows };
 }
 
+// «✖️ Закрыть» under Финя's answer in a group: the one who asked (or a chat admin)
+// removes the answer and the command at once (lib/chat.js closeButton).
+export const CLOSE_PREFIX = 'close:';
+export function withClose(markup, userId) {
+  const rows = markup && markup.inline_keyboard ? markup.inline_keyboard : [];
+  if (rows.some((row) => row.some((b) => String(b.callback_data || '').startsWith(CLOSE_PREFIX)))) return markup;
+  return { ...(markup || {}), inline_keyboard: [...rows, [button('✖️ Закрыть', { callback_data: `${CLOSE_PREFIX}${userId}` })]] };
+}
+
+// The close row of a message being edited, so a new keyboard keeps it.
+export function closeRowOf(message) {
+  const rows = message && message.reply_markup && message.reply_markup.inline_keyboard;
+  return (rows || []).find((row) => row.some((b) => String(b.callback_data || '').startsWith(CLOSE_PREFIX))) || null;
+}
+
 export function menuButton(text, extra = {}) {
   const space = text.indexOf(' ');
   const prefix = space === -1 ? text : text.slice(0, space);
@@ -91,6 +106,11 @@ export async function editOrSend(query, text, replyMarkup) {
   text = boldHtml(text);
   const message = query.message;
   const params = { parse_mode: 'HTML' };
+  // A new keyboard keeps «✖️ Закрыть».
+  const close = closeRowOf(message);
+  if (close && !closeRowOf({ reply_markup: replyMarkup })) {
+    replyMarkup = { inline_keyboard: [...((replyMarkup && replyMarkup.inline_keyboard) || []), close] };
+  }
   if (replyMarkup) params.reply_markup = replyMarkup;
   try {
     if (message.photo && text.length <= 1024) {

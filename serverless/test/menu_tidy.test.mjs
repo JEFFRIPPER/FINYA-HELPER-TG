@@ -54,7 +54,7 @@ test('/rank in a group: one profile button, both messages deleted later', async 
   const command = groupMessage(DISCUSSION, user(4), '/rank');
   await onMessage(command);
   const sent = api.called('sendMessage')[0];
-  assert.equal(buttons(sent.params).length, 1);
+  assert.deepEqual(buttons(sent.params).map((b) => b.text).slice(1), ['✖️ Закрыть']);
   const queued = (await db.all('SELECT message_id FROM autodelete ORDER BY message_id')).map((r) => r.message_id);
   assert.equal(queued.length, 2);
   assert.ok(queued.includes(command.message_id));
