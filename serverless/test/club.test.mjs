@@ -174,6 +174,11 @@ test('polls: the owner creates and closes, members vote once for XP', async () =
   assert.equal(data.result.points, club.POLL_XP);
   assert.equal(data.club.polls[0].my, 1);
   assert.deepEqual(data.club.polls[0].options.map((o) => o.votes), [0, 1, 0]);
+  // Only the owner sees who chose what.
+  assert.equal(data.club.polls[0].options[1].voters, undefined);
+  data = await profile(OWNER);
+  assert.deepEqual(data.club.polls[0].options.map((o) => o.voters.map((v) => v.id)), [[], [1], []]);
+  assert.equal(data.club.polls[0].options[1].voters[0].name, 'Alice');
   await assert.rejects(call(alice, { action: 'vote', poll: poll.id, option: 0 }), clubError);
   await call(OWNER, { action: 'poll_close', poll: poll.id });
   await assert.rejects(call(user(2), { action: 'vote', poll: poll.id, option: 0 }), clubError);

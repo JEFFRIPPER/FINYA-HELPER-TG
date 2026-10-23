@@ -1260,6 +1260,36 @@
       h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
   }
 
+  // The owner's view of a poll: every answer with who chose it.
+  function openPollAnswers(p) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    haptic();
+    var total = p.total || 0;
+    var answers = p.options.map(function (o, i) {
+      var voters = o.voters || [];
+      var pct = total ? Math.round((voters.length / total) * 100) : 0;
+      var fill = h('i', { class: 'poll-fill' });
+      fill.style.setProperty('--p', String(pct / 100));
+      return h('div', { class: 'poll-answer' },
+        h('div', { class: 'poll-res' }, fill,
+          h('span', { class: 'poll-text' }, h('span', { text: o.text })),
+          h('b', { text: voters.length + ' · ' + pct + '%' })),
+        voters.length
+          ? h('ul', { class: 'poll-voters' }, voters.map(function (v) {
+            return h('li', { class: v.username ? 'ripple' : null, onclick: v.username ? function () { openLink('https://t.me/' + v.username); } : null },
+              h('b', { text: v.name }), v.username ? h('span', { text: '@' + v.username }) : null);
+          }))
+          : h('p', { class: 'fine', text: 'Никто не выбрал' }));
+    });
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: p.question }),
+      h('p', { class: 'fine', text: (p.open ? 'Опрос идёт' : 'Опрос закрыт') + ' · ' + votesWord(total) }),
+      h('div', { class: 'poll-opts' }, answers),
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+  }
+
   function clubAdminCard(c) {
     var a = c.admin || {};
     function setting(key, title, sub) {
@@ -1270,16 +1300,17 @@
     } }, icon('visibility_fill'), 'Предпросмотр итогов');
     var polls = c.polls.map(function (p) {
       var best = p.options.slice().sort(function (x, y) { return (y.votes || 0) - (x.votes || 0); })[0];
-      var close = p.open ? h('button', { class: 'btn-text ripple', onclick: function () {
+      var close = p.open ? h('button', { class: 'btn-text ripple', onclick: function (e) {
+        e.stopPropagation();
         confirmDialog('Закрыть опрос?', [p.question, 'Голосовать больше нельзя, результаты увидят все.'], function () {
           return act({ action: 'poll_close', poll: p.id });
         });
       } }, 'Закрыть') : null;
-      return h('li', { class: 'item' },
+      return h('li', { class: 'item ripple', onclick: function () { openPollAnswers(p); } },
         h('div', { class: 'lead ' + (p.open ? 'primary' : 'muted') }, icon('how_to_vote_fill')),
         h('div', { class: 'body' }, h('b', { text: p.question }),
           h('span', { text: (p.open ? 'Идёт' : 'Закрыт') + ' · ' + votesWord(p.total || 0) + (p.total ? ' · лидер: ' + best.text : '') })),
-        close);
+        close || icon('chevron_right', 'icon go'));
     });
     return h('section', { class: 'card club-admin' },
       h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('celebration_fill')),
