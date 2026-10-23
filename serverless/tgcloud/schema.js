@@ -70,6 +70,17 @@ export const profile_info = table('profile_info', {
   updated_at: integer('updated_at').notNull(),
 });
 
+// Citizenship like Iris has it: the one Squad chat a member calls home («+Гражданство»
+// in it). since: when they first showed up there.
+export const citizens = table('citizens', {
+  user_id: integer('user_id').primaryKey(),
+  chat_id: integer('chat_id').notNull(),
+  since: integer('since').notNull(),
+  set_at: integer('set_at').notNull(),
+}, (t) => ({
+  byChat: index('citizens_by_chat').on(t.chat_id, t.since),
+}));
+
 // Chats where Финя works as the chat manager without the channel's posts (/chat_on).
 export const squad_chats = table('squad_chats', {
   chat_id: integer('chat_id').primaryKey(),

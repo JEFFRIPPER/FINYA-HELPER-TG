@@ -103,6 +103,47 @@ export async function clear(userId, field) {
   return r.rowsAffected > 0;
 }
 
+// ---- citizenship: the one Squad chat a member calls home -------------------------
+
+export async function citizenshipOf(userId) {
+  return db.get(sql`SELECT chat_id, since FROM citizens WHERE user_id = ${userId}`);
+}
+
+// «+Гражданство» in a chat: this chat becomes home, instead of the old one.
+// → { since, moved } (moved: the chat id left behind, if any).
+export async function becomeCitizen(chatId, userId, ts = nowInt()) {
+  const old = await citizenshipOf(userId);
+  if (old && old.chat_id === chatId) throw new AnketaError('Ты и так гражданин этого чата 🏡');
+  const m = await db.get(sql`SELECT first_seen FROM chat_members WHERE chat_id = ${chatId} AND user_id = ${userId}`);
+  const since = m && m.first_seen > 0 ? m.first_seen : ts;
+  await db.run(sql`INSERT INTO citizens (user_id, chat_id, since, set_at) VALUES (${userId}, ${chatId}, ${since}, ${ts})
+    ON CONFLICT(user_id) DO UPDATE SET chat_id = excluded.chat_id, since = excluded.since, set_at = excluded.set_at`);
+  return { since, moved: old ? old.chat_id : null };
+}
+
+export async function dropCitizenship(userId) {
+  const r = await db.run(sql`DELETE FROM citizens WHERE user_id = ${userId}`);
+  return r.rowsAffected > 0;
+}
+
+// Citizens of a chat still in it, the oldest first.
+export async function citizensOf(chatId, limit = 30) {
+  return db.all(sql`SELECT c.user_id, c.since, COALESCE((SELECT nick FROM nicks WHERE nicks.user_id = c.user_id), m.name) AS name
+    FROM citizens c JOIN chat_members m ON m.chat_id = c.chat_id AND m.user_id = c.user_id
+    WHERE c.chat_id = ${chatId} AND m.status = 'member' ORDER BY c.since, c.user_id LIMIT ${limit}`);
+}
+
+export async function citizenCount(chatId) {
+  const row = await db.get(sql`SELECT COUNT(*) AS n FROM citizens c JOIN chat_members m
+    ON m.chat_id = c.chat_id AND m.user_id = c.user_id WHERE c.chat_id = ${chatId} AND m.status = 'member'`);
+  return row.n;
+}
+
+// The chat's citizens as a set of user ids (the 🏡 in the stats).
+export async function citizenIds(chatId) {
+  return new Set((await db.all(sql`SELECT user_id FROM citizens WHERE chat_id = ${chatId}`)).map((r) => r.user_id));
+}
+
 // ---- birthday helpers ------------------------------------------------------------
 
 const ZODIAC = [
@@ -205,6 +246,7 @@ export async function anketaData(userId, ts = nowInt()) {
     streak: streaks([...days.keys()].sort((a, b) => a - b), mskDay(ts)),
     peak: await peakHour(userId),
     favourite: favourite && rows.length > 1 ? await titled(favourite) : null,
+    citizen: await citizenshipOf(userId).then(async (c) => (c ? { ...c, title: await chatTitle(c.chat_id) } : null)),
     homes: await Promise.all(homes.map(titled)),
   };
 }

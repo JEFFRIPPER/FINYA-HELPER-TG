@@ -1,7 +1,8 @@
 // Reputation, marriages and RP actions of the Squad chats.
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
-import { nowInt, truncate } from './util.js';
+import { getSetting, setSetting } from './store.js';
+import { MSK_OFFSET, nowInt, truncate } from './util.js';
 
 const DAY = 86400;
 
@@ -171,6 +172,50 @@ export async function datingCouples(limit = 15) {
 export async function datingCount() {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM dating WHERE user_id < partner_id`);
   return row.c;
+}
+
+// ---- the start date of a pair ------------------------------------------------------
+// A couple that was together before Финя sets its real start: «Начало брака 01.05.2024».
+// Free, once a month per pair, so the days and anniversaries count from it.
+
+export const PAIR_DATE_COOLDOWN = 30 * DAY;
+const OLDEST_YEAR = 1950;
+
+// «01.05.2024» → Moscow midnight of that day, or null.
+export function parseDate(text) {
+  const m = /^(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/u.exec(String(text || '').trim());
+  if (!m) return null;
+  const [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const ms = Date.UTC(y, mo - 1, d);
+  const back = new Date(ms);
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d) return null;
+  return ms / 1000 - MSK_OFFSET;
+}
+
+// kind: 'marriage' or 'dating'. → the pair's partner id.
+export async function setPairSince(kind, userId, value, ts = nowInt()) {
+  const married = kind === 'marriage';
+  const pair = married ? await spouseOf(userId) : await partnerOf(userId);
+  if (!pair) throw new SocialError(married ? 'Ты не в браке.' : 'Ты ни с кем не встречаешься.');
+  const since = parseDate(value);
+  if (since == null) throw new SocialError(`Напиши дату так: «Начало ${married ? 'брака' : 'отношений'} 01.05.2024».`);
+  if (since > ts) throw new SocialError('Эта дата ещё не наступила.');
+  if (new Date((since + MSK_OFFSET) * 1000).getUTCFullYear() < OLDEST_YEAR) throw new SocialError('Проверь год.');
+  const [a, b] = [Math.min(userId, pair.partner_id), Math.max(userId, pair.partner_id)];
+  const key = `pair_date:${kind}:${a}:${b}`;
+  const last = await getSetting(key);
+  if (Number.isInteger(last) && ts - last < PAIR_DATE_COOLDOWN) {
+    const next = new Date((last + PAIR_DATE_COOLDOWN + MSK_OFFSET) * 1000);
+    const pad = (n) => String(n).padStart(2, '0');
+    throw new SocialError(`Дату пары можно менять раз в месяц. Следующий раз: ${pad(next.getUTCDate())}.${pad(next.getUTCMonth() + 1)}.${next.getUTCFullYear()}.`);
+  }
+  if (married) {
+    await db.run(sql`UPDATE spouses SET since = ${since} WHERE user_id IN (${a}, ${b})`);
+  } else {
+    await db.run(sql`UPDATE dating SET since = ${since} WHERE user_id IN (${a}, ${b})`);
+  }
+  await setSetting(key, ts);
+  return pair.partner_id;
 }
 
 // ---- RP actions ----------------------------------------------------------------
