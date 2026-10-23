@@ -20,6 +20,7 @@ import * as games from './games.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
 import * as reminders from './reminders.js';
+import * as rpStickers from './rp_stickers.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
 import * as xp from './xp.js';
@@ -791,16 +792,31 @@ async function rp(message, found, target) {
   // In a group the command itself goes away: Финя's line answers the target's message.
   if (!isGroupChat(message.chat)) {
     await say(message, text);
+    await rpSticker(message, found.cmd);
     await feats.bump(actor.id, 'rp');
     return;
   }
   const r = message.reply_to_message;
   await say(message, text, { replyTo: r && r.from && r.from.id === target.id ? r.message_id : null });
+  await rpSticker(message, found.cmd);
   await feats.bump(actor.id, 'rp');
   try {
     await api.deleteMessage({ chat_id: message.chat.id, message_id: message.message_id });
   } catch {
     // No rights to delete: the command stays.
+  }
+}
+
+// Финя's own sticker for the action, right under her line.
+async function rpSticker(message, cmd) {
+  const sticker = await rpStickers.stickerFor(cmd);
+  if (!sticker) return;
+  try {
+    await api.sendSticker({ chat_id: message.chat.id, sticker, ...sameThread(message) });
+  } catch (err) {
+    if (!(err instanceof BotApiError)) throw err;
+    // No right to send stickers here, or the pack changed: the line is enough.
+    if (/sticker|file/i.test(err.description || '')) await rpStickers.forget();
   }
 }
 
