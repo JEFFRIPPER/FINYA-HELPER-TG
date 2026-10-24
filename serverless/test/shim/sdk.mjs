@@ -70,7 +70,7 @@ export async function fetch(url, opts = {}) {
   return {
     status, ok: status >= 200 && status < 300, url,
     async json() { if (r.json === undefined) throw new SyntaxError('no body'); return r.json; },
-    async text() { return JSON.stringify(r.json ?? ''); },
+    async text() { return r.text ?? JSON.stringify(r.json ?? ''); },
   };
 }
 fetch.body = {
