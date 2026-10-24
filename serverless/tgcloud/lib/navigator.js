@@ -9,7 +9,7 @@ import { SQUAD_CHANNEL_URL, SQUAD_GITHUB, SQUAD_LINKS as L, SQUAD_PROJECTS } fro
 import { getSetting, logError, setSetting } from './store.js';
 import { button, errorText, isApiError, isNotModified, keyboard, menuButton } from './tg.js';
 import { profileRow } from './ui.js';
-import { nowInt, truncate } from './util.js';
+import { boldHtml, nowInt, truncate } from './util.js';
 import { mskDay } from './members.js';
 import { squadChatIds } from './xpchat.js';
 
@@ -62,7 +62,7 @@ export async function view(chat, links) {
   return { text, reply_markup: keyboard(rows) };
 }
 
-const params = (v) => ({ text: v.text, parse_mode: 'HTML', reply_markup: v.reply_markup, link_preview_options: { is_disabled: true } });
+const params = (v) => ({ text: boldHtml(v.text), parse_mode: 'HTML', reply_markup: v.reply_markup, link_preview_options: { is_disabled: true } });
 const hashOf = (v) => JSON.stringify(v);
 const isGone = (err) => isApiError(err) && /message to edit not found|message can't be edited|message_id_invalid/.test(errorText(err));
 

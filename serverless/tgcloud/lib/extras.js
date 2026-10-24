@@ -2,7 +2,7 @@
 // zodiac and horoscope, countdowns.
 import { db, fetch } from 'sdk';
 import { sql } from 'sdk/db';
-import { getSetting, setSetting } from './store.js';
+import { getSetting, logError, setSetting } from './store.js';
 import { escapeHtml, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as anketa from './anketa.js';
 import * as members from './members.js';
@@ -108,31 +108,43 @@ async function articleStats(userId, ts) {
   };
 }
 
+const count = (n, one, few, many) => `${n} ${plural(n, one, few, many)}`;
+const msgs = (n) => count(n, 'сообщение', 'сообщения', 'сообщений');
+
 // What the member did that brings this article: [kind, reason].
 function grounds(s) {
   const out = [];
-  if (s.day >= 50 || s.week >= 300) out.push(['flood', s.day >= 50 ? `${s.day} сообщений за сегодня` : `${s.week} сообщений за неделю`]);
+  if (s.day >= 50 || s.week >= 300) out.push(['flood', s.day >= 50 ? `${msgs(s.day)} за сегодня` : `${msgs(s.week)} за неделю`]);
   if (s.week === 0) out.push(['silent', 'ни одного сообщения за неделю']);
-  if (s.night >= 20) out.push(['night', `${s.night} сообщений глубокой ночью`]);
-  if (s.early >= 20) out.push(['early', `${s.early} сообщений до 8 утра`]);
-  if (s.rp >= 20) out.push(['rp', `${s.rp} РП-действий`]);
-  if (s.casino >= 3) out.push(['casino', `${s.casino} игр в казино за неделю`]);
-  if (s.gifts >= 1) out.push(['gifts', `${s.gifts} переводов XP за неделю`]);
-  if (s.given >= 20) out.push(['rep', `${s.given} плюсов в репутацию`]);
+  if (s.night >= 20) out.push(['night', `${msgs(s.night)} глубокой ночью`]);
+  if (s.early >= 20) out.push(['early', `${msgs(s.early)} до 8 утра`]);
+  if (s.rp >= 20) out.push(['rp', count(s.rp, 'РП-действие', 'РП-действия', 'РП-действий')]);
+  if (s.casino >= 3) out.push(['casino', `${count(s.casino, 'игра', 'игры', 'игр')} в казино за неделю`]);
+  if (s.gifts >= 1) out.push(['gifts', `${count(s.gifts, 'перевод', 'перевода', 'переводов')} XP за неделю`]);
+  if (s.given >= 20) out.push(['rep', `${count(s.given, 'плюс', 'плюса', 'плюсов')} в репутацию`]);
   if (s.spouse) out.push(['married', `в браке с ${escapeHtml(truncate(s.spouse, 40))}`]);
   return out;
 }
 
+// One article a day: it is chosen at the first ask and kept, even when the activity
+// behind it grows later in the day.
 export async function articleText(who, ts = nowInt()) {
-  const rand = seeded(who.id * 31 + members.mskDay(ts));
-  const found = grounds(await articleStats(who.id, ts));
-  // Mostly for what they do; now and then just for being here.
-  const [kind, reason] = found.length && rand() < 0.85 ? pickWith(rand, found) : ['general', 'подозрительно хорошее поведение'];
-  const [number, title] = pickWith(rand, ARTICLES[kind]);
+  const day = members.mskDay(ts);
+  const key = `article:${who.id}`;
+  let a = await getSetting(key);
+  if (!a || a.day !== day) {
+    const rand = seeded(who.id * 31 + day);
+    const found = grounds(await articleStats(who.id, ts));
+    // Mostly for what they do; now and then just for being here.
+    const [kind, reason] = found.length && rand() < 0.85 ? pickWith(rand, found) : ['general', 'подозрительно хорошее поведение'];
+    const [number, title] = pickWith(rand, ARTICLES[kind]);
+    a = { day, number, title, reason, sentence: pickWith(rand, SENTENCES) };
+    await setSetting(key, a);
+  }
   return `⚖️ Статья дня · ${mention(who.id, who.name)}\n\n` +
-    `📕 Ст. ${number} УК Сквада\n«${title}»\n\n` +
-    `🔎 Основание: ${reason}\n` +
-    `🔨 Приговор: ${pickWith(rand, SENTENCES)}\n\n` +
+    `📕 Ст. ${a.number} УК Сквада\n«${a.title}»\n\n` +
+    `🔎 Основание: ${a.reason}\n` +
+    `🔨 Приговор: ${a.sentence}\n\n` +
     'Новая статья завтра.';
 }
 
@@ -266,9 +278,16 @@ export async function zodiacOf(userId) {
 }
 
 // The daily horoscope of ignio.com: one public XML for all twelve signs, kept for the
-// Moscow day so the chats don't fetch it on every command.
-export const HOROSCOPE_URL = 'https://ignio.com/r/export/utf/xml/daily/com.xml';
+// Moscow day so the chats don't fetch it on every command. The export lives on the
+// img. host; the others are spares in case it moves.
+export const HOROSCOPE_URLS = [
+  'https://img.ignio.com/r/export/utf/xml/daily/com.xml',
+  'http://img.ignio.com/r/export/utf/xml/daily/com.xml',
+  'https://ignio.com/r/export/utf/xml/daily/com.xml',
+];
 const HOROSCOPE_SOURCE = 'ignio.com';
+// After a failed download the next try waits, so a dead site doesn't slow every command.
+const HOROSCOPE_RETRY = 10 * 60;
 
 const unxml = (s) => String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
   .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
@@ -288,15 +307,31 @@ async function horoscopes(ts) {
   const day = members.mskDay(ts);
   const cached = await getSetting('horoscope_cache');
   if (cached && cached.day === day && cached.signs) return cached.signs;
-  let signs = null;
-  try {
-    const res = await fetch(HOROSCOPE_URL, { headers: { 'User-Agent': 'finya-helper' } });
-    if (res.ok) signs = parseHoroscope(await res.text());
-  } catch {
-    // The site is down: say so, no made-up forecast.
+  const failed = await getSetting('horoscope_failed_at');
+  if (failed && ts - failed < HOROSCOPE_RETRY) return null;
+  const why = [];
+  for (const url of HOROSCOPE_URLS) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; finya-helper)' } });
+      if (!res.ok) {
+        why.push(`${url}: HTTP ${res.status}`);
+        continue;
+      }
+      const body = await res.text();
+      const signs = parseHoroscope(body);
+      if (signs) {
+        await setSetting('horoscope_cache', { day, signs });
+        return signs;
+      }
+      why.push(`${url}: не тот формат: ${truncate(body.replace(/\s+/g, ' '), 120)}`);
+    } catch (err) {
+      why.push(`${url}: ${(err && err.message) || err}`);
+    }
   }
-  if (signs) await setSetting('horoscope_cache', { day, signs });
-  return signs;
+  // The site is down: say so, no made-up forecast. The owner sees why in the logs.
+  await setSetting('horoscope_failed_at', ts);
+  await logError('horoscope', new Error(why.join(' | ')));
+  return null;
 }
 
 export async function horoscopeText(sign, ts = nowInt()) {

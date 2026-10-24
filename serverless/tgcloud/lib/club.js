@@ -9,7 +9,7 @@ import { CHAT_ACHIEVEMENTS, chatStats, unlock } from './feats.js';
 import { nameOf } from './members.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
-import { escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
+import { boldHtml, escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
 import { resolveXpChat } from './xpchat.js';
 import * as xp from './xp.js';
 
@@ -491,7 +491,7 @@ async function tellUser(userId, text, replyMarkup) {
   const known = await getUser(userId);
   if (!known || known.blocked) return;
   try {
-    await api.sendMessage({ chat_id: userId, text, parse_mode: 'HTML', reply_markup: replyMarkup });
+    await api.sendMessage({ chat_id: userId, text: boldHtml(text), parse_mode: 'HTML', reply_markup: replyMarkup });
   } catch {
     console.info(`Could not notify ${userId}`);
   }
@@ -562,7 +562,7 @@ export async function welcome(message) {
     'звания, ачивки и награды.\n\n' +
     `📜 Сначала загляни в <a href="${SQUAD_LINKS.rules}">правила</a>.`;
   const sent = await withPremium({
-    chat_id: message.chat.id, text, parse_mode: 'HTML',
+    chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
     reply_markup: await profileButton('👤 Профиль и награды'),
   }, (p) => api.sendMessage(p));
@@ -616,7 +616,7 @@ export function summaryText(s) {
 export async function weeklyPreview(chatId) {
   const s = await weekSummary(weekStart(nowInt()) - 7 * DAY);
   const text = s.top.length ? summaryText(s) : 'На прошлой неделе никто не заработал XP: итоги не публикуются.';
-  await api.sendMessage({ chat_id: chatId, text: '<b>Предпросмотр, в канал не ушло</b>\n\n' + text, parse_mode: 'HTML' });
+  await api.sendMessage({ chat_id: chatId, text: boldHtml('Предпросмотр, в канал не ушло\n\n' + text), parse_mode: 'HTML' });
 }
 
 // From Monday 12:00 MSK, once a week: last week's top-3 to the channel.
@@ -636,7 +636,7 @@ async function weeklyTick(ts) {
       await xp.grant(s.top[i].user_id, 'weekly', week - 1, WEEKLY_BONUS[i], ts);
     }
     await api.sendMessage({
-      chat_id: SQUAD_CHANNEL_ID, text: summaryText(s), parse_mode: 'HTML',
+      chat_id: SQUAD_CHANNEL_ID, text: boldHtml(summaryText(s)), parse_mode: 'HTML',
       reply_markup: await profileButton('👤 Мой профиль у Фини'),
     });
   } catch (err) {
@@ -674,8 +674,8 @@ async function birthdayTick(ts) {
     try {
       await api.sendMessage({
         chat_id: chatId, parse_mode: 'HTML',
-        text: `🎂 Сегодня день рождения у ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
-          'Отметь свой день рождения в профиле.',
+        text: boldHtml(`🎂 Сегодня день рождения у ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
+          'Отметь свой день рождения в профиле.'),
         reply_markup: await profileButton('🎁 Мой профиль'),
       });
     } catch (err) {

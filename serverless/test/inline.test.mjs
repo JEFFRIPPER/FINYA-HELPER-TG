@@ -11,7 +11,7 @@ afterEach(checkErrors);
 let nextId = 1;
 const inline = (from, query, chatType = 'private') => ({ id: String(nextId++), from, query, offset: '', chat_type: chatType });
 const answered = (api) => api.called('answerInlineQuery').at(-1).params;
-const texts = (params) => params.results.map((r) => r.input_message_content.message_text);
+const texts = (params) => params.results.map((r) => r.input_message_content.message_text.replace(/^<b>([\s\S]*)<\/b>$/, '$1'));
 
 test('an empty query lists every RP action', async () => {
   const api = await setup();

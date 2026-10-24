@@ -30,10 +30,19 @@ test('horoscope: parsed from the ignio XML, cached for the day, honest when the 
   assert.equal(zodiac(16, 12).key, 'sagittarius');
 
   const a = user(2, { first_name: 'Аня' });
-  fetchMock.handler = async () => { throw new Error('down'); };
+  fetchMock.handler = async (url) => (url.startsWith('https://img.') ? { status: 403 } : { text: '<html>moved</html>' });
   await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
   assert.match(last(api), /не загрузился с ignio\.com/);
+  // All three addresses tried; the owner sees why in the logs; no new tries for a while.
+  assert.equal(fetchMock.calls.length, 3);
+  const logged = await db.get("SELECT text FROM error_log WHERE source = 'horoscope'");
+  assert.match(logged.text, /HTTP 403.*не тот формат/);
+  await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
+  assert.equal(fetchMock.calls.length, 3);
+  await db.run('DELETE FROM error_log');
+  await setSetting('horoscope_failed_at', null);
 
+  fetchMock.calls = [];
   fetchMock.handler = async () => ({ text: XML });
   await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
   assert.match(last(api), /♓ Рыбы · гороскоп на/);
@@ -41,7 +50,8 @@ test('horoscope: parsed from the ignio XML, cached for the day, honest when the 
   assert.match(last(api), /Источник: ignio\.com/);
   await onMessage(privateMessage(a, 'гороскоп льва'));
   assert.match(last(api), /Прогноз leo/);
-  assert.equal(fetchMock.calls.length, 2);
+  assert.equal(fetchMock.calls.length, 1);
+  assert.match(fetchMock.calls[0].url, /^https:\/\/img\.ignio\.com\//);
 });
 
 test('the zodiac sign follows the birthday: «Кто Я», «Мой Знак» and the own horoscope', async () => {

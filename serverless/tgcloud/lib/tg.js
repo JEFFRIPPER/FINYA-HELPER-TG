@@ -1,7 +1,7 @@
 // Bot API helpers: error classification, buttons, edit-or-send.
 import { api, BotApiError } from 'sdk';
 import { BUTTON_ICONS } from './config.js';
-import { boldHtml, sleep } from './util.js';
+import { boldHtml, escapeHtml, sleep } from './util.js';
 
 export function isApiError(err) {
   return err instanceof BotApiError || (err && typeof err.code === 'number' && 'description' in err);
@@ -80,8 +80,10 @@ export function menuButton(text, extra = {}) {
   return button(iconId ? label : text, { ...extra, icon_custom_emoji_id: iconId });
 }
 
+// Every answer is bold: plain text is escaped and wrapped, HTML is wrapped as is.
 export async function reply(message, text, extra = {}) {
-  return api.sendMessage({ chat_id: message.chat.id, text, ...extra });
+  const html = extra.parse_mode === 'HTML' ? text : escapeHtml(text);
+  return api.sendMessage({ chat_id: message.chat.id, ...extra, text: boldHtml(html), parse_mode: 'HTML' });
 }
 
 export async function replyBold(message, text, replyMarkup) {
@@ -135,7 +137,7 @@ export async function editOrSend(query, text, replyMarkup) {
 }
 
 export async function editText(query, text, replyMarkup) {
-  const params = { chat_id: query.message.chat.id, message_id: query.message.message_id, text, parse_mode: 'HTML' };
+  const params = { chat_id: query.message.chat.id, message_id: query.message.message_id, text: boldHtml(text), parse_mode: 'HTML' };
   if (replyMarkup) params.reply_markup = replyMarkup;
   try {
     await api.editMessageText(params);
