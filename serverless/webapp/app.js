@@ -817,9 +817,61 @@
       }))));
   }
 
+  // «Все обновления»: every change of Финя from the very start, newest first.
+  var changes = { entries: null, loading: false };
+
+  function changesCard() {
+    var btn = h('button', { class: 'btn-tonal ripple', onclick: function () { openChanges(btn); } },
+      'Все обновления', icon('chevron_right'));
+    return h('section', { class: 'card news' },
+      h('div', { class: 'news-head' },
+        h('div', { class: 'lead primary' }, icon('rocket_launch_fill')),
+        h('div', { class: 'body' }, h('b', { text: 'Обновления Фини' }), h('span', { text: 'Всё новое с самого начала' }))),
+      btn);
+  }
+
+  function changeEntry(e) {
+    return h('article', { class: 'change' },
+      h('span', { class: 'change-date', text: e.date }),
+      h('b', { class: 'change-title', text: e.title }),
+      h('ul', { class: 'change-items' }, e.items.map(function (t) { return h('li', { text: t }); })));
+  }
+
+  function showChanges() {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    haptic();
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: 'Все обновления' }),
+      h('p', { class: 'fine', text: changes.entries.length + ' ' + plural(changes.entries.length, 'обновление', 'обновления', 'обновлений') + ', новые сверху' }),
+      h('div', { class: 'changes' }, changes.entries.map(changeEntry)),
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+  }
+
+  function openChanges(btn) {
+    if (changes.entries) { showChanges(); return; }
+    if (changes.loading) return;
+    changes.loading = true;
+    var label = Array.prototype.slice.call(btn.childNodes);
+    btn.disabled = true;
+    btn.replaceChildren(loader());
+    api('changes', {}).then(function (data) {
+      changes.entries = data.entries || [];
+      showChanges();
+    }, function (err) {
+      vibrate('error');
+      snackbar(errorText(err));
+    }).then(function () {
+      changes.loading = false;
+      btn.disabled = false;
+      btn.replaceChildren.apply(btn, label);
+    });
+  }
+
   function squadBody(sq) {
     var c = state.data.club;
-    return [newsCard(sq), teamCard(sq.team)].filter(Boolean).concat(c.polls.map(pollCard))
+    return [newsCard(sq), changesCard(), teamCard(sq.team)].filter(Boolean).concat(c.polls.map(pollCard))
       .concat([referralCard(c.referral), birthdayCard(c.birthday), quickGrid(sq)])
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
       .concat([projectsSection()]);
