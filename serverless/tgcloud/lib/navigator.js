@@ -17,7 +17,7 @@ const KEY = 'navigator:';
 const MAX_CHATS = 6;
 
 // Changes when a release changes what the navigator shows.
-const VERSION = JSON.stringify([SQUAD_CHANNEL_URL, L, SQUAD_PROJECTS, SQUAD_GITHUB, 1]);
+const VERSION = JSON.stringify([SQUAD_CHANNEL_URL, L, SQUAD_PROJECTS, SQUAD_GITHUB, 2]);
 
 const placedRows = () => db.all(sql`SELECT key FROM settings WHERE key LIKE ${`${KEY}%`}`);
 
@@ -30,15 +30,14 @@ export async function placed() {
   return out;
 }
 
-// [{ title, url }] of the Squad chats people can open: a public username or the
-// chat's primary invite link (getChat gives it to admins; a new one is never created).
+// [{ title, url }] of the public Squad chats. Invite links never go out: entry to the
+// closed chats (SQUAD FAMILY) is only after the form, the owner gives the link himself.
 async function chatLinks() {
   const out = [];
   for (const id of (await squadChatIds()).slice(0, MAX_CHATS)) {
     try {
       const c = await api.getChat({ chat_id: id });
-      const url = c.username ? `https://t.me/${c.username}` : c.invite_link;
-      if (url) out.push({ title: c.title || 'Чат Сквада', url });
+      if (c.username) out.push({ title: c.title || 'Чат Сквада', url: `https://t.me/${c.username}` });
     } catch {
       // Финя is not in that chat any more.
     }
@@ -52,7 +51,8 @@ export async function view(chat, links) {
   const text = '<b>𒈒 Навигатор Сквада 𒈒</b>\n\n' +
     'Канал, чаты, магазин и проекты Сквада в одном месте 👇\n\n' +
     (post ? `📢 Последний пост: <a href="${SQUAD_CHANNEL_URL}/${post}">открыть и обсудить</a>\n` : '') +
-    `🧩 Проекты: ${projects}`;
+    `🧩 Проекты: ${projects}\n\n` +
+    '🔒 Закрытые чаты Сквада: только после анкеты, ссылку выдаёт владелец.';
   const rows = [[menuButton('📢 Канал', { url: SQUAD_CHANNEL_URL }), menuButton('📁 Папка Сквада', { url: L.folder })]];
   const chats = links.map((c) => menuButton(`💬 ${truncate(c.title, 28)}`, { url: c.url }));
   for (let i = 0; i < chats.length; i += 2) rows.push(chats.slice(i, i + 2));
