@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-25-horo-mailru',
+    date: '25 октября 2026',
+    title: 'Гороскоп с Гороскопов Mail.ru',
+    items: [
+      '🔮 «Гороскоп» теперь берёт прогноз с horo.mail.ru, полный текст на сегодня. Длинный прогноз сворачивается, нажми, чтобы раскрыть.',
+    ],
+  },
+  {
     id: '2026-10-25-bold-horoscope',
     date: '25 октября 2026',
     title: 'Жирный шрифт везде и рабочий гороскоп',

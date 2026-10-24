@@ -277,69 +277,106 @@ export async function zodiacOf(userId) {
   return b ? zodiac(b.day, b.month) : null;
 }
 
-// The daily horoscope of ignio.com: one public XML for all twelve signs, kept for the
-// Moscow day so the chats don't fetch it on every command. The export lives on the
-// img. host; the others are spares in case it moves.
-export const HOROSCOPE_URLS = [
-  'https://img.ignio.com/r/export/utf/xml/daily/com.xml',
-  'http://img.ignio.com/r/export/utf/xml/daily/com.xml',
-  'https://ignio.com/r/export/utf/xml/daily/com.xml',
-];
-const HOROSCOPE_SOURCE = 'ignio.com';
+// The daily horoscope of horo.mail.ru: one page per sign, kept for the Moscow day so
+// the chats don't fetch it on every command.
+export const horoscopeUrl = (key) => `https://horo.mail.ru/prediction/${key}/today/`;
+const HOROSCOPE_SOURCE = 'horo.mail.ru';
 // After a failed download the next try waits, so a dead site doesn't slow every command.
 const HOROSCOPE_RETRY = 10 * 60;
+const MAX_FORECAST = 1500;
 
-const unxml = (s) => String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
-  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+const ENTITIES = { nbsp: ' ', quot: '"', apos: "'", lt: '<', gt: '>', amp: '&', laquo: '«', raquo: '»', mdash: '—', ndash: '–', hellip: '…' };
+const unhtml = (s) => String(s)
+  .replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')
+  .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+  .replace(/&([a-z]+);/gi, (m, n) => ENTITIES[n.toLowerCase()] ?? m)
   .replace(/\s+/g, ' ').trim();
 
-export function parseHoroscope(xml) {
-  const out = {};
-  for (const [key] of SIGNS) {
-    const block = new RegExp(`<${key}>([\\s\\S]*?)</${key}>`).exec(xml);
-    const today = block && /<today>([\s\S]*?)<\/today>/.exec(block[1]);
-    if (today && unxml(today[1])) out[key] = unxml(today[1]);
+const isProse = (t) => t.length >= 40 && /[а-яё]{3,}/i.test(t) && /[.!?…]$/.test(t);
+
+// The forecast from the page: the paragraphs right after the «Гороскоп на сегодня»
+// heading; failing that, the article text of the page's structured data; failing that,
+// its description. → text or null.
+export function parseHoroscope(html) {
+  const page = String(html || '').replace(/<script\b(?![^>]*ld\+json)[\s\S]*?<\/script>/gi, '').replace(/<style\b[\s\S]*?<\/style>/gi, '');
+  const h1 = page.search(/<h1\b/i);
+  if (h1 !== -1) {
+    const paras = [];
+    const re = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+    re.lastIndex = h1;
+    let m;
+    while ((m = re.exec(page)) && paras.length < 8) {
+      const t = unhtml(m[1]);
+      if (isProse(t)) paras.push(t);
+      else if (paras.length) break;
+    }
+    if (paras.length) return truncate(paras.join('\n\n'), MAX_FORECAST);
   }
-  return Object.keys(out).length === SIGNS.length ? out : null;
+  const body = /"articleBody"\s*:\s*"((?:[^"\\]|\\.)+)"/.exec(page);
+  if (body) {
+    try {
+      const t = unhtml(JSON.parse(`"${body[1]}"`));
+      if (isProse(t)) return truncate(t, MAX_FORECAST);
+    } catch {
+      // Not valid JSON: try the description.
+    }
+  }
+  const meta = /<meta\b[^>]*(?:name|property)=["'](?:description|og:description)["'][^>]*content=["']([^"']+)["']/i.exec(page) ||
+    /<meta\b[^>]*content=["']([^"']+)["'][^>]*(?:name|property)=["'](?:description|og:description)["']/i.exec(page);
+  if (meta) {
+    const t = unhtml(meta[1]);
+    if (isProse(t)) return truncate(t, MAX_FORECAST);
+  }
+  return null;
 }
 
-async function horoscopes(ts) {
+async function horoscope(key, ts) {
   const day = members.mskDay(ts);
   const cached = await getSetting('horoscope_cache');
-  if (cached && cached.day === day && cached.signs) return cached.signs;
+  const signs = cached && cached.day === day && cached.signs ? cached.signs : {};
+  if (signs[key]) return signs[key];
   const failed = await getSetting('horoscope_failed_at');
   if (failed && ts - failed < HOROSCOPE_RETRY) return null;
-  const why = [];
-  for (const url of HOROSCOPE_URLS) {
-    try {
-      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; finya-helper)' } });
-      if (!res.ok) {
-        why.push(`${url}: HTTP ${res.status}`);
-        continue;
-      }
+  const url = horoscopeUrl(key);
+  let why;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Mobile Safari/537.36',
+        'Accept-Language': 'ru-RU,ru;q=0.9',
+      },
+    });
+    if (res.ok) {
       const body = await res.text();
-      const signs = parseHoroscope(body);
-      if (signs) {
-        await setSetting('horoscope_cache', { day, signs });
-        return signs;
+      const text = parseHoroscope(body);
+      if (text) {
+        // Re-read: another sign may have been saved meanwhile.
+        const now = await getSetting('horoscope_cache');
+        const all = now && now.day === day && now.signs ? now.signs : {};
+        all[key] = text;
+        await setSetting('horoscope_cache', { day, signs: all });
+        return text;
       }
-      why.push(`${url}: не тот формат: ${truncate(body.replace(/\s+/g, ' '), 120)}`);
-    } catch (err) {
-      why.push(`${url}: ${(err && err.message) || err}`);
+      why = `не нашла текст прогноза: ${truncate(unhtml(body), 150)}`;
+    } else {
+      why = `HTTP ${res.status}`;
     }
+  } catch (err) {
+    why = (err && err.message) || String(err);
   }
   // The site is down: say so, no made-up forecast. The owner sees why in the logs.
   await setSetting('horoscope_failed_at', ts);
-  await logError('horoscope', new Error(why.join(' | ')));
+  await logError('horoscope', new Error(`${url}: ${why}`));
   return null;
 }
 
 export async function horoscopeText(sign, ts = nowInt()) {
-  const signs = await horoscopes(ts);
-  if (!signs) return `🔮 Гороскоп сейчас не загрузился с ${HOROSCOPE_SOURCE}. Попробуй чуть позже.`;
+  const text = await horoscope(sign.key, ts);
+  if (!text) return `🔮 Гороскоп сейчас не загрузился с ${HOROSCOPE_SOURCE}. Попробуй чуть позже.`;
   const d = new Date((ts + MSK_OFFSET) * 1000);
   return `${sign.emoji} ${sign.name} · гороскоп на ${d.getUTCDate()} ${MONTHS_GEN[d.getUTCMonth()]}\n\n` +
-    `<blockquote>${escapeHtml(signs[sign.key])}</blockquote>\n\nИсточник: ${HOROSCOPE_SOURCE}`;
+    `<blockquote expandable>${escapeHtml(text)}</blockquote>\n\nИсточник: ${HOROSCOPE_SOURCE}`;
 }
 
 
