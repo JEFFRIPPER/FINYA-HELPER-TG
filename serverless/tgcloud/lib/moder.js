@@ -192,7 +192,7 @@ export async function act(chatId, actor, target, verb, parsed) {
   if (verb === 'снять варн') {
     const r = await db.run(sql`DELETE FROM warns WHERE id = (SELECT id FROM warns
       WHERE chat_id = ${chatId} AND user_id = ${target.id} ORDER BY id DESC LIMIT 1)`);
-    if (!r.rowsAffected) return { text: `У ${who} нет варнов.` };
+    if (!r.rowsAffected) return { text: `${who}: варнов нет.` };
     return { text: `✅ Снят один варн с ${who}. Осталось: ${await warnCount(chatId, target.id)}/${WARN_LIMIT}.` };
   }
   throw new ModError('Не знаю такой команды.');
@@ -224,7 +224,7 @@ export async function warnsText(chatId, target) {
   const rows = await db.all(sql`SELECT reason, at FROM warns WHERE chat_id = ${chatId} AND user_id = ${target.id}
     AND at >= ${nowInt() - WARN_KEEP} ORDER BY id DESC LIMIT ${WARN_LIMIT}`);
   const who = mention(target.id, target.name);
-  if (!rows.length) return `✅ У ${who} нет варнов.`;
+  if (!rows.length) return `✅ ${who}: варнов нет.`;
   const list = rows.map((r, i) => `${i + 1}. ${r.reason ? escapeHtml(r.reason) : 'без причины'}`).join('\n');
   return `⚠️ Варны ${who}: ${rows.length}/${WARN_LIMIT}\n${list}\n\nВарн сгорает через 30 дней.`;
 }

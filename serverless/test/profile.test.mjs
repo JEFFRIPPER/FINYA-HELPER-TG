@@ -165,7 +165,7 @@ test('awards: admins hand them out, the profile shows them, «награды» l
   await say(b, 'кто я');
   assert.match(photos(api).at(-1).params.caption, /🏅 Награды:\n🎗 Отец года\n🎗 Лучший мем недели/);
   await say(member, 'награды', replyTo(b));
-  assert.match(lastText(api), /🏆 Награды <a href="tg:\/\/user\?id=3">Боря<\/a>:\n1\. 🎗 Отец года\n2\. 🎗 Лучший мем недели/);
+  assert.match(lastText(api), /🏆 Награды · <a href="tg:\/\/user\?id=3">Боря<\/a>\n1\. 🎗 Отец года\n2\. 🎗 Лучший мем недели/);
 
   await say(member, 'снять награду 1', replyTo(b));
   assert.match(lastText(api), /Снимать награды могут только админы/);
@@ -200,13 +200,13 @@ test('award degrees 1–8 like Iris: by reply or @ник, text on the next line,
 
   // Боря drops what the moderator gave; the owner's award stays.
   await say(b, 'снять награды от', replyTo(admin));
-  assert.match(lastText(api), /Сняты твои награды от .*Модератор.*: 2/);
+  assert.match(lastText(api), /Сняты твои награды от этого участника: 2/);
   assert.deepEqual((await db.all('SELECT text FROM awards')).map((r) => r.text), ['Легенда Сквада']);
 
   await say(user(2), 'снять все награды', replyTo(b));
   assert.match(lastText(api), /Снимать награды могут только админы/);
   await say(admin, 'снять все награды', replyTo(b));
-  assert.match(lastText(api), /сняты все награды: 1/);
+  assert.match(lastText(api), /сняты все награды \(1\)/);
   assert.equal((await db.all('SELECT * FROM awards')).length, 0);
   assert.equal((await db.all('SELECT * FROM award_degrees')).length, 0);
 });

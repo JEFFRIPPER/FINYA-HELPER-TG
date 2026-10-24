@@ -176,32 +176,38 @@ async function profileCard(chat, who, self) {
   const points = p ? p.xp : 0;
   const founder = who.id === OWNER_USER_ID;
   const [rank] = xp.rankFor(points, { founder, manualRank: p ? p.manual_rank : null });
-  const top = await place(who.id, points);
-  const rep = await social.repOf(who.id);
-  const spouse = await social.spouseOf(who.id);
-  const ach = await db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`);
-  const style = await club.myStyle(who.id);
   const group = isGroupChat(chat);
+  // Independent reads, all at once: the card is the slowest reply in the chat.
+  const [top, rep, spouse, dating, ach, style, role, home, jobs, sign, card, about, awards] = await Promise.all([
+    place(who.id, points),
+    social.repOf(who.id),
+    social.spouseOf(who.id),
+    social.partnerOf(who.id),
+    db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`),
+    club.myStyle(who.id),
+    group ? chatRole(chat.id, who.id) : null,
+    anketa.citizenshipOf(who.id),
+    staff.positionsOf(who.id),
+    extras.zodiacOf(who.id),
+    group ? members.memberCard(chat.id, who.id, ts) : null,
+    bio.aboutOf(who.id),
+    bio.awardsOf(who.id),
+  ]);
 
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
-  const role = group ? await chatRole(chat.id, who.id) : null;
   if (role) head.push(role);
-  const home = await anketa.citizenshipOf(who.id);
   if (home) {
     head.push(group && home.chat_id === chat.id
-      ? `🏡 Гражданин этого чата · ${ts - home.since < 86400 ? 'с сегодня' : ageText(ts - home.since)}`
-      : `🏡 Гражданин чата «${escapeHtml(truncate(await anketa.chatTitle(home.chat_id), 40))}»`);
+      ? `🏡 Гражданство: этот чат · ${ts - home.since < 86400 ? 'с сегодня' : ageText(ts - home.since)}`
+      : `🏡 Гражданство: чат «${escapeHtml(truncate(await anketa.chatTitle(home.chat_id), 40))}»`);
   }
-  const jobs = await staff.positionsOf(who.id);
   if (jobs.length) head.push(`💼 Должность: ${jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}`).join(', ')}`);
   if (spouse) {
     const partner = await members.nameOf(spouse.partner_id);
-    head.push(`💍 В браке с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
-  }
-  const dating = spouse ? null : await social.partnerOf(who.id);
-  if (dating) {
+    head.push(`💍 Брак: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
+  } else if (dating) {
     const partner = await members.nameOf(dating.partner_id);
-    head.push(`💞 Встречается с ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}`);
+    head.push(`💞 Отношения: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}`);
   }
 
   const stats = [
@@ -211,9 +217,7 @@ async function profileCard(chat, who, self) {
     `❤️ Репутация: ${rep.points}${rep.given ? ` · ➕ отдано ${rep.given}` : ''}`,
   ];
   if (!who.isBot) stats.push(`📅 В Telegram: примерно с ${extras.accountSinceText(who.id, ts)}`);
-  const sign = await extras.zodiacOf(who.id);
   if (sign) stats.push(`${sign.emoji} Знак зодиака: ${sign.name}`);
-  const card = group ? await members.memberCard(chat.id, who.id, ts) : null;
   if (card) {
     stats.push(
       `🏠 Первое появление: ${fmtMsk(card.since).slice(0, 10)} (${ts - card.since < 86400 ? 'сегодня' : ageText(ts - card.since)})`,
@@ -223,7 +227,6 @@ async function profileCard(chat, who, self) {
   }
   const blocks = [head.join('\n'), stats.join('\n')];
 
-  const about = await bio.aboutOf(who.id);
   if (about) {
     const long = Array.from(about).length > ABOUT_PREVIEW;
     // A long one is cut on a word, the rest is a command away.
@@ -233,7 +236,6 @@ async function profileCard(chat, who, self) {
   } else if (self) {
     blocks.push('📝 О себе: пусто. Напиши «+Описание» и пару строк о себе');
   }
-  const awards = await bio.awardsOf(who.id);
   if (awards.length) {
     const shown = awards.slice(0, 5).map((a) => `${bio.degreeIcon(a.degree)} ${escapeHtml(a.text)}`);
     if (awards.length > 5) shown.push(`…и ещё ${awards.length - 5}: «Награды»${self ? '' : ' ответом'}`);
@@ -335,7 +337,7 @@ async function anketaCard(who, self) {
   }
   if (d.citizen) {
     const c = d.citizen;
-    about.push(`🏡 Гражданин чата «${escapeHtml(truncate(c.title, 40))}» ` +
+    about.push(`🏡 Гражданство: чат «${escapeHtml(truncate(c.title, 40))}» · ` +
       (ts - c.since < 86400 ? 'с сегодня' : `${ageText(ts - c.since)} (с ${fmtMsk(c.since).slice(0, 10)})`));
   }
   if (d.favourite) about.push(`❤️ Любимый чат: «${escapeHtml(truncate(d.favourite.title, 40))}»`);
@@ -343,7 +345,7 @@ async function anketaCard(who, self) {
   const dating = spouse || await social.partnerOf(who.id);
   if (dating) {
     const partner = escapeHtml(truncate(await members.nameOf(dating.partner_id), 40));
-    about.push(`${spouse ? '💍 В браке с' : '💞 Встречается с'} ${partner} · ${daysWord(social.marriedDays(dating.since))}`);
+    about.push(`${spouse ? '💍 Брак:' : '💞 Отношения:'} ${partner} · ${daysWord(social.marriedDays(dating.since))}`);
   }
   const blocks = [head.join('\n'), about.join('\n')];
 
@@ -434,8 +436,8 @@ async function aboutText(who, self) {
 async function awardsText(who) {
   const list = await bio.awardsOf(who.id);
   const name = mention(who.id, truncate(who.name, 60));
-  if (!list.length) return `🏆 Награды ${name}\nПока пусто. Наградить могут админы чата: «Наградить 1–8» ответом, текст с новой строки.`;
-  return `🏆 Награды ${name}:\n` + list.map((a, i) => `${i + 1}. ${bio.degreeIcon(a.degree)} ${escapeHtml(a.text)}`).join('\n');
+  if (!list.length) return `🏆 Награды · ${name}\nПока пусто. Наградить могут админы чата: «Наградить 1–8» ответом, текст с новой строки.`;
+  return `🏆 Награды · ${name}\n` + list.map((a, i) => `${i + 1}. ${bio.degreeIcon(a.degree)} ${escapeHtml(a.text)}`).join('\n');
 }
 
 // Awards are handed out by the chat's creator and admins (and the owner).
@@ -581,7 +583,7 @@ async function compareText(chatId, a, b) {
     lines.push(`🏠 В чате с: ${fmtMsk(x.since).slice(0, 10)}${x.since < y.since ? ' 🏆' : ''} — ${fmtMsk(y.since).slice(0, 10)}${y.since < x.since ? ' 🏆' : ''}`);
   }
   const verdict = wa === wb ? '🤝 Ничья!' : `👑 Побеждает ${wa > wb ? mention(a.id, a.name) : mention(b.id, b.name)}: ${Math.max(wa, wb)}:${Math.min(wa, wb)}`;
-  return `⚔️ ${mention(a.id, a.name)} против ${mention(b.id, b.name)}\n\n${lines.join('\n')}\n\n${verdict}`;
+  return `⚔️ Сравнение: ${mention(a.id, a.name)} и ${mention(b.id, b.name)}\n\n${lines.join('\n')}\n\n${verdict}`;
 }
 
 const MINUS = new Set(['-', '--', '-1', 'минус', 'дизлайк']);
@@ -605,7 +607,7 @@ async function marriageStatus(message) {
   const now = social.weddingOf(days);
   const next = social.nextWedding(days);
   const yearsText = now.years ? `${now.years} ${plural(now.years, 'год', 'года', 'лет')}` : 'первый год';
-  await say(message, `💍 Ты в браке с ${escapeHtml(truncate(partner, 40))} уже ${daysWord(days)}.\n` +
+  await say(message, `💍 Твоя пара: ${escapeHtml(truncate(partner, 40))} · в браке уже ${daysWord(days)}.\n` +
     `${now.icon} Сейчас: ${now.name.toLowerCase()} свадьба (${yearsText})` +
     (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : ''),
   { temp: true });
@@ -626,7 +628,7 @@ async function propose(message, target) {
   }
   const a = mention(from.id, await nameFor(from));
   const b = mention(target.id, target.name);
-  const sent = await say(message, `💍 ${a} делает предложение ${b}!\n\n${b}, твой ответ?`, {
+  const sent = await say(message, `💍 ${a} → ${b}: предложение руки и сердца!\n\n${b}, твой ответ?`, {
     markup: keyboard([[
       button('💍 Да', { callback_data: `marry:y:${from.id}:${target.id}` }),
       button('💔 Нет', { callback_data: `marry:n:${from.id}:${target.id}` }),
@@ -702,7 +704,7 @@ async function offerDate(message, target) {
   }
   const a = mention(from.id, await nameFor(from));
   const b = mention(target.id, target.name);
-  const sent = await say(message, `💞 ${a} предлагает ${b} встречаться!\n\n${b}, что скажешь?`, {
+  const sent = await say(message, `💞 ${a} → ${b}: предложение встречаться!\n\n${b}, что скажешь?`, {
     markup: keyboard([[
       button('💞 Да', { callback_data: `date:y:${from.id}:${target.id}` }),
       button('💔 Нет', { callback_data: `date:n:${from.id}:${target.id}` }),
@@ -779,7 +781,7 @@ async function citizenCommand(message, self) {
     const r = await anketa.becomeCitizen(message.chat.id, self.id);
     const ts = nowInt();
     const title = escapeHtml(truncate(message.chat.title || 'Чат', 40));
-    let text = `🏡 ${mention(self.id, self.name)} теперь гражданин чата «${title}»` +
+    let text = `🏡 ${mention(self.id, self.name)} — гражданство чата «${title}» оформлено` +
       (ts - r.since >= 86400 ? `, здесь с ${fmtMsk(r.since).slice(0, 10)} (${ageText(ts - r.since)})` : '') + '.';
     if (r.moved) text += `\nПрежнее гражданство «${escapeHtml(truncate(await anketa.chatTitle(r.moved), 40))}» снято: дом у каждого один.`;
     await say(message, text, { temp: true });
@@ -1166,8 +1168,8 @@ async function positionText(position) {
 async function memberPositionsText(who, self) {
   const jobs = await staff.positionsOf(who.id);
   const name = escapeHtml(truncate(who.name, 40));
-  if (!jobs.length) return `💼 ${self ? 'У тебя' : `У ${name}`} пока нет должности в Скваде. Весь штаб: «Штаб».`;
-  return `💼 ${self ? 'Твоя должность' : `Должность ${name}`}\n\n` +
+  if (!jobs.length) return `💼 ${self ? 'У тебя пока нет должности' : `${name}: пока без должности`} в Скваде. Весь штаб: «Штаб».`;
+  return `💼 ${self ? 'Твоя должность' : `Должность · ${name}`}\n\n` +
     jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}\n${dutiesQuote(j)}`).join('\n');
 }
 
@@ -1185,7 +1187,7 @@ async function positionCommand(message, self, target, add, words) {
   if (!add && !String(words || '').trim()) {
     const jobs = await staff.positionsOf(target.id);
     for (const j of jobs) await staff.dismiss(target.id, j);
-    await say(message, jobs.length ? `💼 ${who} больше без должности.` : `💼 У ${who} и так нет должности.`);
+    await say(message, jobs.length ? `💼 ${who} больше без должности.` : `💼 ${who} и так без должности.`);
     return;
   }
   const position = staff.find(String(words || '').replace(/^@\w+\s*/u, ''));
@@ -1197,7 +1199,7 @@ async function positionCommand(message, self, target, add, words) {
     const removed = await staff.dismiss(target.id, position);
     await say(message, removed
       ? `💼 ${who} снимается с должности «${escapeHtml(position.title)}».`
-      : `💼 У ${who} нет должности «${escapeHtml(position.title)}».`, { temp: !removed });
+      : `💼 ${who} не на должности «${escapeHtml(position.title)}».`, { temp: !removed });
     return;
   }
   try {
@@ -1263,13 +1265,13 @@ async function achievementsText(who, self) {
   const got = rows.filter((r) => byCode.has(r.code));
   const name = escapeHtml(truncate(who.name, 40));
   if (!got.length) {
-    return `🏆 ${self ? 'У тебя' : `У ${name}`} пока нет ачивок. Их ${club.ACHIEVEMENTS.length}: за сообщения, дни в чате, репутацию, фарм, казино и не только.`;
+    return `🏆 ${self ? 'У тебя пока нет ачивок' : `${name}: пока ни одной ачивки`}. Их ${club.ACHIEVEMENTS.length}: за сообщения, дни в чате, репутацию, фарм, казино и не только.`;
   }
   const last = got.slice(0, ACH_SHOWN).map((r) => {
     const a = byCode.get(r.code);
     return `«${escapeHtml(a.title)}» — ${escapeHtml(a.text)}`;
   });
-  return `🏆 Ачивки ${self ? 'твои' : name}: ${got.length} из ${club.ACHIEVEMENTS.length}\n\nПоследние:\n<blockquote>${last.join('\n')}</blockquote>`;
+  return `🏆 ${self ? 'Твои ачивки' : `Ачивки · ${name}`}: ${got.length} из ${club.ACHIEVEMENTS.length}\n\nПоследние:\n<blockquote>${last.join('\n')}</blockquote>`;
 }
 
 // ---- daily summary -----------------------------------------------------------------
@@ -1330,7 +1332,7 @@ const HELP = {
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
     ['📋 Моя Анкета · Анкета (ответом)', 'Анкета по всем чатам Сквада сразу: график, стаж, актив, серия дней, рекордный день, час пик, чаты и мешок'],
     ['🎨 Тема Графика · Тема Графика Неон', 'Цвет графиков в «Кто Я» и анкете. Темы покупаются в Лавке за XP'],
-    ['🏡 +Гражданство · -Гражданство · Кто Граждане', 'Сделай этот чат своим домом: «Гражданин чата» в анкете и «Кто Я», 🏡 рядом с именем в стате. Гражданство одно, новое заменяет старое'],
+    ['🏡 +Гражданство · -Гражданство · Кто Граждане', 'Сделай этот чат своим домом: «Гражданство» в анкете и «Кто Я», 🏡 рядом с именем в стате. Гражданство одно, новое заменяет старое'],
     ['📅 Возраст Аккаунта · Возраст Аккаунта (ответом)', 'Примерно с какого времени человек в Telegram. Строка есть и в «Кто Я», и в анкете'],
     ['🏙 Чат Инфо', 'Карточка чата: график, население, сообщения за день, неделю, месяц и всё время, рекордный день и самые активные'],
     ['🎂 +ДР 16.12.1999 · +Пол М · +Город Москва', 'Данные для анкеты. Убрать: «-ДР», «-Пол», «-Город»'],
@@ -1416,7 +1418,7 @@ const USAGE = [
   },
   {
     keys: ['+гражданство', '-гражданство', 'гражданство', 'кто граждане', 'граждане', 'все граждане'], title: '🏡 Гражданство',
-    about: 'Сделай чат своим домом: «Гражданин чата» в анкете и «Кто Я», 🏡 рядом с именем в стате. Гражданство одно, новое заменяет старое',
+    about: 'Сделай чат своим домом: «Гражданство» в анкете и «Кто Я», 🏡 рядом с именем в стате. Гражданство одно, новое заменяет старое',
     how: [['+Гражданство', 'Стать гражданином этого чата (пишется в самом чате)'], ['-Гражданство', 'Отказаться'], ['Кто Граждане', 'Все граждане этого чата']],
   },
   {
@@ -2130,12 +2132,12 @@ export async function handleText(message) {
       return true;
     }
     const n = await bio.removeAllAwards(target.id);
-    await say(message, n ? `🗑 С ${mention(target.id, target.name)} сняты все награды: ${n}.` : 'Наград у участника нет.', { temp: true });
+    await say(message, n ? `🗑 ${mention(target.id, target.name)}: сняты все награды (${n}).` : 'Наград у участника нет.', { temp: true });
     return true;
   }
   if (/^снять\s+награды\s+от(?:\s+@\w+)?$/u.test(cmd) && target) {
     const n = await bio.removeAwardsFrom(self.id, target.id);
-    await say(message, n ? `🗑 Сняты твои награды от ${mention(target.id, target.name)}: ${n}.` : `От ${mention(target.id, target.name)} у тебя наград нет.`, { temp: true });
+    await say(message, n ? `🗑 Сняты твои награды от этого участника: ${n}.` : 'От этого участника у тебя наград нет.', { temp: true });
     return true;
   }
   const mod = target && MOD_VERBS.exec(rest.trim());

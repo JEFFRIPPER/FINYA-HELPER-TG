@@ -53,7 +53,7 @@ test('only the owner appoints in reply; the news stays, the team and profile sho
   assert.match(last(api), /🎨 Креативщик \/ Дизайнер — Аня/);
   assert.match(last(api), /📝 Контент-менеджер — вакансия/);
   await say(b, 'должность', replyTo(a));
-  assert.match(last(api), /Должность Аня/);
+  assert.match(last(api), /Должность · Аня/);
   assert.match(last(api), /🛡 Модератор чата/);
   await say(b, 'должность');
   assert.match(last(api), /У тебя пока нет должности/);

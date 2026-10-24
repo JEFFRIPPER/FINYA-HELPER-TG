@@ -112,14 +112,13 @@ async function history(userId) {
 
 // The "Сквад" tab: the owner's latest announcement and the menu links.
 async function squad() {
-  const news = await getSetting('news');
-  const lastPost = await getSetting('last_channel_post_id');
+  const [news, lastPost, team] = await Promise.all([getSetting('news'), getSetting('last_channel_post_id'), teamView()]);
   return {
     news: truncate(String(news || ''), NEWS_LIMIT),
     channel: SQUAD_CHANNEL_URL,
     lastPost: lastPost ? `${SQUAD_CHANNEL_URL}/${lastPost}` : null,
     links: SQUAD_LINKS,
-    team: await teamView(),
+    team,
   };
 }
 
@@ -127,8 +126,7 @@ async function squad() {
 async function teamView() {
   const out = [];
   for (const { position, people } of await staff.team()) {
-    const names = [];
-    for (const r of people) names.push(truncate(await nameOf(r.user_id), 40));
+    const names = (await Promise.all(people.map((r) => nameOf(r.user_id)))).map((n) => truncate(n, 40));
     out.push({ emoji: position.emoji, title: position.title, duties: position.duties, motto: position.motto, people: names });
   }
   return out;
@@ -153,8 +151,19 @@ export async function profileData(user) {
       percent: Math.floor(((p.xp - current[0]) / (following[0] - current[0])) * 100),
     };
   }
-  const participants = await db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`);
-  const social = await chat.profileExtras(user.id);
+  // The rest only reads: all at once, so the Mini App opens faster.
+  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow] = await Promise.all([
+    db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`),
+    chat.profileExtras(user.id),
+    place(p),
+    rival(p),
+    club.myStyle(user.id),
+    chart(user.id, ts),
+    history(user.id),
+    topView(false, user.id),
+    topView(true, user.id),
+    squad(),
+  ]);
   return {
     me: {
       name: truncate(fullName(user), 100),
@@ -166,27 +175,27 @@ export async function profileData(user) {
       founder,
       manualRank: Boolean(p.manual_rank) && !founder,
       progress,
-      place: await place(p),
+      place: placeNow,
       participants: participants.c,
       streak: streakNow,
-      rival: await rival(p),
-      style: await club.myStyle(user.id),
+      rival: rivalNow,
+      style,
       // Reputation and marriage from the chats («+», «брак»).
       rep: social.rep,
       marriage: social.marriage,
       positions: social.positions,
     },
     admin: founder,
-    chart: await chart(user.id, ts),
-    history: await history(user.id),
-    top: { all: await topView(false, user.id), week: await topView(true, user.id) },
+    chart: chartNow,
+    history: historyNow,
+    top: { all: topAll, week: topWeek },
     ranks: xp.RANKS.map((r) => ({ ...rankView(r), reached: automatic ? p.xp >= r[0] : r[1] === current[1] })),
     rules: {
       comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT,
       poll: club.POLL_XP, referral: club.REFERRAL_XP, birthday: club.BIRTHDAY_XP, weekly: club.WEEKLY_BONUS,
       farm: xp.FARM_MAX, farmRare: xp.FARM_RARE_MAX, farmHours: xp.FARM_COOLDOWN / 3600,
     },
-    squad: await squad(),
+    squad: squadNow,
     club: clubView,
     now: ts,
   };

@@ -43,5 +43,5 @@ test('owner forwards the export file to the bot', async () => {
   assert.match(lastText(mock), /уже импортирован/);
   // Imported data is live: the top shows Алиса.
   await onCallbackQuery(callback(user(101), 'xp:top'));
-  assert.match(lastText(mock), /1\. Алиса — 320 XP/);
+  assert.match(lastText(mock), /🥇 Алиса — 320 XP/);
 });

@@ -208,7 +208,7 @@ test('birthday: set once a month, a gift and one greeting in the discussion grou
   await pump({ force: true });
   const greetings = api.called('sendMessage').filter((c) => c.params.chat_id === DISCUSSION.id);
   assert.equal(greetings.length, 1);
-  assert.match(greetings[0].params.text, /день рождения у Alice/);
+  assert.match(greetings[0].params.text, /день рождения: Alice/);
   // The gift was already given when the app was opened.
   assert.equal(await xpOf(1), gifted);
 });

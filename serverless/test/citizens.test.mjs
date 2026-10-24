@@ -23,9 +23,9 @@ test('«+гражданство»: one home, shown in the anketa, «кто я»,
   const inDiscussion = (from, text) => onMessage(groupMessage(DISCUSSION, from, text));
 
   await inDiscussion(a, '+Гражданство');
-  assert.match(last(api), /Аня.* теперь гражданин чата «Обсуждения», здесь с [\d.]+ \(2 года 2 мес\)/);
+  assert.match(last(api), /Аня.* — гражданство чата «Обсуждения» оформлено, здесь с [\d.]+ \(2 года 2 мес\)/);
   await inDiscussion(a, '+гражданство');
-  assert.match(last(api), /и так гражданин этого чата/);
+  assert.match(last(api), /и так гражданство этого чата/);
   await inDiscussion(b, 'привет');
   await inDiscussion(b, '+гражданство');
 
@@ -34,13 +34,13 @@ test('«+гражданство»: one home, shown in the anketa, «кто я»,
   await inDiscussion(a, 'стата');
   assert.match(last(api), /🏡 Аня — /);
   await inDiscussion(a, 'кто я');
-  assert.match(api.called('sendPhoto').at(-1).params.caption, /🏡 Гражданин этого чата · 2 года 2 мес/);
+  assert.match(api.called('sendPhoto').at(-1).params.caption, /🏡 Гражданство: этот чат · 2 года 2 мес/);
   await inDiscussion(a, 'моя анкета');
-  assert.match(api.called('sendPhoto').at(-1).params.caption, /🏡 Гражданин чата «Чат» 2 года 2 мес \(с [\d.]+\)/);
+  assert.match(api.called('sendPhoto').at(-1).params.caption, /🏡 Гражданство: чат «Чат» · 2 года 2 мес \(с [\d.]+\)/);
 
   // A new home replaces the old one.
   await onMessage(groupMessage(FAMILY, a, '+гражданство'));
-  assert.match(last(api), /теперь гражданин чата «Squad Family»[\s\S]*Прежнее гражданство «Чат» снято/);
+  assert.match(last(api), /гражданство чата «Squad Family» оформлено[\s\S]*Прежнее гражданство «Чат» снято/);
   await inDiscussion(b, 'кто граждане');
   assert.match(last(api), /: 1\n\n1\. Боря/);
   await onMessage(groupMessage(FAMILY, b, 'кто я', { reply_to_message: groupMessage(FAMILY, a, 'х') }));
@@ -84,5 +84,5 @@ test('the start date of a pair: free, once a month, the days count from it', asy
   await say(b, 'начало брака 10.10.2025');
   assert.match(last(api), /Брак с Аня теперь считается с 10\.10\.2025/);
   await say(a, 'мой брак');
-  assert.match(last(api), /в браке с Боря уже \d+ дн/);
+  assert.match(last(api), /Твоя пара: Боря · в браке уже \d+ дн/);
 });

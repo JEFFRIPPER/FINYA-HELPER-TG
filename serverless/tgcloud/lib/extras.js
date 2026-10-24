@@ -122,7 +122,7 @@ function grounds(s) {
   if (s.casino >= 3) out.push(['casino', `${count(s.casino, 'игра', 'игры', 'игр')} в казино за неделю`]);
   if (s.gifts >= 1) out.push(['gifts', `${count(s.gifts, 'перевод', 'перевода', 'переводов')} XP за неделю`]);
   if (s.given >= 20) out.push(['rep', `${count(s.given, 'плюс', 'плюса', 'плюсов')} в репутацию`]);
-  if (s.spouse) out.push(['married', `в браке с ${escapeHtml(truncate(s.spouse, 40))}`]);
+  if (s.spouse) out.push(['married', `в браке (пара: ${escapeHtml(truncate(s.spouse, 40))})`]);
   return out;
 }
 
@@ -237,7 +237,7 @@ export function accountAgeText(who, ts = nowInt()) {
   if (t == null) return '📅 Не получилось оценить возраст аккаунта.';
   const years = Math.floor((ts - t) / (365.25 * DAY));
   const age = years >= 1 ? `≈ ${years} ${plural(years, 'год', 'года', 'лет')}` : 'меньше года';
-  return `📅 Аккаунт ${mention(who.id, who.name)}\n\nВ Telegram примерно с ${accountSinceText(who.id, ts)} · ${age}\n\n` +
+  return `📅 Аккаунт · ${mention(who.id, who.name)}\n\nВ Telegram примерно с ${accountSinceText(who.id, ts)} · ${age}\n\n` +
     'Telegram не сообщает дату регистрации, Финя оценивает её по ID: точность до сезона.';
 }
 

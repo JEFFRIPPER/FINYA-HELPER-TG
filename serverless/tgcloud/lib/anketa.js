@@ -113,7 +113,7 @@ export async function citizenshipOf(userId) {
 // → { since, moved } (moved: the chat id left behind, if any).
 export async function becomeCitizen(chatId, userId, ts = nowInt()) {
   const old = await citizenshipOf(userId);
-  if (old && old.chat_id === chatId) throw new AnketaError('Ты и так гражданин этого чата 🏡');
+  if (old && old.chat_id === chatId) throw new AnketaError('У тебя и так гражданство этого чата 🏡');
   const m = await db.get(sql`SELECT first_seen FROM chat_members WHERE chat_id = ${chatId} AND user_id = ${userId}`);
   const since = m && m.first_seen > 0 ? m.first_seen : ts;
   await db.run(sql`INSERT INTO citizens (user_id, chat_id, since, set_at) VALUES (${userId}, ${chatId}, ${since}, ${ts})

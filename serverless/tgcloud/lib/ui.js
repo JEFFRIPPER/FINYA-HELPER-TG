@@ -6,7 +6,7 @@ import {
 } from './config.js';
 import { button, getMe, keyboard, menuButton } from './tg.js';
 import { getSetting, isSubscribed } from './store.js';
-import { escapeHtml, fullName, truncate } from './util.js';
+import { escapeHtml, fmtThousands, fullName, truncate } from './util.js';
 import * as xp from './xp.js';
 
 export function partnerKeyboard(partner) {
@@ -245,13 +245,16 @@ export async function xpProfileText(user) {
     'Учитываются обсуждения постов Сквада.';
 }
 
+const TOP_MEDALS = ['🥇', '🥈', '🥉'];
+
 export async function xpTopText(weekly = false) {
   const rows = await xp.leaderboard({ weekly });
-  let text = 'Топ Сквада · ' + (weekly ? 'текущая неделя (МСК), комментарии и реакции' : 'за всё время');
+  let text = '🏆 Топ Сквада · ' + (weekly ? 'текущая неделя (МСК), комментарии и реакции' : 'за всё время');
   if (!rows.length) return text + '\n\nПока никто не заработал XP. Начни с комментария под постом.';
+  text += '\n';
   rows.forEach((row, i) => {
     const [current] = xp.rankFor(row.xp, { founder: row.user_id === OWNER_USER_ID, manualRank: row.manual_rank });
-    text += `\n\n${i + 1}. ${escapeHtml(truncate(row.name, 35))} — ${row.score} XP\n${current[1]} · ${current[2]}`;
+    text += `\n${TOP_MEDALS[i] || `${i + 1}.`} ${escapeHtml(truncate(row.name, 35))} — ${fmtThousands(row.score)} XP · ${current[1]} ${current[2]}`;
   });
   return text;
 }

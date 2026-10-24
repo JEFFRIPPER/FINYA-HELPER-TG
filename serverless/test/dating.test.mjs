@@ -27,7 +27,7 @@ test('dating: offer, only the other one accepts, it lasts until «Расстат
   const c = user(3, { first_name: 'Вика' });
   await say(a, 'встречаться', replyTo(b));
   const offer = replies(api).at(-1).params;
-  assert.match(offer.text, /предлагает .*Боря.* встречаться/);
+  assert.match(offer.text, /→ .*Боря.*: предложение встречаться/);
   const yes = offer.reply_markup.inline_keyboard[0][0].callback_data;
   assert.equal(yes, 'date:y:1:2');
   await onCallbackQuery(groupButton(a, yes));
@@ -50,7 +50,7 @@ test('dating: offer, only the other one accepts, it lasts until «Расстат
   await say(c, 'кто встречается');
   assert.match(last(api), /Аня \+ Боря — 40 дней/);
   await say(a, 'кто я');
-  assert.match(api.called('sendPhoto').at(-1).params.caption, /💞 Встречается с Боря · 40 дней/);
+  assert.match(api.called('sendPhoto').at(-1).params.caption, /💞 Отношения: Боря · 40 дней/);
 
   // Only the one who asked confirms the break-up; then both are free.
   await say(b, 'расстаться');
@@ -71,7 +71,7 @@ test('dating grows into marriage', async () => {
   await say(a, 'встречаться', replyTo(b));
   await onCallbackQuery(groupButton(b, 'date:y:1:2'));
   await say(b, 'брак', replyTo(a));
-  assert.match(last(api), /делает предложение/);
+  assert.match(last(api), /предложение руки и сердца/);
   await onCallbackQuery(groupButton(a, 'marry:y:2:1'));
   assert.equal(await pairs('spouses'), 2);
   assert.equal(await pairs('dating'), 0);
