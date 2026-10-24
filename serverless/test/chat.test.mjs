@@ -173,7 +173,7 @@ test('marriage: proposal, only the other one accepts, Mini App shows the partner
   await say(b, 'привет');
   await say(a, 'брак', replyTo(b));
   const proposal = sent(api).at(-1).params;
-  assert.match(proposal.text, /делает предложение/);
+  assert.match(proposal.text, /предложение руки и сердца/);
   const yes = proposal.reply_markup.inline_keyboard[0][0].callback_data;
   assert.equal(yes, 'marry:y:1:2');
   // The proposer and strangers cannot accept.
@@ -193,7 +193,7 @@ test('marriage: proposal, only the other one accepts, Mini App shows the partner
   const data = await profileEndpoint({}, { initData: { user: a } });
   assert.equal(data.me.marriage.name, 'Боря');
   await say(a, 'кто я');
-  assert.match(lastProfile(api), /В браке с Боря/);
+  assert.match(lastProfile(api), /💍 Брак: Боря/);
   // Divorce asks first; only the one who asked can confirm.
   await say(a, 'развод');
   const div = sent(api).at(-1).params.reply_markup.inline_keyboard[0][0].callback_data;

@@ -105,7 +105,7 @@ test('«ачивки»: how many are open and the last ones', async () => {
   await db.run("INSERT INTO achievements (user_id, code, unlocked_at) VALUES (2, 'msgs_10', 1), (2, 'nick', 2)");
   await say(a, 'ачивки');
   const text = replies(api).at(-1).params.text;
-  assert.match(text, /Ачивки твои: \d+ из 66/);
+  assert.match(text, /Твои ачивки: \d+ из 66/);
   assert.match(text, /«Новое имя» — Поставь ник/);
 });
 

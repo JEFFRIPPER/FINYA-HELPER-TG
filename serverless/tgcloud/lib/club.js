@@ -674,7 +674,7 @@ async function birthdayTick(ts) {
     try {
       await api.sendMessage({
         chat_id: chatId, parse_mode: 'HTML',
-        text: boldHtml(`🎂 Сегодня день рождения у ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
+        text: boldHtml(`🎂 Сегодня день рождения: ${names}!\n\nСквад поздравляет 🎉 Финя дарит +${BIRTHDAY_XP} XP. ` +
           'Отметь свой день рождения в профиле.'),
         reply_markup: await profileButton('🎁 Мой профиль'),
       });
