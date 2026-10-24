@@ -1,4 +1,4 @@
-// Гороскоп с ignio.com, знак зодиака в «Кто Я», вопрос дня опросом, «Сравнить», «Финя, До …».
+// Гороскоп с horo.mail.ru, знак зодиака в «Кто Я», вопрос дня опросом, «Сравнить», «Финя, До …».
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { db, fetchMock } from 'sdk';
@@ -15,48 +15,56 @@ const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text
 const replyTo = (target) => ({ reply_to_message: groupMessage(DISCUSSION, target, 'сообщение') });
 const last = (api) => replies(api).at(-1).params.text;
 
-const KEYS = ['aries', 'taurus', 'gemini', 'cancer', 'leo', 'virgo', 'libra', 'scorpio', 'sagittarius', 'capricorn', 'aquarius', 'pisces'];
-const XML = `<?xml version="1.0" encoding="utf-8"?><horo><date today="24.10.2026"/>` +
-  KEYS.map((k) => `<${k}><yesterday>вчера</yesterday><today>\n${k === 'pisces' ? 'Рыбам &quot;везёт&quot; сегодня' : `Прогноз ${k}`}\n</today><tomorrow>завтра</tomorrow></${k}>`).join('') +
-  '</horo>';
+// Shaped like a horo.mail.ru page: navigation, the heading, the forecast, links below.
+const page = (key) => `<!doctype html><html><head><meta name="description" content="Гороскоп на сегодня: короткое описание для ${key}.">
+<script>window.__x = "<p>не тот текст из скрипта, длинный и с точкой в конце.</p>";</script></head><body>
+<nav><a href="/">Гороскопы</a></nav><div>Прогноз на 25 октября</div>
+<h1>Гороскоп на сегодня: ${key}</h1>
+<ul><li><a href="/prediction/aries/today/">Овен</a> 21 марта — 20 апреля</li></ul>
+<div class="article"><p>${key === 'pisces' ? 'Рыбам &laquo;везёт&raquo; сегодня: день&nbsp;хороший, всё получится.' : `Прогноз ${key}: день подходит для новых дел и встреч.`}</p>
+<p>Вечером лучше отдохнуть и не принимать <b>поспешных</b> решений.</p></div>
+<p>Финансы</p><p>Подпишитесь на рассылку, чтобы получать гороскоп каждый день.</p></body></html>`;
 
-test('horoscope: parsed from the ignio XML, cached for the day, honest when the site is down', async () => {
+test('horoscope: parsed from horo.mail.ru, cached for the day, honest when the site is down', async () => {
   const api = await setup();
-  assert.equal(parseHoroscope(XML).pisces, 'Рыбам "везёт" сегодня');
-  assert.equal(parseHoroscope('<horo><aries><today>x</today></aries></horo>'), null);
+  assert.equal(parseHoroscope(page('pisces')), 'Рыбам «везёт» сегодня: день хороший, всё получится.\n\nВечером лучше отдохнуть и не принимать поспешных решений.');
+  // No paragraphs: the structured data, then the description.
+  assert.equal(parseHoroscope('<script type="application/ld+json">{"articleBody":"Звёзды советуют \\"не спешить\\" сегодня и беречь силы."}</script>'), 'Звёзды советуют "не спешить" сегодня и беречь силы.');
+  assert.equal(parseHoroscope('<meta name="description" content="Овнам сегодня повезёт в делах и в любви.">'), 'Овнам сегодня повезёт в делах и в любви.');
+  assert.equal(parseHoroscope('<html>moved</html>'), null);
   assert.equal(signByName('рыбы').key, 'pisces');
   assert.equal(signByName('льва').key, 'leo');
   assert.equal(signByName('козерога').key, 'capricorn');
   assert.equal(zodiac(16, 12).key, 'sagittarius');
 
   const a = user(2, { first_name: 'Аня' });
-  fetchMock.handler = async (url) => (url.startsWith('https://img.') ? { status: 403 } : { text: '<html>moved</html>' });
+  fetchMock.handler = async () => ({ status: 403 });
   await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
-  assert.match(last(api), /не загрузился с ignio\.com/);
-  // All three addresses tried; the owner sees why in the logs; no new tries for a while.
-  assert.equal(fetchMock.calls.length, 3);
+  assert.match(last(api), /не загрузился с horo\.mail\.ru/);
+  // The owner sees why in the logs; no new tries for a while.
   const logged = await db.get("SELECT text FROM error_log WHERE source = 'horoscope'");
-  assert.match(logged.text, /HTTP 403.*не тот формат/);
+  assert.match(logged.text, /horo\.mail\.ru\/prediction\/pisces\/today\/: HTTP 403/);
   await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
-  assert.equal(fetchMock.calls.length, 3);
+  assert.equal(fetchMock.calls.length, 1);
   await db.run('DELETE FROM error_log');
   await setSetting('horoscope_failed_at', null);
 
   fetchMock.calls = [];
-  fetchMock.handler = async () => ({ text: XML });
+  fetchMock.handler = async (url) => ({ text: page(/prediction\/(\w+)\//.exec(url)[1]) });
   await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
   assert.match(last(api), /♓ Рыбы · гороскоп на/);
-  assert.match(last(api), /Рыбам &quot;везёт&quot; сегодня/);
-  assert.match(last(api), /Источник: ignio\.com/);
+  assert.match(last(api), /<blockquote expandable>Рыбам «везёт» сегодня/);
+  assert.match(last(api), /Источник: horo\.mail\.ru/);
   await onMessage(privateMessage(a, 'гороскоп льва'));
   assert.match(last(api), /Прогноз leo/);
-  assert.equal(fetchMock.calls.length, 1);
-  assert.match(fetchMock.calls[0].url, /^https:\/\/img\.ignio\.com\//);
+  await onMessage(privateMessage(a, 'Гороскоп Рыбы'));
+  // One page per sign, each once a day.
+  assert.deepEqual(fetchMock.calls.map((c) => c.url), ['https://horo.mail.ru/prediction/pisces/today/', 'https://horo.mail.ru/prediction/leo/today/']);
 });
 
 test('the zodiac sign follows the birthday: «Кто Я», «Мой Знак» and the own horoscope', async () => {
   const api = await setup();
-  fetchMock.handler = async () => ({ text: XML });
+  fetchMock.handler = async (url) => ({ text: page(/prediction\/(\w+)\//.exec(url)[1]) });
   const a = user(2, { first_name: 'Аня' });
   await onMessage(privateMessage(a, 'Гороскоп'));
   assert.match(last(api), /\+ДР/);
@@ -66,7 +74,7 @@ test('the zodiac sign follows the birthday: «Кто Я», «Мой Знак» a
   await onMessage(privateMessage(a, 'Мой знак'));
   assert.match(last(api), /Твой знак: Рыбы/);
   await onMessage(privateMessage(a, 'Гороскоп'));
-  assert.match(last(api), /Рыбам &quot;везёт&quot;/);
+  assert.match(last(api), /Рыбам «везёт»/);
 });
 
 test('«Финя, До Нового Года» counts down; dates and unknown targets', async () => {
