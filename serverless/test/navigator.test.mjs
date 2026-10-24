@@ -6,7 +6,7 @@ import { onMessage } from '../tgcloud/lib/bot.js';
 import * as navigator from '../tgcloud/lib/navigator.js';
 import { getSetting, setSetting } from '../tgcloud/lib/store.js';
 import { nowInt } from '../tgcloud/lib/util.js';
-import { apiError, checkErrors, DISCUSSION, groupMessage, OWNER, setup, user } from './helpers.mjs';
+import { apiError, checkErrors, DISCUSSION, FAMILY, groupMessage, OWNER, setup, user } from './helpers.mjs';
 
 afterEach(checkErrors);
 
@@ -16,11 +16,14 @@ const navSends = (api) => api.called('sendMessage').filter((c) => /Навига�
 async function start(overrides = {}) {
   let pinned = { message_id: 1 };
   const api = await setup({
-    getChat: (p) => ({ id: p.chat_id, type: 'supergroup', title: 'Обсуждения', invite_link: 'https://t.me/+squadchat', pinned_message: pinned }),
+    getChat: (p) => (p.chat_id === DISCUSSION.id
+      ? { id: p.chat_id, type: 'supergroup', title: 'Обсуждения', username: 'squad_talk', invite_link: 'https://t.me/+talk', pinned_message: pinned }
+      : { id: p.chat_id, type: 'supergroup', title: 'SQUAD FAMILY', invite_link: 'https://t.me/+family', pinned_message: pinned }),
     ...overrides,
   });
   await setSetting('chat_captcha', false);
-  await db.run('INSERT INTO squad_chats (chat_id, title, added_by, added_at) VALUES (?, ?, ?, 0)', [DISCUSSION.id, DISCUSSION.title, OWNER.id]);
+  await db.run('INSERT INTO squad_chats (chat_id, title, added_by, added_at) VALUES (?, ?, ?, 0), (?, ?, ?, 0)',
+    [DISCUSSION.id, DISCUSSION.title, OWNER.id, FAMILY.id, FAMILY.title, OWNER.id]);
   return { api, unpin: () => { pinned = null; } };
 }
 
@@ -35,7 +38,11 @@ test('the owner places the navigator: buttons to the channel, chats, shop and pr
   assert.match(sent.params.text, /🧩 Проекты: .*COUNTER/);
   const urls = sent.params.reply_markup.inline_keyboard.flat().map((b) => b.url);
   assert.ok(urls.includes('https://t.me/THKC_SQUAD'));
-  assert.ok(urls.includes('https://t.me/+squadchat'));
+  assert.ok(urls.includes('https://t.me/squad_talk'));
+  // SQUAD FAMILY is entered only after the form: no invite link anywhere.
+  assert.ok(!urls.some((u) => /\+/.test(u)));
+  assert.doesNotMatch(sent.params.text, /t\.me\/\+/);
+  assert.match(sent.params.text, /только после анкеты/);
   assert.ok(urls.includes('https://jeffripper.github.io/SQUAD-SHOP/'));
   const pin = api.called('pinChatMessage');
   assert.equal(pin.length, 1);
