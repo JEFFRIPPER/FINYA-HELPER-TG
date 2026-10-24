@@ -14,6 +14,7 @@ import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
 import * as extras from './extras.js';
+import * as questions from './questions.js';
 import { withPremium } from './emoji.js';
 import { DATIVE } from './inline.js';
 import * as feats from './feats.js';
@@ -209,6 +210,8 @@ async function profileCard(chat, who, self) {
     `❤️ Репутация: ${rep.points}${rep.given ? ` · ➕ отдано ${rep.given}` : ''}`,
   ];
   if (!who.isBot) stats.push(`📅 В Telegram: примерно с ${extras.accountSinceText(who.id, ts)}`);
+  const sign = await extras.zodiacOf(who.id);
+  if (sign) stats.push(`${sign.emoji} Знак зодиака: ${sign.name}`);
   const card = group ? await members.memberCard(chat.id, who.id, ts) : null;
   if (card) {
     stats.push(
@@ -531,6 +534,54 @@ async function plusRep(message, target) {
 }
 
 // ---- marriages -------------------------------------------------------------------
+
+// «Финя, до дня рождения»: the next birthday of the asker.
+async function birthdayTarget(userId) {
+  const b = await db.get(sql`SELECT day, month FROM birthdays WHERE user_id = ${userId}`);
+  if (!b) return null;
+  const left = extras.daysUntil(b.day, b.month);
+  if (left == null) return null;
+  const midnight = Math.floor((nowInt() + MSK_OFFSET) / 86400) * 86400 - MSK_OFFSET;
+  return { title: 'твоего дня рождения', at: left === 0 ? nowInt() : midnight + left * 86400 };
+}
+
+// «Сравнить» in reply: two members side by side, a 🏆 for who leads each row.
+async function compareText(chatId, a, b) {
+  const ts = nowInt();
+  async function stats(who) {
+    const p = await db.get(sql`SELECT xp FROM profiles WHERE user_id = ${who.id}`);
+    const card = await members.memberCard(chatId, who.id, ts);
+    const ach = await db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`);
+    return {
+      xp: p ? p.xp : 0,
+      rep: (await social.repOf(who.id)).points,
+      ach: ach.c,
+      awards: (await bio.awardsOf(who.id)).length,
+      week: card ? card.week : 0,
+      total: card ? card.total : 0,
+      since: card && card.since ? card.since : null,
+    };
+  }
+  const [x, y] = [await stats(a), await stats(b)];
+  const rows = [
+    ['⚡ XP', x.xp, y.xp], ['❤️ Репутация', x.rep, y.rep], ['🏆 Ачивки', x.ach, y.ach], ['🏅 Награды', x.awards, y.awards],
+    ['💬 Актив за неделю', x.week, y.week], ['📈 Сообщений всего', x.total, y.total],
+  ];
+  let wa = 0;
+  let wb = 0;
+  const lines = rows.map(([label, va, vb]) => {
+    if (va > vb) wa++;
+    if (vb > va) wb++;
+    return `${label}: ${fmtThousands(va)}${va > vb ? ' 🏆' : ''} — ${fmtThousands(vb)}${vb > va ? ' 🏆' : ''}`;
+  });
+  if (x.since && y.since) {
+    if (x.since < y.since) wa++;
+    if (y.since < x.since) wb++;
+    lines.push(`🏠 В чате с: ${fmtMsk(x.since).slice(0, 10)}${x.since < y.since ? ' 🏆' : ''} — ${fmtMsk(y.since).slice(0, 10)}${y.since < x.since ? ' 🏆' : ''}`);
+  }
+  const verdict = wa === wb ? '🤝 Ничья!' : `👑 Побеждает ${wa > wb ? mention(a.id, a.name) : mention(b.id, b.name)}: ${Math.max(wa, wb)}:${Math.min(wa, wb)}`;
+  return `⚔️ ${mention(a.id, a.name)} против ${mention(b.id, b.name)}\n\n${lines.join('\n')}\n\n${verdict}`;
+}
 
 const MINUS = new Set(['-', '--', '-1', 'минус', 'дизлайк']);
 
@@ -1307,6 +1358,9 @@ const HELP = {
     ['⏰ Финя, Напомни Через 2ч Текст', 'Ещё «… В 18:30 …», «… Завтра В 10:00 …». Список: «Напоминания», удалить: «-Напоминание N»'],
     ['🆔 Ид', 'Твой ID и ID чата. Чужой ID ответом — для админов'],
     ['🎂 Ближайшие ДР', 'Дни рождения участников на месяц вперёд, из анкет'],
+    ['🔮 Гороскоп · Гороскоп Овен · Мой Знак', 'Гороскоп на сегодня с ignio.com по знаку из твоего «+ДР» или по названию знака'],
+    ['⏳ Финя, До Нового Года', 'Сколько осталось до праздника или даты: «до 8 марта», «до 31.12», «до дня рождения»'],
+    ['⚔️ Сравнить (ответом)', 'Ты и участник рядом: XP, репа, ачивки, награды, актив и стаж в чате'],
     ['⚖️ Моя Статья · Статья (ответом)', 'Статья дня из «УК Сквада» по тому, как ты ведёшь себя в чате: флуд, ночные посиделки, казино. Новая каждый день'],
     ['⭐ Админы', 'Админы этого чата'],
     ['🔮 Финя, Кто… · Финя, Инфа… · Финя, Когда…', 'Финя выберет участника, назовёт шанс в процентах или дату'],
@@ -1324,6 +1378,7 @@ const HELP = {
     ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
     ['👑 Итоги Дня Вкл/Выкл', 'Топ-3 дня в каждом чате Сквада в 23:55 МСК'],
     ['👑 Прощание Вкл/Выкл', 'Финя прощается с теми, кто сам вышел из чата'],
+    ['👑 Вопрос Дня · Вопрос Дня Вкл/Выкл', 'Опрос для обсуждения в 12:00 МСК в каждом чате Сквада. «Вопрос Дня» в чате — отправить сейчас'],
     ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
     ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop: через Mini App или файлом в личку (до 20 МБ)'],
   ]],
@@ -1502,14 +1557,29 @@ const USAGE = [
     how: [['Возраст Аккаунта', 'Твой аккаунт'], ['Возраст Аккаунта (ответом)', 'Аккаунт участника']],
   },
   {
+    keys: ['гороскоп', 'мой знак', 'знак', 'знак зодиака', 'мой знак зодиака'], title: '🔮 Гороскоп',
+    about: 'Гороскоп на сегодня с ignio.com. Знак Финя берёт из твоего дня рождения в анкете, он виден и в «Кто Я»',
+    how: [['Гороскоп', 'По твоему знаку, нужен «+ДР 16.12»'], ['Гороскоп Скорпион', 'По любому знаку'], ['Мой Знак · Знак (ответом)', 'Чей какой знак']],
+  },
+  {
+    keys: ['до', 'сколько до'], title: '⏳ Финя, До…',
+    about: 'Обратный отсчёт до праздника или даты',
+    how: [['Финя, До Нового Года', 'Ещё: 8 марта, 23 февраля, 14 февраля, 9 мая, Хэллоуин, лето, осень, зима, весна'], ['Финя, До 31.12', 'До любой даты'], ['Финя, До Дня Рождения', 'До твоего ДР из анкеты']],
+  },
+  {
+    keys: ['сравнить', 'сравни', 'сравнение'], title: '⚔️ Сравнить',
+    about: 'Ты и участник рядом: XP, репутация, ачивки, награды, актив и стаж в чате. 🏆 у того, кто впереди',
+    how: [['Сравнить (ответом)', 'Сравнить себя с автором сообщения'], ['Сравнить @ник', 'То же через @ник']],
+  },
+  {
     keys: ['+рп', '-рп'], title: '👑 +РП',
     about: 'Только владелец: свои РП-действия',
     how: [['+РП Погладить = 🤚 гладит', 'Команда, знак «=», эмодзи и глагол'], ['-РП Погладить', 'Удалить своё действие']],
   },
   {
-    keys: ['антифлуд', 'капча', 'модерация', 'итоги дня', 'прощание'], title: '👑 Защита и итоги',
+    keys: ['антифлуд', 'капча', 'модерация', 'итоги дня', 'прощание', 'вопрос дня'], title: '👑 Защита и итоги',
     about: 'Только владелец. То же переключается в «Панели» Mini App',
-    how: [['Финя, Антифлуд Вкл · Выкл', 'Мут за флуд'], ['Финя, Капча Вкл · Выкл', 'Кнопка «Я не бот» для новичков'], ['Финя, Модерация Вкл · Выкл', 'Мут, бан и варны словами'], ['Финя, Итоги Дня Вкл · Выкл', 'Топ-3 дня в 23:55 МСК'], ['Финя, Прощание Вкл · Выкл', 'Пара слов тем, кто сам вышел из чата']],
+    how: [['Финя, Антифлуд Вкл · Выкл', 'Мут за флуд'], ['Финя, Капча Вкл · Выкл', 'Кнопка «Я не бот» для новичков'], ['Финя, Модерация Вкл · Выкл', 'Мут, бан и варны словами'], ['Финя, Итоги Дня Вкл · Выкл', 'Топ-3 дня в 23:55 МСК'], ['Финя, Прощание Вкл · Выкл', 'Пара слов тем, кто сам вышел из чата'], ['Финя, Вопрос Дня Вкл · Выкл', 'Опрос в 12:00 МСК'], ['Финя, Вопрос Дня', 'Отправить опрос в этот чат сейчас']],
   },
   {
     keys: ['эмодзи', 'эмоджи', 'премиум эмодзи'], title: '✨ Эмодзи',
@@ -1596,6 +1666,7 @@ const SWITCHES = {
   'модерация': ['chat_moderation', 'Модерация командами', 'включена', 'выключена'],
   'итоги дня': ['chat_daily', 'Итоги дня в чатах', 'включены', 'выключены'],
   'прощание': ['chat_farewell', 'Прощание с ушедшими', 'включено', 'выключено'],
+  'вопрос дня': ['chat_question', 'Вопрос дня в чатах', 'включён', 'выключен'],
 };
 
 export const HISTORY_TEXT = '📥 Обновить инфо: старая история чата\n\n'
@@ -1630,13 +1701,22 @@ async function ownerCommand(message, rest) {
     }
     return true;
   }
+  if (/^вопрос дня$/u.test(bare(rest)) && isGroupChat(message.chat)) {
+    try {
+      await questions.postQuestion(message.chat.id);
+    } catch (err) {
+      if (!(err instanceof BotApiError)) throw err;
+      await say(message, '❌ Не получилось отправить опрос: у Фини нет права на опросы в этом чате.', { temp: true });
+    }
+    return true;
+  }
   m = /^-рп\s+(.+)$/iu.exec(rest);
   if (m) {
     const ok = await social.removeAction(m[1]);
     await say(message, ok ? '🗑 Действие удалено.' : 'Такого своего действия нет. Встроенные удалить нельзя.');
     return true;
   }
-  m = /^(антифлуд|капча|модерация|итоги дня|прощание)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
+  m = /^(антифлуд|капча|модерация|итоги дня|прощание|вопрос дня)\s+(вкл|выкл|on|off)$/iu.exec(norm(rest));
   if (m) {
     const on = ['вкл', 'on'].includes(m[2]);
     const [key, name, onWord, offWord] = SWITCHES[m[1]];
@@ -1903,6 +1983,41 @@ export async function handleText(message) {
     await say(message, await extras.birthdaysText(group ? message.chat.id : null), { temp: true });
     return true;
   }
+  const horo = /^гороскоп(?:\s+(.+))?$/u.exec(cmd);
+  if (horo) {
+    const sign = horo[1] ? extras.signByName(horo[1]) : await extras.zodiacOf(self.id);
+    if (!sign) {
+      await say(message, horo[1]
+        ? '🔮 Такого знака нет. Например: «Гороскоп Рыбы».'
+        : '🔮 Сначала добавь день рождения: «+ДР 16.12». Или спроси про знак: «Гороскоп Овен».', { temp: true });
+    } else {
+      await say(message, await extras.horoscopeText(sign), { temp: true });
+    }
+    return true;
+  }
+  if (/^(?:мой знак|знак|знак зодиака|мой знак зодиака)(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = cmd.startsWith('мой') || !group ? null : await targetOf(message);
+    const who = asked && !asked.isBot ? asked : self;
+    const sign = await extras.zodiacOf(who.id);
+    const whose = who.id === self.id ? 'Твой знак' : `Знак ${escapeHtml(truncate(who.name, 40))}`;
+    await say(message, sign
+      ? `${sign.emoji} ${whose}: ${sign.name}. Гороскоп на сегодня: «Гороскоп».`
+      : (who.id === self.id ? '🔮 Знак видно по дню рождения: «+ДР 16.12».' : '🔮 Участник не указал день рождения.'), { temp: true });
+    return true;
+  }
+  const till = /^(?:сколько\s+)?до\s+(.+)$/u.exec(cmd);
+  if (till) {
+    const target = ['дня рождения', 'моего дня рождения', 'др', 'моего др'].includes(till[1])
+      ? await birthdayTarget(self.id) : extras.countdownTarget(till[1]);
+    if (target) {
+      await say(message, extras.countdownText(target), { temp: true });
+      return true;
+    }
+    if (addressed) {
+      await say(message, '⏳ Не знаю такую дату. Например: «Финя, до Нового года», «Финя, до 8 марта», «Финя, до 31.12».', { temp: true });
+      return true;
+    }
+  }
   if (/^(?:возраст аккаунта|возраст|регистрация|дата регистрации)(?:\s+@\w+)?$/u.test(cmd)) {
     const asked = group ? await targetOf(message) : null;
     await say(message, extras.accountAgeText(asked || self), { temp: true });
@@ -1960,6 +2075,10 @@ export async function handleText(message) {
   }
   if (THANKS.has(cmd) && target) {
     await plusRep(message, target);
+    return true;
+  }
+  if (/^(?:сравнить|сравни|сравнение)(?:\s+@\w+)?$/u.test(cmd) && target && !target.isBot && target.id !== self.id) {
+    await say(message, await compareText(message.chat.id, self, target), { temp: true });
     return true;
   }
   if (MINUS.has(cmd) && target) {
@@ -2243,6 +2362,7 @@ export async function tick(leftMs) {
   await reminders.tick(leftMs);
   await anniversaries();
   await dailySummary();
+  await questions.tick();
 }
 
 // For the Mini App profile.

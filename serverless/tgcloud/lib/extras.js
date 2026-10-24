@@ -1,7 +1,10 @@
-// Small chat extras: «Моя Статья», upcoming birthdays, the age of a Telegram account.
-import { db } from 'sdk';
+// Small chat extras: «Моя Статья», upcoming birthdays, the age of a Telegram account,
+// zodiac and horoscope, countdowns.
+import { db, fetch } from 'sdk';
 import { sql } from 'sdk/db';
+import { getSetting, setSetting } from './store.js';
 import { escapeHtml, MSK_OFFSET, nowInt, truncate } from './util.js';
+import * as anketa from './anketa.js';
 import * as members from './members.js';
 import { mention } from './moder.js';
 import * as social from './social.js';
@@ -224,4 +227,134 @@ export function accountAgeText(who, ts = nowInt()) {
   const age = years >= 1 ? `≈ ${years} ${plural(years, 'год', 'года', 'лет')}` : 'меньше года';
   return `📅 Аккаунт ${mention(who.id, who.name)}\n\nВ Telegram примерно с ${accountSinceText(who.id, ts)} · ${age}\n\n` +
     'Telegram не сообщает дату регистрации, Финя оценивает её по ID: точность до сезона.';
+}
+
+// ---- zodiac and horoscope ---------------------------------------------------------
+
+// [key in the feed, name, emoji]. The dates of the signs live in anketa.zodiac.
+const SIGNS = [
+  ['capricorn', 'Козерог', '♑'], ['aquarius', 'Водолей', '♒'], ['pisces', 'Рыбы', '♓'],
+  ['aries', 'Овен', '♈'], ['taurus', 'Телец', '♉'], ['gemini', 'Близнецы', '♊'],
+  ['cancer', 'Рак', '♋'], ['leo', 'Лев', '♌'], ['virgo', 'Дева', '♍'],
+  ['libra', 'Весы', '♎'], ['scorpio', 'Скорпион', '♏'], ['sagittarius', 'Стрелец', '♐'],
+];
+const asSign = (found) => (found ? { key: found[0], name: found[1], emoji: found[2] } : null);
+
+// → { key, name, emoji } for a day and month.
+export function zodiac(day, month) {
+  const label = anketa.zodiac(day, month);
+  return asSign(SIGNS.find(([, name]) => label.endsWith(name)));
+}
+
+// «Гороскоп Рыбы», «гороскоп козерога» → the sign, by the start of its name.
+export function signByName(words) {
+  const w = String(words || '').toLowerCase().replace(/ё/g, 'е').trim();
+  if (Array.from(w).length < 3) return null;
+  // Genitives that drop a vowel: «овна», «льва».
+  if (w.startsWith('овн')) return signByName('овен');
+  if (w.startsWith('льв')) return signByName('лев');
+  const found = SIGNS.find(([, name]) => {
+    const n = name.toLowerCase();
+    return n.startsWith(w) || w.startsWith(n.slice(0, Math.max(3, n.length - 2)));
+  });
+  return asSign(found);
+}
+
+export async function zodiacOf(userId) {
+  const b = await db.get(sql`SELECT day, month FROM birthdays WHERE user_id = ${userId}`);
+  return b ? zodiac(b.day, b.month) : null;
+}
+
+// The daily horoscope of ignio.com: one public XML for all twelve signs, kept for the
+// Moscow day so the chats don't fetch it on every command.
+export const HOROSCOPE_URL = 'https://ignio.com/r/export/utf/xml/daily/com.xml';
+const HOROSCOPE_SOURCE = 'ignio.com';
+
+const unxml = (s) => String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+  .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
+  .replace(/\s+/g, ' ').trim();
+
+export function parseHoroscope(xml) {
+  const out = {};
+  for (const [key] of SIGNS) {
+    const block = new RegExp(`<${key}>([\\s\\S]*?)</${key}>`).exec(xml);
+    const today = block && /<today>([\s\S]*?)<\/today>/.exec(block[1]);
+    if (today && unxml(today[1])) out[key] = unxml(today[1]);
+  }
+  return Object.keys(out).length === SIGNS.length ? out : null;
+}
+
+async function horoscopes(ts) {
+  const day = members.mskDay(ts);
+  const cached = await getSetting('horoscope_cache');
+  if (cached && cached.day === day && cached.signs) return cached.signs;
+  let signs = null;
+  try {
+    const res = await fetch(HOROSCOPE_URL, { headers: { 'User-Agent': 'finya-helper' } });
+    if (res.ok) signs = parseHoroscope(await res.text());
+  } catch {
+    // The site is down: say so, no made-up forecast.
+  }
+  if (signs) await setSetting('horoscope_cache', { day, signs });
+  return signs;
+}
+
+export async function horoscopeText(sign, ts = nowInt()) {
+  const signs = await horoscopes(ts);
+  if (!signs) return `🔮 Гороскоп сейчас не загрузился с ${HOROSCOPE_SOURCE}. Попробуй чуть позже.`;
+  const d = new Date((ts + MSK_OFFSET) * 1000);
+  return `${sign.emoji} ${sign.name} · гороскоп на ${d.getUTCDate()} ${MONTHS_GEN[d.getUTCMonth()]}\n\n` +
+    `<blockquote>${escapeHtml(signs[sign.key])}</blockquote>\n\nИсточник: ${HOROSCOPE_SOURCE}`;
+}
+
+
+// ---- «Финя, до Нового года» ----------------------------------------------------------
+
+const HOLIDAYS = [
+  [/^(?:нового года|новый год|нг)$/u, 'Нового года', 1, 1],
+  [/^(?:8 марта|восьмого марта)$/u, '8 Марта', 8, 3],
+  [/^(?:23 февраля)$/u, '23 Февраля', 23, 2],
+  [/^(?:14 февраля|дня (?:всех )?влюбленных|валентина|дня святого валентина)$/u, 'Дня всех влюблённых', 14, 2],
+  [/^(?:9 мая|дня победы)$/u, 'Дня Победы', 9, 5],
+  [/^(?:хэллоуина|хеллоуина|хэллоуин|хеллоуин)$/u, 'Хэллоуина', 31, 10],
+  [/^(?:лета)$/u, 'лета', 1, 6],
+  [/^(?:осени)$/u, 'осени', 1, 9],
+  [/^(?:зимы)$/u, 'зимы', 1, 12],
+  [/^(?:весны)$/u, 'весны', 1, 3],
+];
+
+// → { title, at } for «нового года», «8 марта», «31.12», «16.12.2027»; null otherwise.
+export function countdownTarget(words, ts = nowInt()) {
+  const w = String(words || '').toLowerCase().replace(/ё/g, 'е').replace(/[?!.]+$/u, '').trim();
+  const now = new Date((ts + MSK_OFFSET) * 1000);
+  const next = (day, month, year = null) => {
+    for (const y of year ? [year] : [now.getUTCFullYear(), now.getUTCFullYear() + 1]) {
+      const at = Date.UTC(y, month - 1, day) / 1000 - MSK_OFFSET;
+      if (new Date((at + MSK_OFFSET) * 1000).getUTCDate() !== day) return null;
+      if (at > ts) return at;
+    }
+    return null;
+  };
+  for (const [re, title, day, month] of HOLIDAYS) {
+    if (re.test(w)) {
+      const at = next(day, month);
+      return at ? { title, at } : null;
+    }
+  }
+  const m = /^(\d{1,2})\.(\d{1,2})(?:\.(\d{4}))?$/u.exec(w);
+  if (m) {
+    const at = next(Number(m[1]), Number(m[2]), m[3] ? Number(m[3]) : null);
+    return at ? { title: `${Number(m[1])} ${MONTHS_GEN[Number(m[2]) - 1]}${m[3] ? ` ${m[3]}` : ''}`, at } : null;
+  }
+  return null;
+}
+
+export function countdownText(target, ts = nowInt()) {
+  const left = target.at - ts;
+  const days = Math.floor(left / DAY);
+  const hours = Math.floor((left % DAY) / 3600);
+  const parts = [];
+  if (days) parts.push(`${days} ${plural(days, 'день', 'дня', 'дней')}`);
+  parts.push(`${hours} ${plural(hours, 'час', 'часа', 'часов')}`);
+  return `⏳ До ${target.title}: ${parts.join(' ')}`;
 }

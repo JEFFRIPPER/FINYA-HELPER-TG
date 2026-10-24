@@ -22,6 +22,8 @@ const DEFAULTS = {
   chat_daily: true,
   // «👋 … покидает чат» when somebody leaves a Squad chat.
   chat_farewell: true,
+  // «❓ Вопрос дня» poll in each Squad chat at 12:00 МСК.
+  chat_question: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
   chat_moderation: false,
 };
