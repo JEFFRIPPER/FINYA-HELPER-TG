@@ -19,6 +19,6 @@ test('changes endpoint: every update from the very first, newest first, ids uniq
 
 test('the Mini App shows «Все обновления» to everyone in the squad tab', () => {
   const app = readFileSync(new URL('../webapp/app.js', import.meta.url), 'utf8');
-  assert.match(app, /return \[newsCard\(sq\), changesCard\(\)/);
+  assert.match(app, /return \[quickRow\(sq\), newsCard\(sq\), changesCard\(\)/);
   assert.match(app, /api\('changes', \{\}\)/);
 });
