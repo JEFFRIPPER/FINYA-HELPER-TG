@@ -14,13 +14,15 @@ afterEach(checkErrors);
 
 async function seed() {
   const ts = nowInt();
+  const recent = (ago) => Math.max(ts - ago, dayStart(ts));
   for (const [id, name, points] of [[1, 'Alice', 120], [2, 'Bob', 40], [3, 'Carol', 600]]) {
     await db.run('INSERT INTO profiles (user_id, name, username, xp) VALUES (?, ?, ?, ?)', [id, name, `user${id}`, points]);
   }
   await db.run(`INSERT INTO events (user_id, chat_id, message_id, kind, points, earned_at) VALUES
     (1, -100, 1, 'comment', 5, ?), (1, -100, 2, 'reaction', 1, ?), (1, -100, 3, 'comment', 0, ?),
     (1, -100, 4, 'comment', 5, ?), (2, -100, 5, 'comment', 5, ?)`,
-  [ts - 60, ts - 30, ts - 20, dayStart(ts) - 86400 + 3600, ts - 10]);
+  // Right after Moscow midnight «a minute ago» is yesterday: keep today's events today.
+  [recent(60), recent(30), recent(20), dayStart(ts) - 86400 + 3600, recent(10)]);
   // Already unlocked, so opening the profile doesn't add achievement XP here.
   await db.run(`INSERT INTO achievements (user_id, code, unlocked_at) VALUES (1, 'first_comment', 0), (2, 'first_comment', 0)`);
   return ts;

@@ -25,6 +25,18 @@ export async function plus(chatId, messageId, fromId, toId) {
   return r.rows[0].points;
 }
 
+// «-» in reply: the dislike. The giver's «given» stays as it is: it counts the pluses.
+export async function minus(chatId, messageId, fromId, toId) {
+  const ts = nowInt();
+  const vote = await db.run(sql`INSERT OR IGNORE INTO rep_votes (chat_id, message_id, from_id, to_id, at)
+    VALUES (${chatId}, ${messageId}, ${fromId}, ${toId}, ${ts})`);
+  if (vote.rowsAffected !== 1) return null;
+  const r = await db.run(sql`INSERT INTO reputation (user_id, points, given) VALUES (${toId}, -1, 0)
+    ON CONFLICT(user_id) DO UPDATE SET points = points - 1 RETURNING points`);
+  await db.run(sql`DELETE FROM rep_votes WHERE at < ${ts - REP_VOTE_KEEP}`);
+  return r.rows[0].points;
+}
+
 export async function repOf(userId) {
   const row = await db.get(sql`SELECT points, given FROM reputation WHERE user_id = ${userId}`);
   return row || { points: 0, given: 0 };
