@@ -211,8 +211,8 @@ test('history file in the private chat: imported with progress, again adds nothi
   }));
   await send();
   const texts = replies(api).filter((c) => c.params.chat_id === OWNER.id).map((c) => c.params.text);
-  assert.match(texts[0], /«Обсуждения»: 62 сообщений от 61 человек/);
-  assert.match(texts.at(-1), /✅ История «Обсуждения» загружена: \+62 сообщений, новых участников: 61/);
+  assert.match(texts[0], /«Обсуждения»: 62 сообщения от 61 человека/);
+  assert.match(texts.at(-1), /✅ История «Обсуждения» загружена: \+62 сообщения, новых участников: 61/);
   const ania = await db.get('SELECT msgs FROM chat_members WHERE chat_id = ? AND user_id = 2', [DISCUSSION.id]);
   assert.equal(ania.msgs, 2);
   assert.equal((await db.get('SELECT COUNT(*) AS c FROM history_queue')).c, 0);

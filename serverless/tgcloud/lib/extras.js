@@ -108,31 +108,43 @@ async function articleStats(userId, ts) {
   };
 }
 
+const count = (n, one, few, many) => `${n} ${plural(n, one, few, many)}`;
+const msgs = (n) => count(n, 'сообщение', 'сообщения', 'сообщений');
+
 // What the member did that brings this article: [kind, reason].
 function grounds(s) {
   const out = [];
-  if (s.day >= 50 || s.week >= 300) out.push(['flood', s.day >= 50 ? `${s.day} сообщений за сегодня` : `${s.week} сообщений за неделю`]);
+  if (s.day >= 50 || s.week >= 300) out.push(['flood', s.day >= 50 ? `${msgs(s.day)} за сегодня` : `${msgs(s.week)} за неделю`]);
   if (s.week === 0) out.push(['silent', 'ни одного сообщения за неделю']);
-  if (s.night >= 20) out.push(['night', `${s.night} сообщений глубокой ночью`]);
-  if (s.early >= 20) out.push(['early', `${s.early} сообщений до 8 утра`]);
-  if (s.rp >= 20) out.push(['rp', `${s.rp} РП-действий`]);
-  if (s.casino >= 3) out.push(['casino', `${s.casino} игр в казино за неделю`]);
-  if (s.gifts >= 1) out.push(['gifts', `${s.gifts} переводов XP за неделю`]);
-  if (s.given >= 20) out.push(['rep', `${s.given} плюсов в репутацию`]);
+  if (s.night >= 20) out.push(['night', `${msgs(s.night)} глубокой ночью`]);
+  if (s.early >= 20) out.push(['early', `${msgs(s.early)} до 8 утра`]);
+  if (s.rp >= 20) out.push(['rp', count(s.rp, 'РП-действие', 'РП-действия', 'РП-действий')]);
+  if (s.casino >= 3) out.push(['casino', `${count(s.casino, 'игра', 'игры', 'игр')} в казино за неделю`]);
+  if (s.gifts >= 1) out.push(['gifts', `${count(s.gifts, 'перевод', 'перевода', 'переводов')} XP за неделю`]);
+  if (s.given >= 20) out.push(['rep', `${count(s.given, 'плюс', 'плюса', 'плюсов')} в репутацию`]);
   if (s.spouse) out.push(['married', `в браке с ${escapeHtml(truncate(s.spouse, 40))}`]);
   return out;
 }
 
+// One article a day: it is chosen at the first ask and kept, even when the activity
+// behind it grows later in the day.
 export async function articleText(who, ts = nowInt()) {
-  const rand = seeded(who.id * 31 + members.mskDay(ts));
-  const found = grounds(await articleStats(who.id, ts));
-  // Mostly for what they do; now and then just for being here.
-  const [kind, reason] = found.length && rand() < 0.85 ? pickWith(rand, found) : ['general', 'подозрительно хорошее поведение'];
-  const [number, title] = pickWith(rand, ARTICLES[kind]);
+  const day = members.mskDay(ts);
+  const key = `article:${who.id}`;
+  let a = await getSetting(key);
+  if (!a || a.day !== day) {
+    const rand = seeded(who.id * 31 + day);
+    const found = grounds(await articleStats(who.id, ts));
+    // Mostly for what they do; now and then just for being here.
+    const [kind, reason] = found.length && rand() < 0.85 ? pickWith(rand, found) : ['general', 'подозрительно хорошее поведение'];
+    const [number, title] = pickWith(rand, ARTICLES[kind]);
+    a = { day, number, title, reason, sentence: pickWith(rand, SENTENCES) };
+    await setSetting(key, a);
+  }
   return `⚖️ Статья дня · ${mention(who.id, who.name)}\n\n` +
-    `📕 Ст. ${number} УК Сквада\n«${title}»\n\n` +
-    `🔎 Основание: ${reason}\n` +
-    `🔨 Приговор: ${pickWith(rand, SENTENCES)}\n\n` +
+    `📕 Ст. ${a.number} УК Сквада\n«${a.title}»\n\n` +
+    `🔎 Основание: ${a.reason}\n` +
+    `🔨 Приговор: ${a.sentence}\n\n` +
     'Новая статья завтра.';
 }
 

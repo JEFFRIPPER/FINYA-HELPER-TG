@@ -8,7 +8,7 @@ import { WEBAPP_URL } from './config.js';
 import { chatInfo, HistoryError, importUsers, MAX_DAYS, MAX_USERS } from './history.js';
 import { logError } from './store.js';
 import { button, keyboard } from './tg.js';
-import { boldHtml, escapeHtml, fmtThousands, MSK_OFFSET, nowInt, truncate, utf8Decode } from './util.js';
+import { boldHtml, escapeHtml, fmtThousands, MSK_OFFSET, nowInt, plural, truncate, utf8Decode } from './util.js';
 
 export const FILE_MAX = 20 * 1024 * 1024;
 const LEASE = 90;
@@ -135,7 +135,7 @@ export async function fromMessage(message, leftMs) {
     const chat = await chatInfo(s.chat.id, s.chat.type);
     const chunks = chunksOf(s.users);
     const progress = await tell(chatId,
-      `📥 «${escapeHtml(chat.title)}»: ${fmtThousands(s.total)} сообщений от ${fmtThousands(s.users.length)} человек, ` +
+      `📥 «${escapeHtml(chat.title)}»: ${fmtThousands(s.total)} ${plural(s.total, 'сообщение', 'сообщения', 'сообщений')} от ${fmtThousands(s.users.length)} ${plural(s.users.length, 'человека', 'человек', 'человек')}, ` +
       `${dayText(s.fromDay)}–${dayText(s.toDay)}.\n⏳ Загружаю: 0 из ${chunks.length}…`);
     const row = await db.run(sql`INSERT INTO history_imports (chat_id, title, report_chat_id, progress_message_id, chunks, created_at)
       VALUES (${chat.id}, ${chat.title}, ${chatId}, ${progress ? progress.message_id : null}, ${chunks.length}, ${nowInt()})
@@ -197,7 +197,7 @@ export async function work(leftMs) {
   const now = await db.get(sql`SELECT * FROM history_imports WHERE id = ${job.id}`);
   const left = await db.get(sql`SELECT COUNT(*) AS c FROM history_queue WHERE import_id = ${job.id}`);
   if (!left.c) {
-    await finish(now, `✅ История «${escapeHtml(now.title)}» загружена: +${fmtThousands(now.added)} сообщений, ` +
+    await finish(now, `✅ История «${escapeHtml(now.title)}» загружена: +${fmtThousands(now.added)} ${plural(now.added, 'сообщение', 'сообщения', 'сообщений')}, ` +
       `новых участников: ${now.members}.\nПрофили, топы и ачивки уже считают старые сообщения.`);
     return;
   }
