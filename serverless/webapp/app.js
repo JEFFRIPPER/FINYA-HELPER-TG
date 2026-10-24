@@ -34,7 +34,6 @@
     account_balance_fill: 'M212-271v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm242 0v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37ZM110-121q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32Q97.25-181 110-181h740q12.75 0 21.38 8.68 8.62 8.67 8.62 21.5 0 12.82-8.62 21.32-8.63 8.5-21.38 8.5H110Zm578-150v-279q0-12.75 8.68-21.38 8.67-8.62 21.5-8.62 12.82 0 21.32 8.62 8.5 8.63 8.5 21.38v279q0 12.75-8.68 21.37-8.67 8.63-21.5 8.63-12.82 0-21.32-8.63-8.5-8.62-8.5-21.37Zm166-369H103q-9.58 0-16.29-6.71Q80-653.42 80-663v-17q0-6 3.5-11.5T92-700l358-204q14.17-8 30-8t30 8l357 203q6 4 9.5 10t3.5 13.5v10.23q0 11.59-7.47 19.43Q865.05-640 854-640Z',
     menu_book_fill: 'M512-250q50-25 98-37.5T712-300q38 0 78.5 6t69.5 16v-429q-34-17-72-25t-76-8q-54 0-104.5 16.5T512-677v427Zm-44.5 77.5Q461-174 456-178q-47-29-100-45t-108-16q-37 0-72 9t-70 22q-23 11-44.5-3T40-251v-463q0-15 7-27.5T68-761q42-20 87.5-29.5T248-800q63 0 122.5 17T482-731q51-35 109.5-52T712-800q47 0 92 9.5t87 29.5q14 7 21.5 19.5T920-714v463q0 28-22.5 42.5t-44.5.5q-34-14-69-22.5t-72-8.5q-54 0-106 16t-98 45q-5 4-11.5 5.5T482-171q-8 0-14.5-1.5ZM560-608q0-6 4-11.5t9-7.5q30-11 61.5-17t65.5-6q22 0 43 2.5t41 7.5q6 2 11 7.5t5 12.5q0 11-7.5 17t-18.5 3q-17-5-35.5-7.5T700-610q-29 0-56 5.5T591-588q-14 5-22.5-.5T560-608Zm0 220q0-6 4-12t9-8q30-11 61.5-16.5T700-430q22 0 43 2.5t41 7.5q6 2 11 7.5t5 12.5q0 11-7.5 17t-18.5 3q-17-5-35.5-7.5T700-390q-29 0-56 5t-53 16q-14 5-22.5 0t-8.5-19Zm0-110q0-6 4-11.5t9-7.5q30-11 61.5-17t65.5-6q22 0 43 2.5t41 7.5q6 2 11 7.5t5 12.5q0 11-7.5 17t-18.5 3q-17-5-35.5-7.5T700-500q-29 0-56 5.5T591-478q-14 5-22.5-.5T560-498Z',
     support_agent_fill: 'M470-120q-12.75 0-21.37-8.68-8.63-8.67-8.63-21.5 0-12.82 8.63-21.32 8.62-8.5 21.37-8.5h310v-304q0-123.69-87.32-209.84Q605.36-780 480-780q-125.36 0-212.68 86.16Q180-607.69 180-484v224q0 8.5-5.75 14.25T160-240q-33 0-56.5-23.5T80-320v-80q0-21 10.5-39.5T120-469l3-53q8-68 39.5-126t79-101q47.5-43 109-67T480-840q68 0 129 24t109 66.5Q766-707 797-649t40 126l3 52q19 9 29.5 27t10.5 38v92q0 20-10.5 38T840-249v69q0 24.75-17.62 42.37Q804.75-120 780-120H470ZM338.5-418.68q-8.5-8.67-8.5-21.5 0-12.82 8.68-21.32 8.67-8.5 21.5-8.5 12.82 0 21.32 8.68 8.5 8.67 8.5 21.5 0 12.82-8.68 21.32-8.67 8.5-21.5 8.5-12.82 0-21.32-8.68Zm240 0q-8.5-8.67-8.5-21.5 0-12.82 8.68-21.32 8.67-8.5 21.5-8.5 12.82 0 21.32 8.68 8.5 8.67 8.5 21.5 0 12.82-8.68 21.32-8.67 8.5-21.5 8.5-12.82 0-21.32-8.68ZM241-462q-7-106 64-182t177-76q87 0 151 57.5T711-519q-89-1-162.5-50T434.72-698Q419-618 367.5-555.5T241-462Z',
-    smart_toy_fill: 'M147-376q-45 0-76-31.21T40-483q0-44.58 31.21-75.79Q102.42-590 147-590v-123q0-24 18-42t42-18h166q0-45 31-76t76-31q45 0 76 31.21T587-773h166q24 0 42 18t18 42v123q45 0 76 31.21T920-483q0 44.58-31.21 75.79Q857.58-376 813-376v196q0 24-18 42t-42 18H207q-24 0-42-18t-18-42v-196Zm224.5-111.74q11.5-11.73 11.5-28.5 0-16.76-11.74-28.26-11.73-11.5-28.5-11.5-16.76 0-28.26 11.74-11.5 11.73-11.5 28.5 0 16.76 11.74 28.26 11.73 11.5 28.5 11.5 16.76 0 28.26-11.74Zm274 0q11.5-11.73 11.5-28.5 0-16.76-11.74-28.26-11.73-11.5-28.5-11.5-16.76 0-28.26 11.74-11.5 11.73-11.5 28.5 0 16.76 11.74 28.26 11.73 11.5 28.5 11.5 16.76 0 28.26-11.74ZM342-285h276q12.75 0 21.38-8.68 8.62-8.67 8.62-21.5 0-12.82-8.62-21.32-8.63-8.5-21.38-8.5H342q-12.75 0-21.37 8.68-8.63 8.67-8.63 21.5 0 12.82 8.63 21.32 8.62 8.5 21.37 8.5Z',
     chevron_right: 'M530-481 353-658q-9-9-8.5-21t9.5-21q9-9 21.5-9t21.5 9l198 198q5 5 7 10t2 11q0 6-2 11t-7 10L396-261q-9 9-21 8.5t-21-9.5q-9-9-9-21.5t9-21.5l176-176Z',
     groups: 'M30-240q-12.75 0-21.37-8.63Q0-257.25 0-270v-23q0-38.57 41.5-62.78Q83-380 150.38-380q12.16 0 23.39.5t22.23 2.15q-8 17.35-12 35.17-4 17.81-4 37.18v65H30Zm240 0q-12.75 0-21.37-8.63Q240-257.25 240-270v-35q0-32 17.5-58.5T307-410q32-20 76.5-30t96.5-10q53 0 97.5 10t76.5 30q32 20 49 46.5t17 58.5v35q0 12.75-8.62 21.37Q702.75-240 690-240H270Zm510 0v-65q0-19.86-3.5-37.43T765-377.27q11-1.73 22.17-2.23 11.17-.5 22.83-.5 67.5 0 108.75 23.77T960-293v23q0 12.75-8.62 21.37Q942.75-240 930-240H780Zm-480-60h360v-6q0-37-50.5-60.5T480-390q-79 0-129.5 23.5T300-305v5ZM149.57-410q-28.57 0-49.07-20.56Q80-451.13 80-480q0-29 20.56-49.5Q121.13-550 150-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T149.57-410Zm660 0q-28.57 0-49.07-20.56Q740-451.13 740-480q0-29 20.56-49.5Q781.13-550 810-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T809.57-410ZM480-480q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T600-600q0 50-34.5 85T480-480Zm.35-60Q506-540 523-557.35t17-43Q540-626 522.85-643t-42.5-17q-25.35 0-42.85 17.15t-17.5 42.5q0 25.35 17.35 42.85t43 17.5ZM480-300Zm0-300Z',
     groups_fill: 'M30-240q-12.75 0-21.37-8.63Q0-257.25 0-270v-23q0-38.57 41.5-62.78Q83-380 150.38-380q12.16 0 23.39.5t22.23 2.15q-8 17.35-12 35.17-4 17.81-4 37.18v65H30Zm240 0q-12.75 0-21.37-8.63Q240-257.25 240-270v-35q0-32 17.5-58.5T307-410q32-20 76.5-30t96.5-10q53 0 97.5 10t76.5 30q32 20 49 46.5t17 58.5v35q0 12.75-8.62 21.37Q702.75-240 690-240H270Zm510 0v-65q0-19.86-3.5-37.43T765-377.27q11-1.73 22.17-2.23 11.17-.5 22.83-.5 67.5 0 108.75 23.77T960-293v23q0 12.75-8.62 21.37Q942.75-240 930-240H780ZM149.57-410q-28.57 0-49.07-20.56Q80-451.13 80-480q0-29 20.56-49.5Q121.13-550 150-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T149.57-410Zm660 0q-28.57 0-49.07-20.56Q740-451.13 740-480q0-29 20.56-49.5Q781.13-550 810-550q29 0 49.5 20.5t20.5 49.93q0 28.57-20.5 49.07T809.57-410ZM480-480q-50 0-85-35t-35-85q0-51 35-85.5t85-34.5q51 0 85.5 34.5T600-600q0 50-34.5 85T480-480Z',
@@ -112,29 +111,37 @@
   var RANK_KEY = 'finya.rank';
   // Links of the "Сквад" tab: [key in data.squad.links, icon, title, subtitle, tint].
   // "brand:" icons are Simple Icons; the tint colours the icon tile.
+  // Round buttons right under the banner.
+  var QUICK = [
+    ['folder', 'folder_fill', 'Чаты'],
+    ['info', 'info_fill', 'Инфо'],
+    ['rules', 'menu_book_fill', 'Правила'],
+    ['owner', 'support_agent_fill', 'Поддержка'],
+  ];
+  var SHOP_LINK = ['shop', 'storefront_fill', 'Магазин Сквада', 'Официальный магазин'];
+  // [title, blocks]; a block is a list card or a row of tiles.
   var LINK_GROUPS = [
-    ['Магазин', [
-      ['shop', 'storefront_fill', 'Магазин Сквада', 'Официальный магазин', 'shop'],
-    ]],
-    ['Telegram', [
+    ['Telegram', [['list', [
       ['channel', 'brand:telegram', 'Канал T.N.K.C SQUAD', 'Посты, новости и обсуждения', 'telegram'],
-      ['info', 'info_fill', 'Инфо о Скваде', 'Главный пост о Скваде'],
-      ['folder', 'folder_fill', 'Папка T.N.K.C SQUAD', 'Все чаты Сквада одной кнопкой'],
       ['boost', 'rocket_launch_fill', 'Буст канала', 'Поддержи канал голосом'],
-    ]],
-    ['Оформление', [
-      ['themeRed', 'palette_fill', 'Красный Сквад', 'Тема для Telegram'],
-      ['themeGreen', 'palette_fill', 'Зелёный Сквад', 'Тема для Telegram', 'green'],
-      ['stickers', 'mood_fill', 'Стикеры ТГК V2', 'Набор стикеров Сквада'],
-    ]],
+    ]]]],
+    ['Оформление', [['tiles', [
+      ['themeRed', 'palette_fill', 'Красный Сквад', 'Тема Telegram', 'swatch red'],
+      ['themeGreen', 'palette_fill', 'Зелёный Сквад', 'Тема Telegram', 'swatch green'],
+      ['stickers', 'mood_fill', 'Стикеры ТГК V2', 'Стикерпак'],
+    ]]]],
     ['Владелец', [
-      ['tiktok', 'brand:tiktok', 'TikTok', '@tnkc_squad_corporation', 'tiktok'],
-      ['discord', 'brand:discord', 'Discord', 'Сервер владельца', 'discord'],
-      ['vk', 'brand:vk', 'ВКонтакте', 'creator_this_world', 'vk'],
-      ['twitch', 'brand:twitch', 'Twitch', 'tnkc_squad_creator', 'twitch'],
-      ['anon', 'quiz_fill', 'Анонимные вопросы', 'Спроси владельца что угодно'],
-      ['wishlist', 'redeem_fill', 'Вишлист', 'Желания владельца'],
-      ['tbank', 'account_balance_fill', 'Приглашение Т-Банк', 'Поддержать проект'],
+      ['tiles', [
+        ['tiktok', 'brand:tiktok', 'TikTok', null, 'tiktok'],
+        ['discord', 'brand:discord', 'Discord', null, 'discord'],
+        ['vk', 'brand:vk', 'ВКонтакте', null, 'vk'],
+        ['twitch', 'brand:twitch', 'Twitch', null, 'twitch'],
+      ]],
+      ['list', [
+        ['anon', 'quiz_fill', 'Анонимные вопросы', 'Спроси владельца что угодно'],
+        ['wishlist', 'redeem_fill', 'Вишлист', 'Желания владельца'],
+        ['tbank', 'account_balance_fill', 'Приглашение Т-Банк', 'Поддержать проект'],
+      ]],
     ]],
   ];
   // Squad projects on GitHub: [repository, description, language].
@@ -718,12 +725,13 @@
       onclick: function () { openLink(sq.channel); },
     },
       h('div', { class: 'cover', 'aria-hidden': 'true' }),
+      // Profile header: the logo overlaps the cover, the name sits under it.
       h('div', { class: 'banner-row' },
         ring,
-        h('div', { class: 'banner-text' },
-          h('b', null, 'T.N.K.C ', h('em', { text: 'SQUAD' })),
-          h('span', { text: 'Токийский · Неудержимый · Круг · Свободы' })),
-        icon('chevron_right', 'icon go')));
+        h('span', { class: 'banner-cta' }, brand('telegram'), 'Канал', icon('chevron_right'))),
+      h('div', { class: 'banner-text' },
+        h('b', null, 'T.N.K.C ', h('em', { text: 'SQUAD' })),
+        h('span', { text: 'Токийский · Неудержимый · Круг · Свободы' })));
   }
 
   function bloodWave() {
@@ -763,71 +771,109 @@
         sq.lastPost ? 'Последний пост' : 'Открыть канал', icon('chevron_right')));
   }
 
-  function quickGrid(sq) {
-    var tiles = [
-      ['menu_book_fill', 'Правила', function () { openLink(sq.links.rules); }],
-      ['support_agent_fill', 'Поддержка', function () { openLink(sq.links.owner); }],
-      ['smart_toy_fill', 'Бот', function () { try { tg.close(); } catch (e) { /* outside Telegram */ } }],
-    ];
-    return h('div', { class: 'quick' }, tiles.map(function (t) {
-      return h('button', { class: 'tile press ripple', onclick: t[2] }, icon(t[0]), h('span', { text: t[1] }));
+  // Round tonal buttons under the banner: the links people open most.
+  function quickRow(sq) {
+    var items = QUICK.filter(function (q) { return sq.links[q[0]]; });
+    if (!items.length) return null;
+    return h('nav', { class: 'quick', 'aria-label': 'Быстрые ссылки' }, items.map(function (q) {
+      return h('button', { class: 'quick-btn', type: 'button', onclick: function () { openLink(sq.links[q[0]]); } },
+        h('span', { class: 'quick-icon ripple' }, icon(q[1])), h('span', { class: 'quick-label', text: q[2] }));
     }));
   }
 
-  function linkCard(l, sq) {
-    var url = l[0] === 'channel' ? sq.channel : sq.links[l[0]];
+  function linkUrl(l, sq) {
+    return l[0] === 'channel' ? sq.channel : sq.links[l[0]];
+  }
+
+  // A row of a list card.
+  function linkRow(l, sq) {
+    var url = linkUrl(l, sq);
     if (!url) return null;
-    return h('button', { class: 'link press ripple', onclick: function () { openLink(url); } },
+    return h('li', { class: 'item link-row ripple', role: 'link', tabindex: '0', onclick: function () { openLink(url); } },
       h('div', { class: 'tile-icon' + (l[4] ? ' ' + l[4] : '') }, anyIcon(l[1])),
-      h('div', { class: 'body' }, h('b', { text: l[2] }), h('span', { text: l[3] })),
+      h('div', { class: 'body' }, h('b', { text: l[2] }), l[3] ? h('span', { text: l[3] }) : null),
       icon('chevron_right', 'icon go'));
   }
 
-  function linkSection(group, sq) {
-    return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: group[0] }),
-      h('div', { class: 'links' }, group[1].map(function (l) { return linkCard(l, sq); })));
+  // A square tile: brand icons or a theme swatch on top, the name under it.
+  function linkTile(l, sq) {
+    var url = linkUrl(l, sq);
+    if (!url) return null;
+    return h('button', { class: 'link-tile press ripple', type: 'button', onclick: function () { openLink(url); } },
+      h('div', { class: 'tile-icon' + (l[4] ? ' ' + l[4] : '') }, anyIcon(l[1])),
+      h('b', { text: l[2] }), l[3] ? h('span', { text: l[3] }) : null);
   }
 
+  function linkSection(group, sq) {
+    var blocks = group[1].map(function (b) {
+      if (b[0] === 'tiles') {
+        var tiles = b[1].map(function (l) { return linkTile(l, sq); }).filter(Boolean);
+        if (!tiles.length) return null;
+        var row = h('div', { class: 'link-tiles' }, tiles);
+        row.style.setProperty('--n', String(tiles.length));
+        return row;
+      }
+      var rows = b[1].map(function (l) { return linkRow(l, sq); }).filter(Boolean);
+      return rows.length ? h('div', { class: 'card list-card links' }, h('ul', { class: 'list' }, withDividers(rows))) : null;
+    }).filter(Boolean);
+    if (!blocks.length) return null;
+    return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: group[0] }), blocks);
+  }
+
+  // The official shop: a large scarlet card above the other links.
+  function shopFeature(sq) {
+    var url = sq.links[SHOP_LINK[0]];
+    if (!url) return null;
+    return h('button', { class: 'shop-feature press ripple', type: 'button', onclick: function () { openLink(url); } },
+      h('div', { class: 'shop-icon' }, icon(SHOP_LINK[1])),
+      h('div', { class: 'body' }, h('b', { text: SHOP_LINK[2] }), h('span', { text: SHOP_LINK[3] })),
+      h('span', { class: 'shop-go' }, icon('chevron_right')));
+  }
+
+  // Projects scroll sideways as a carousel, so long names stay on one line.
   function projectsSection() {
     return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: 'Проекты Сквада' }),
       h('div', { class: 'projects' }, PROJECTS.map(function (p) {
         return h('button', { class: 'proj press ripple', onclick: function () { openLink(GITHUB + p[0]); } },
           h('div', { class: 'proj-head' }, brand('github'), h('b', { text: p[0] })),
-          p[1] ? h('p', { text: p[1] }) : null,
+          h('p', { text: p[1] || 'Проект Сквада на GitHub' }),
           h('span', { class: 'lang' }, h('i', { class: 'dot lang-' + p[2].replace('#', 'sharp').toLowerCase() }), p[2]));
       })));
   }
 
-  // «Штаб Сквада»: positions and who holds them; a tap shows the duties.
+  // «Штаб Сквада»: positions and who holds them as a grid; a tap shows the duties.
   function teamCard(team) {
     if (!team || !team.length) return null;
     var busy = team.filter(function (t) { return t.people.length; }).length;
+    var fill = h('i', { class: 'ind' });
+    fill.style.width = 'calc(' + Math.max(2, Math.round((busy / team.length) * 100)) + '% - 3px)';
     return h('section', { class: 'card team' },
       h('div', { class: 'card-title' }, h('h3', { text: 'Штаб Сквада' }), h('span', { class: 'count-chip', text: busy + ' из ' + team.length })),
-      h('ul', { class: 'list' }, withDividers(team.map(function (t) {
-        return h('li', { class: 'item ripple', onclick: function () {
+      h('div', { class: 'lp team-lp', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(team.length), 'aria-valuenow': String(busy) },
+        fill, h('i', { class: 'trk' })),
+      h('div', { class: 'team-grid' }, team.map(function (t) {
+        var open = t.people.length > 0;
+        return h('button', { class: 'team-tile ripple' + (open ? '' : ' vacant'), type: 'button', onclick: function () {
           haptic();
           snackbar(h('div', { class: 'snack-ach' },
             h('span', { class: 'snack-ach-task', text: t.duties.join(' · ') }),
             h('b', { text: t.motto })));
         } },
-          h('div', { class: 'lead team-emoji' + (t.people.length ? '' : ' muted') }, h('span', { text: t.emoji })),
-          h('div', { class: 'body' }, h('b', { text: t.title }),
-            h('span', { text: t.people.length ? t.people.join(', ') : 'Вакансия' })));
-      }))));
+          h('span', { class: 'team-emoji', text: t.emoji }),
+          h('b', { class: 'team-role', text: t.title }),
+          open ? h('span', { class: 'team-who', text: t.people.join(', ') }) : h('span', { class: 'team-vacant', text: 'Вакансия' }));
+      })));
   }
 
   // «Все обновления»: every change of Финя from the very start, newest first.
   var changes = { entries: null, loading: false };
 
   function changesCard() {
-    var btn = h('button', { class: 'btn-tonal ripple', onclick: function () { openChanges(btn); } },
-      'Все обновления', icon('chevron_right'));
-    return h('section', { class: 'card news' },
-      h('div', { class: 'news-head' },
-        h('div', { class: 'lead primary' }, icon('rocket_launch_fill')),
-        h('div', { class: 'body' }, h('b', { text: 'Обновления Фини' }), h('span', { text: 'Всё новое с самого начала' }))),
-      btn);
+    var go = h('span', { class: 'row-go' }, icon('chevron_right', 'icon go'));
+    return h('section', { class: 'card row-card press ripple', role: 'button', tabindex: '0', onclick: function () { openChanges(go); } },
+      h('div', { class: 'lead primary' }, icon('rocket_launch_fill')),
+      h('div', { class: 'body' }, h('b', { text: 'Обновления Фини' }), h('span', { text: 'Всё новое с самого начала' })),
+      go);
   }
 
   function changeEntry(e) {
@@ -871,10 +917,10 @@
 
   function squadBody(sq) {
     var c = state.data.club;
-    return [newsCard(sq), changesCard(), teamCard(sq.team)].filter(Boolean).concat(c.polls.map(pollCard))
-      .concat([referralCard(c.referral), birthdayCard(c.birthday), quickGrid(sq)])
+    return [quickRow(sq), newsCard(sq), changesCard(), teamCard(sq.team)].concat(c.polls.map(pollCard))
+      .concat([referralCard(c.referral), birthdayCard(c.birthday), shopFeature(sq)])
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
-      .concat([projectsSection()]);
+      .concat([projectsSection()]).filter(Boolean);
   }
 
   // ---- club: daily reward, quests, achievements, shop, polls, friends ---------
@@ -2196,12 +2242,14 @@
   // Built once, so the active indicator animates between destinations.
   function navbar() {
     var tabs = state.data.admin ? TABS.concat([ADMIN_TAB]) : TABS;
+    // Six labels on a narrow phone: «Активность» does not fit, «Актив» does.
+    var narrow = tabs.length > 5 && window.innerWidth < 350;
     dests = tabs.map(function (t) {
       var pill = h('span', { class: 'pill' }, icon(state.tab === t[0] ? t[2] + '_fill' : t[2]));
       var btn = h('button', {
         class: 'dest', role: 'tab', 'aria-selected': String(state.tab === t[0]),
         onclick: function () { selectTab(t[0]); },
-      }, pill, t[1]);
+      }, pill, narrow && t[0] === 'activity' ? 'Актив' : t[1]);
       return { tab: t, btn: btn, pill: pill };
     });
     return h('nav', { class: 'navbar' + (tabs.length > 5 ? ' many' : ''), role: 'tablist' },
