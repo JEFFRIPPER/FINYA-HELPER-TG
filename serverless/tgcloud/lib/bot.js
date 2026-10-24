@@ -31,6 +31,7 @@ import * as jobs from './jobs.js';
 import * as rankAdmin from './rank_admin.js';
 import * as shopAdmin from './shop_admin.js';
 import * as relay from './relay.js';
+import * as navigator from './navigator.js';
 import * as xp from './xp.js';
 
 const PUMP_INTERVAL_SECONDS = 30;
@@ -818,6 +819,7 @@ export async function pump({ force = false, deadline = Date.now() + CALL_BUDGET_
     ['pump.blacklist', () => blacklist.retryPending(5)],
     ['club.tick', () => club.tick()],
     ['chat.tick', () => chat.tick(() => leftMs(deadline))],
+    ['navigator.tick', () => navigator.tick()],
     ['history.file', () => historyFile.work(() => leftMs(deadline))],
     ['changelog.tick', () => changelog.tick()],
     ['pump.jobs', () => jobs.runPendingJobs(Math.min(10000, leftMs(deadline) - 2000))],

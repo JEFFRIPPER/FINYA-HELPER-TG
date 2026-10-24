@@ -29,6 +29,10 @@ export const SQUAD_LINKS = {
   shop: 'https://jeffripper.github.io/SQUAD-SHOP/',
 };
 
+// Squad projects on GitHub for the navigator (the Mini App keeps its own list in app.js).
+export const SQUAD_PROJECTS = ['SQUAD_VPN', 'FINYA-HELPER-TG', 'COUNTER', 'NYRI-WIN10', 'GIHERNET-SQUAD'];
+export const SQUAD_GITHUB = 'https://github.com/JEFFRIPPER/';
+
 export const BROADCAST_CONFIRM_SECONDS = 600;
 
 // The Mini App (webapp/), hosted by the platform next to the bot.

@@ -15,6 +15,7 @@ import { activityChart } from './chart.js';
 import * as club from './club.js';
 import * as extras from './extras.js';
 import * as questions from './questions.js';
+import * as navigator from './navigator.js';
 import { withPremium } from './emoji.js';
 import { DATIVE } from './inline.js';
 import * as feats from './feats.js';
@@ -1378,6 +1379,7 @@ const HELP = {
     ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
     ['👑 Итоги Дня Вкл/Выкл', 'Топ-3 дня в каждом чате Сквада в 23:55 МСК'],
     ['👑 Прощание Вкл/Выкл', 'Финя прощается с теми, кто сам вышел из чата'],
+    ['👑 Навигатор · Навигатор Выкл', 'Закреп с кнопками: канал, чаты, магазин, проекты. Финя сама держит его свежим'],
     ['👑 Вопрос Дня · Вопрос Дня Вкл/Выкл', 'Опрос для обсуждения в 12:00 МСК в каждом чате Сквада. «Вопрос Дня» в чате — отправить сейчас'],
     ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
     ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop: через Mini App или файлом в личку (до 20 МБ)'],
@@ -1572,6 +1574,11 @@ const USAGE = [
     how: [['Сравнить (ответом)', 'Сравнить себя с автором сообщения'], ['Сравнить @ник', 'То же через @ник']],
   },
   {
+    keys: ['навигатор'], title: '👑 Навигатор Сквада',
+    about: 'Только владелец, в чате. Закреп с кнопками: канал, папка, чаты Сквада, магазин, правила, профиль и проекты. Финя сама правит его при новом посте, раз в сутки и после обновлений; удалят — отправит и закрепит заново',
+    how: [['Финя, Навигатор', 'Поставить и закрепить в этом чате'], ['Финя, Навигатор Выкл', 'Убрать из этого чата']],
+  },
+  {
     keys: ['+рп', '-рп'], title: '👑 +РП',
     about: 'Только владелец: свои РП-действия',
     how: [['+РП Погладить = 🤚 гладит', 'Команда, знак «=», эмодзи и глагол'], ['-РП Погладить', 'Удалить своё действие']],
@@ -1698,6 +1705,23 @@ async function ownerCommand(message, rest) {
     } catch (err) {
       if (!(err instanceof social.SocialError)) throw err;
       await say(message, `❌ ${err.message}`);
+    }
+    return true;
+  }
+  m = /^навигатор(?:\s+(выкл|off))?$/u.exec(bare(rest));
+  if (m) {
+    if (!isGroupChat(message.chat)) {
+      await say(message, '🧭 Навигатор ставится в чате: напиши там «Финя, Навигатор».');
+    } else if (m[1]) {
+      await say(message, (await navigator.remove(message.chat.id)) ? '🧭 Навигатор убран из этого чата.' : '🧭 В этом чате навигатора нет.', { temp: true });
+    } else {
+      try {
+        const { pinned } = await navigator.place(message.chat);
+        if (!pinned) await say(message, '🧭 Навигатор отправлен, но закрепить не вышло: дай Фине право закреплять сообщения.', { temp: true });
+      } catch (err) {
+        if (!(err instanceof BotApiError)) throw err;
+        await say(message, '❌ Не получилось отправить навигатор в этот чат.', { temp: true });
+      }
     }
     return true;
   }
