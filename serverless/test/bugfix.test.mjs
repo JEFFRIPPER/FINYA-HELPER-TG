@@ -113,7 +113,7 @@ test('weekly top counts comments and reactions, not bonuses', async () => {
   at(monday);
   await pump({ force: true });
   const post = apiMock.called('sendMessage').find((c) => c.params.chat_id === CHANNEL.id);
-  assert.match(post.params.text, /A<\/b> — 5 XP/);
+  assert.match(post.params.text, /🥇 A — 5 XP/);
   assert.doesNotMatch(post.params.text, /B<\/b>/);
   assert.deepEqual(await xp.leaderboard({ weekly: true }), []);
 });

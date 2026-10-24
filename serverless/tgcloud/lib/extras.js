@@ -2,7 +2,7 @@
 // zodiac and horoscope, countdowns.
 import { db, fetch } from 'sdk';
 import { sql } from 'sdk/db';
-import { getSetting, setSetting } from './store.js';
+import { getSetting, logError, setSetting } from './store.js';
 import { escapeHtml, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as anketa from './anketa.js';
 import * as members from './members.js';
@@ -266,9 +266,16 @@ export async function zodiacOf(userId) {
 }
 
 // The daily horoscope of ignio.com: one public XML for all twelve signs, kept for the
-// Moscow day so the chats don't fetch it on every command.
-export const HOROSCOPE_URL = 'https://ignio.com/r/export/utf/xml/daily/com.xml';
+// Moscow day so the chats don't fetch it on every command. The export lives on the
+// img. host; the others are spares in case it moves.
+export const HOROSCOPE_URLS = [
+  'https://img.ignio.com/r/export/utf/xml/daily/com.xml',
+  'http://img.ignio.com/r/export/utf/xml/daily/com.xml',
+  'https://ignio.com/r/export/utf/xml/daily/com.xml',
+];
 const HOROSCOPE_SOURCE = 'ignio.com';
+// After a failed download the next try waits, so a dead site doesn't slow every command.
+const HOROSCOPE_RETRY = 10 * 60;
 
 const unxml = (s) => String(s).replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
   .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
@@ -288,15 +295,31 @@ async function horoscopes(ts) {
   const day = members.mskDay(ts);
   const cached = await getSetting('horoscope_cache');
   if (cached && cached.day === day && cached.signs) return cached.signs;
-  let signs = null;
-  try {
-    const res = await fetch(HOROSCOPE_URL, { headers: { 'User-Agent': 'finya-helper' } });
-    if (res.ok) signs = parseHoroscope(await res.text());
-  } catch {
-    // The site is down: say so, no made-up forecast.
+  const failed = await getSetting('horoscope_failed_at');
+  if (failed && ts - failed < HOROSCOPE_RETRY) return null;
+  const why = [];
+  for (const url of HOROSCOPE_URLS) {
+    try {
+      const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; finya-helper)' } });
+      if (!res.ok) {
+        why.push(`${url}: HTTP ${res.status}`);
+        continue;
+      }
+      const body = await res.text();
+      const signs = parseHoroscope(body);
+      if (signs) {
+        await setSetting('horoscope_cache', { day, signs });
+        return signs;
+      }
+      why.push(`${url}: не тот формат: ${truncate(body.replace(/\s+/g, ' '), 120)}`);
+    } catch (err) {
+      why.push(`${url}: ${(err && err.message) || err}`);
+    }
   }
-  if (signs) await setSetting('horoscope_cache', { day, signs });
-  return signs;
+  // The site is down: say so, no made-up forecast. The owner sees why in the logs.
+  await setSetting('horoscope_failed_at', ts);
+  await logError('horoscope', new Error(why.join(' | ')));
+  return null;
 }
 
 export async function horoscopeText(sign, ts = nowInt()) {

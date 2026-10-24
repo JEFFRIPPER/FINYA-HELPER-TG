@@ -5,7 +5,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { logError, setSetting, getSetting } from './store.js';
-import { boldHtml, nowInt, utf8Decode } from './util.js';
+import { boldHtml, escapeHtml, nowInt, utf8Decode } from './util.js';
 
 const BATCH = 100;
 const BUDGET_MS = 20000;
@@ -136,10 +136,10 @@ export async function importFromMessage(message) {
   const key = `import:${doc.file_unique_id}`;
   const previous = await getSetting(key);
   if (previous && previous.finished_at) {
-    await api.sendMessage({ chat_id: message.chat.id, text: 'Этот файл уже импортирован.' });
+    await api.sendMessage({ chat_id: message.chat.id, text: boldHtml('Этот файл уже импортирован.'), parse_mode: 'HTML' });
     return;
   }
-  await api.sendMessage({ chat_id: message.chat.id, text: 'Импортирую данные старого бота…' });
+  await api.sendMessage({ chat_id: message.chat.id, text: boldHtml('Импортирую данные старого бота…'), parse_mode: 'HTML' });
   try {
     const bytes = await api.getFileContent(doc.file_id);
     const data = JSON.parse(utf8Decode(bytes));
@@ -157,6 +157,6 @@ export async function importFromMessage(message) {
     });
   } catch (err) {
     await logError('import', err);
-    await api.sendMessage({ chat_id: message.chat.id, text: `Импорт не удался: ${String(err.message || err).slice(0, 300)}` });
+    await api.sendMessage({ chat_id: message.chat.id, text: boldHtml(`Импорт не удался: ${escapeHtml(String(err.message || err).slice(0, 300))}`), parse_mode: 'HTML' });
   }
 }

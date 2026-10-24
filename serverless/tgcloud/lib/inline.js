@@ -1,7 +1,7 @@
 // Inline mode: «@бот обнять @ник текст» in any chat, even a private one between two
 // people where Финя is not a member. Needs Inline Mode on in BotFather.
 import { api, BotApiError } from 'sdk';
-import { escapeHtml, fullName, truncate } from './util.js';
+import { boldHtml, escapeHtml, fullName, truncate } from './util.js';
 import * as bio from './bio.js';
 import { premiumMap, wrap } from './emoji.js';
 import { mention } from './moder.js';
@@ -36,7 +36,7 @@ export function rpText(actorId, actorName, action, rest, chatType) {
   const comment = (at ? at[2] : rest || '').trim();
   let text = `${escapeHtml(emoji)} ${mention(actorId, actorName)} ${escapeHtml(verb)} ${escapeHtml(target)}`;
   if (comment) text += `\n💬 «${escapeHtml(truncate(comment, 200))}»`;
-  return text;
+  return boldHtml(text);
 }
 
 // → the results: an exact command with its @ник and comment, or every command that

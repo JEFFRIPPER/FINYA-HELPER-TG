@@ -2200,7 +2200,7 @@ async function farewell(chat, user) {
   if (!(await getSetting('chat_farewell'))) return;
   const name = mention(user.id, await members.nameOf(user.id));
   try {
-    const sent = await withPremium({ chat_id: chat.id, text: `👋 ${name} покидает чат. Возвращайся, будем ждать!`, parse_mode: 'HTML' },
+    const sent = await withPremium({ chat_id: chat.id, text: boldHtml(`👋 ${name} покидает чат. Возвращайся, будем ждать!`), parse_mode: 'HTML' },
       (p) => api.sendMessage(p));
     if (sent && sent.message_id) await deleteLater(chat.id, [sent.message_id]);
   } catch {

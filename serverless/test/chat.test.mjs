@@ -436,7 +436,7 @@ test('captcha: a newcomer is muted until «Я не бот», then welcomed; sile
   assert.equal(api.called('restrictChatMember').length, 1);
   await onCallbackQuery(groupButton(nick, 'cap:7'));
   assert.equal(api.called('restrictChatMember').at(-1).params.permissions.can_send_messages, true);
-  assert.match(lastSent(api), /Добро пожаловать в Сквад, <b>Ник<\/b>/);
+  assert.match(lastSent(api), /Добро пожаловать в Сквад, Ник/);
 });
 
 // getChatMember answers from a status map; the bot itself is an admin.

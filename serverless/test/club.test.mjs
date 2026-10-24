@@ -208,7 +208,7 @@ test('birthday: set once a month, a gift and one greeting in the discussion grou
   await pump({ force: true });
   const greetings = api.called('sendMessage').filter((c) => c.params.chat_id === DISCUSSION.id);
   assert.equal(greetings.length, 1);
-  assert.match(greetings[0].params.text, /день рождения у <b>Alice<\/b>/);
+  assert.match(greetings[0].params.text, /день рождения у Alice/);
   // The gift was already given when the app was opened.
   assert.equal(await xpOf(1), gifted);
 });
@@ -253,7 +253,7 @@ test('welcome: one greeting for newcomers in the discussion group, the old one i
   await onMessage(joined(user(7, { first_name: 'Ник' })));
   let sent = api.called('sendMessage');
   assert.equal(sent.length, 1);
-  assert.match(sent[0].params.text, /Добро пожаловать в Сквад, <b>Ник<\/b>/);
+  assert.match(sent[0].params.text, /Добро пожаловать в Сквад, Ник/);
   // Within 15 seconds the next wave is not greeted again.
   await onMessage(joined(user(8)));
   assert.equal(api.called('sendMessage').length, 1);
@@ -291,8 +291,8 @@ test('weekly summary: top-3 of last week to the channel once, with bonuses', asy
   await pump({ force: true });
   const posts = api.called('sendMessage').filter((c) => c.params.chat_id === CHANNEL.id);
   assert.equal(posts.length, 1);
-  assert.match(posts[0].params.text, /🥇 <b>Alice<\/b> — 50 XP[\s\S]*🥈 <b>Bob<\/b>[\s\S]*🥉 <b>Carol<\/b>/);
-  assert.match(posts[0].params.text, /Комментариев: <b>2<\/b>/);
+  assert.match(posts[0].params.text, /🥇 Alice — 50 XP[\s\S]*🥈 Bob[\s\S]*🥉 Carol/);
+  assert.match(posts[0].params.text, /Комментариев: 2/);
   assert.doesNotMatch(posts[0].params.text, /Dan/);
   assert.equal(await xpOf(1), club.WEEKLY_BONUS[0]);
   assert.equal(await xpOf(3), club.WEEKLY_BONUS[2]);
