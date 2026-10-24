@@ -1467,3 +1467,10 @@ em.nm { font-style: normal; }
 /* Long switch names («Поздравления с днём рождения») wrap on narrow phones. */
 .switch-row .body b, .switch-row .body span { white-space: normal; }
 .history-card .row-btns { margin-top: 14px; }
+
+/* «Все обновления» */
+.changes { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.change { padding: 14px 16px; border-radius: 16px; background: var(--surface-high); }
+.change-date { display: inline-block; padding: 2px 10px; border-radius: 8px; font-size: 12px; line-height: 18px; color: var(--text-2); background: rgba(255, 255, 255, 0.06); }
+.change-title { display: block; margin: 8px 0 6px; font-size: 16px; line-height: 22px; }
+.change-items { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; }
