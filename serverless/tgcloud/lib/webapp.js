@@ -8,7 +8,7 @@ import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 import * as chat from './chat.js';
 import * as club from './club.js';
-import { nameOf } from './members.js';
+import { nameOf, usernameOf } from './members.js';
 import * as staff from './staff.js';
 
 const HISTORY_LIMIT = 30;
@@ -122,12 +122,18 @@ async function squad() {
   };
 }
 
-// «Штаб Сквада»: every position with the names of those who hold it.
+// «Штаб Сквада»: every position with those who hold it; the @username opens their profile.
 async function teamView() {
   const out = [];
   for (const { position, people } of await staff.team()) {
-    const names = (await Promise.all(people.map((r) => nameOf(r.user_id)))).map((n) => truncate(n, 40));
-    out.push({ emoji: position.emoji, title: position.title, duties: position.duties, motto: position.motto, people: names });
+    const holders = await Promise.all(people.map(async (r) => ({
+      name: truncate(await nameOf(r.user_id), 40),
+      username: await usernameOf(r.user_id),
+    })));
+    out.push({
+      emoji: position.emoji, title: position.title, duties: position.duties, motto: position.motto,
+      people: holders.map((x) => x.name), holders,
+    });
   }
   return out;
 }

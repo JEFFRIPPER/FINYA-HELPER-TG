@@ -93,6 +93,15 @@ export async function nameOf(userId) {
   return p ? p.name : 'Участник';
 }
 
+// The freshest known @username of a member without the @, or '' when they have none.
+export async function usernameOf(userId) {
+  const row = await db.get(sql`SELECT username FROM chat_members WHERE user_id = ${userId} AND username != ''
+    ORDER BY last_active DESC LIMIT 1`);
+  if (row) return row.username;
+  const p = await db.get(sql`SELECT username FROM profiles WHERE user_id = ${userId}`);
+  return p && p.username ? p.username : '';
+}
+
 export async function byUsername(chatId, username) {
   username = String(username || '').replace(/^@+/, '').toLowerCase();
   if (!username) return null;

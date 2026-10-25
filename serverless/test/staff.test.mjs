@@ -63,11 +63,28 @@ test('only the owner appoints in reply; the news stays, the team and profile sho
 
   const data = await profileData(a);
   assert.deepEqual(data.me.positions.map((p) => p.title), ['Креативщик / Дизайнер', 'Ивент-менеджер', 'Модератор чата']);
-  assert.deepEqual(data.squad.team.find((t) => t.title === 'Ивент-менеджер').people, ['Аня']);
+  const event = data.squad.team.find((t) => t.title === 'Ивент-менеджер');
+  assert.deepEqual(event.people, ['Аня']);
+  assert.deepEqual(event.holders, [{ name: 'Аня', username: 'user2' }]);
+  assert.deepEqual(data.squad.team.find((t) => t.title === 'Контент-менеджер').holders, []);
 
   await say(OWNER, '-должность ивент-менеджер', replyTo(a));
   assert.match(last(api), /снимается с должности «Ивент-менеджер»/);
   await say(OWNER, '-должность', replyTo(a));
   assert.match(last(api), /больше без должности/);
   assert.equal((await db.get('SELECT COUNT(*) AS c FROM positions')).c, 0);
+});
+
+test('the team shows the freshest @username, or none when the member has none', async () => {
+  await setup();
+  await setSetting('chat_captcha', false);
+  const a = user(2, { first_name: 'Аня', username: 'old_anya' });
+  const c = user(4, { first_name: 'Вика', username: undefined });
+  await profileData(a);
+  await say(OWNER, '+должность Креативщик', replyTo(a));
+  await say(OWNER, '+должность Креативщик', replyTo(c));
+  await say({ ...a, username: 'anya_now' }, 'привет');
+  const data = await profileData(OWNER);
+  assert.deepEqual(data.squad.team.find((t) => t.title === 'Креативщик / Дизайнер').holders,
+    [{ name: 'Аня', username: 'anya_now' }, { name: 'Вика', username: '' }]);
 });
