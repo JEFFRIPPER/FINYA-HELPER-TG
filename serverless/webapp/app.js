@@ -154,8 +154,8 @@
   ];
   var GITHUB = 'https://github.com/JEFFRIPPER/';
   // Telegram's header and bottom bar blend into the page (see style.css).
-  var HEADER = '#6b0a0a';
-  var BG = '#2e0505';
+  var HEADER = '#580808';
+  var BG = '#250404';
   var BAR = '#090203';
   // Material 3 fade through: the old content fades out for 90 ms.
   var FADE_OUT_MS = 90;
@@ -853,16 +853,48 @@
         fill, h('i', { class: 'trk' })),
       h('div', { class: 'team-grid' }, team.map(function (t) {
         var open = t.people.length > 0;
-        return h('button', { class: 'team-tile ripple' + (open ? '' : ' vacant'), type: 'button', onclick: function () {
-          haptic();
-          snackbar(h('div', { class: 'snack-ach' },
-            h('span', { class: 'snack-ach-task', text: t.duties.join(' · ') }),
-            h('b', { text: t.motto })));
-        } },
+        return h('button', { class: 'team-tile ripple' + (open ? '' : ' vacant'), type: 'button', onclick: function () { showPosition(t); } },
           h('span', { class: 'team-emoji', text: t.emoji }),
           h('b', { class: 'team-role', text: t.title }),
           open ? h('span', { class: 'team-who', text: t.people.join(', ') }) : h('span', { class: 'team-vacant', text: 'Вакансия' }));
       })));
+  }
+
+  // A position of «Штаб Сквада»: who holds it, what they do and the motto.
+  // A tap on the @username opens that member's Telegram profile.
+  function showPosition(t) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    haptic();
+    // Older servers send only the names.
+    var holders = t.holders || t.people.map(function (n) { return { name: n, username: '' }; });
+    content.replaceChildren(
+      h('div', { class: 'pos-head' },
+        h('span', { class: 'team-emoji pos-emoji', text: t.emoji }),
+        h('div', { class: 'body' },
+          h('h2', { class: 'goods-title', text: t.title }),
+          h('span', { class: 'pos-motto', text: t.motto }))),
+      h('h3', { class: 'pos-sub', text: holders.length ? 'На должности' : 'Вакансия' }),
+      holders.length
+        ? h('ul', { class: 'list pos-holders' }, holders.map(holderRow))
+        : h('p', { class: 'pos-empty', text: 'Пока никого. Назначает владелец Сквада.' }),
+      h('h3', { class: 'pos-sub', text: 'Обязанности' }),
+      h('ul', { class: 'pos-duties' }, t.duties.map(function (d) {
+        return h('li', null, icon('check', 'icon'), h('span', { text: d }));
+      })),
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+  }
+
+  function holderRow(p) {
+    var url = p.username ? 'https://t.me/' + p.username : null;
+    return h('li', { class: 'item pos-holder' + (url ? ' ripple' : ''), role: url ? 'link' : null, tabindex: url ? '0' : null,
+      onclick: url ? function () { openLink(url); } : null },
+      h('div', { class: 'lead', text: Array.from(p.name || '?')[0].toUpperCase() }),
+      h('div', { class: 'body' },
+        h('b', { text: p.name }),
+        url ? h('span', { class: 'pos-user', text: '@' + p.username }) : h('span', { text: 'Без юзернейма' })),
+      url ? icon('chevron_right', 'icon go') : null);
   }
 
   // «Все обновления»: every change of Финя from the very start, newest first.
