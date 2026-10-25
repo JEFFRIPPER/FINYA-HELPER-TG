@@ -154,8 +154,8 @@
   ];
   var GITHUB = 'https://github.com/JEFFRIPPER/';
   // Telegram's header and bottom bar blend into the page (see style.css).
-  var HEADER = '#580808';
-  var BG = '#250404';
+  var HEADER = '#460606';
+  var BG = '#1e0303';
   var BAR = '#090203';
   // Material 3 fade through: the old content fades out for 90 ms.
   var FADE_OUT_MS = 90;

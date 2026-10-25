@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-25-darker-bg',
+    date: '25 октября 2026',
+    title: 'Mini App ещё темнее',
+    items: [
+      '🌑 Фон Mini App стал ещё на 20% темнее: глазам спокойнее, алый оттенок остался.',
+    ],
+  },
+  {
     id: '2026-10-25-staff-usernames',
     date: '25 октября 2026',
     title: 'Штаб Сквада: кто на должности',
