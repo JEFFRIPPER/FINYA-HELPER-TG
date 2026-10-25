@@ -1471,6 +1471,11 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   letter-spacing: 0.2px;
   overflow-wrap: anywhere;
 }
+/* «СЕКРЕТ ТЬМЫ»: black, with a blood-red glow. */
+.ach.secret { border-color: rgba(255, 30, 60, 0.35); background: linear-gradient(160deg, #0b0203, #000); }
+.ach.secret .ach-icon { background: radial-gradient(circle at 50% 40%, #2a0006, #000 70%); color: var(--red); box-shadow: 0 0 14px rgba(255, 30, 60, 0.35); }
+.ach.secret b { color: var(--red); letter-spacing: 0.4px; }
+.ach.secret.on .ach-icon { background: radial-gradient(circle at 35% 30%, #ff2d48, #3a0008 60%, #000); color: #fff; box-shadow: 0 0 20px var(--glow); }
 .ach-more { display: block; margin: 8px auto 0; }
 .ach small { font-size: 10px; line-height: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ach.on small { color: var(--gold); }

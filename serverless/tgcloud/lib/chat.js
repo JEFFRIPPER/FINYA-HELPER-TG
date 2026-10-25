@@ -97,13 +97,19 @@ async function nameFor(u) {
 
 // The member replied to, or the first @mention. In a discussion group every comment
 // «replies» to the channel post, and in a forum to the topic: those are no target.
-export async function targetOf(message) {
+function repliedTo(message) {
   const r = message.reply_to_message;
   const topicRoot = r && message.is_topic_message && r.message_id === message.message_thread_id;
   if (r && r.from && !r.sender_chat && !r.is_automatic_forward && !r.forum_topic_created && !topicRoot &&
       r.from.id !== members.TELEGRAM_SERVICE_ID) {
-    return withNick(person(r.from));
+    return r.from;
   }
+  return null;
+}
+
+export async function targetOf(message) {
+  const replied = repliedTo(message);
+  if (replied) return withNick(person(replied));
   const me = await getMe();
   const text = String(message.text || '');
   for (const e of message.entities || []) {
@@ -1633,10 +1639,12 @@ async function commandHelp(message, rest, addressed) {
   const entry = usageEntry(m[1], addressed);
   if (entry) {
     await say(message, usageText(entry), { temp: true });
+    await feats.mark(message.from.id, `help:${entry.keys[0]}`);
     return true;
   }
   const found = await social.matchAction(m[1]);
   if (found && (addressed || !found.rest)) {
+    await feats.mark(message.from.id, `help:rp:${found.cmd}`);
     await say(message, usageText({
       title: `🤗 ${found.cmd.charAt(0).toUpperCase()}${found.cmd.slice(1)}`, about: `РП-действие: «${found.action}»`,
       how: [[`${found.cmd} (ответом)`, 'С автором сообщения'], [`${found.cmd} текст (ответом)`, 'Со своим текстом после команды'],
@@ -1780,6 +1788,14 @@ export async function handleText(message) {
   const cmd = bare(rest);
   const self = await withNick(person(message.from));
 
+  // «СЕКРЕТ ТЬМЫ»: the phrase in a chat, in reply to someone else. The badge itself
+  // comes from checkAchievements right after.
+  const replied = group ? repliedTo(message) : null;
+  if (replied && replied.id !== self.id && feats.isDarkPhrase(text)) {
+    await feats.mark(self.id, 'dark');
+    await say(message, 'СЛАВА СКВАДУ!', { temp: true });
+    return true;
+  }
   if (await commandHelp(message, rest, addressed)) return true;
   if (owner && (await ownerCommand(message, rest))) return true;
 
@@ -2018,6 +2034,7 @@ export async function handleText(message) {
         : '🔮 Сначала добавь день рождения: «+ДР 16.12». Или спроси про знак: «Гороскоп Овен».', { temp: true });
     } else {
       await say(message, await extras.horoscopeText(sign), { temp: true });
+      await feats.streakDaily(self.id, 'horo');
     }
     return true;
   }
@@ -2105,6 +2122,7 @@ export async function handleText(message) {
   }
   if (/^(?:сравнить|сравни|сравнение)(?:\s+@\w+)?$/u.test(cmd) && target && !target.isBot && target.id !== self.id) {
     await say(message, await compareText(message.chat.id, self, target), { temp: true });
+    await feats.mark(self.id, `cmp:${target.id}`);
     return true;
   }
   if (MINUS.has(cmd) && target) {

@@ -1,4 +1,4 @@
-// The daily summary in the chat, 50 chat achievements and the chat history sent
+// The daily summary in the chat, 63 chat achievements and the chat history sent
 // to Финя as a file in the private chat.
 import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,12 +25,12 @@ const say = (from, text, extra) => onMessage(groupMessage(DISCUSSION, from, text
 const announcements = (api) => api.called('sendMessage').filter(isAnnouncement);
 const counter = async (id, key) => ((await db.get('SELECT n FROM counters WHERE user_id = ? AND key = ?', [id, key])) || { n: 0 }).n;
 
-test('achievements: 50 chat ones with unique keys and codes after the club ones', async () => {
+test('achievements: 63 chat ones with unique keys and codes after the club ones', async () => {
   await setup();
-  assert.equal(CHAT_ACHIEVEMENTS.length, 50);
-  assert.equal(ACHIEVEMENTS.length, 66);
-  assert.deepEqual(ACHIEVEMENTS.map((a) => a.n), Array.from({ length: 66 }, (_, i) => i + 1));
-  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.code)).size, 66);
+  assert.equal(CHAT_ACHIEVEMENTS.length, 63);
+  assert.equal(ACHIEVEMENTS.length, 79);
+  assert.deepEqual(ACHIEVEMENTS.map((a) => a.n), Array.from({ length: 79 }, (_, i) => i + 1));
+  assert.equal(new Set(ACHIEVEMENTS.map((a) => a.code)).size, 79);
 });
 
 test('the 10th message opens «Первые шаги» once, announced in the chat with its XP', async () => {
@@ -55,7 +55,7 @@ test('the 10th message opens «Первые шаги» once, announced in the ch
   assert.equal(announcements(api).length, 1);
   // The Mini App shows them too.
   const data = await clubData(a, { xpTotal: 0, streakDays: 0, founder: false });
-  assert.equal(data.achievements.length, 66);
+  assert.equal(data.achievements.length, 79);
   assert.ok(data.achievements.find((x) => x.code === 'msgs_10').at);
   assert.equal(data.achievements.find((x) => x.code === 'msgs_100').progress, 20);
 });
@@ -101,11 +101,11 @@ test('«ачивки»: how many are open and the last ones', async () => {
   await setSetting('chat_captcha', false);
   const a = user(2, { first_name: 'Аня' });
   await say(a, 'ачивки');
-  assert.match(replies(api).at(-1).params.text, /У тебя пока нет ачивок. Их 66/);
+  assert.match(replies(api).at(-1).params.text, /У тебя пока нет ачивок. Их 79/);
   await db.run("INSERT INTO achievements (user_id, code, unlocked_at) VALUES (2, 'msgs_10', 1), (2, 'nick', 2)");
   await say(a, 'ачивки');
   const text = replies(api).at(-1).params.text;
-  assert.match(text, /Твои ачивки: \d+ из 66/);
+  assert.match(text, /Твои ачивки: \d+ из 79/);
   assert.match(text, /«Новое имя» — Поставь ник/);
 });
 

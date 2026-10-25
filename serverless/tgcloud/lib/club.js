@@ -184,7 +184,7 @@ async function achievementsView(userId, base) {
   return {
     fresh,
     items: ACHIEVEMENTS.map((a) => ({
-      code: a.code, icon: a.icon, title: a.title, text: a.text, xp: a.xp, goal: a.goal,
+      code: a.code, icon: a.icon, title: a.title, text: a.text, xp: a.xp, goal: a.goal, secret: Boolean(a.secret),
       progress: Math.min(a.goal, stats[a.stat] || 0),
       at: unlocked.get(a.code) || null,
     })),
