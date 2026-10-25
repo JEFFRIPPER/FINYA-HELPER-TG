@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-25-dark-5000',
+    date: '25 октября 2026',
+    title: '«СЕКРЕТ ТЬМЫ» стал дороже',
+    items: [
+      '👁 Тайная ачивка «СЕКРЕТ ТЬМЫ» теперь даёт 5,000 XP. Фразу по-прежнему знает только тот, кто прощался с Создателем в реальной жизни.',
+    ],
+  },
+  {
     id: '2026-10-25-achievements-79',
     date: '25 октября 2026',
     title: '13 новых ачивок, всего 79',
