@@ -75,7 +75,7 @@ export const CHAT_ACHIEVEMENTS = [
   A(77, 'help_10', 'helped', 10, 15, 'info_fill', 'Любопытный', '«… Помощь» к 10 разным командам'),
   A(78, 'qday_10', 'qday', 10, 30, 'how_to_vote_fill', 'Мнение дня', 'Ответь на «Вопрос дня» 10 дней'),
   // Secret: the hint only; the phrase is in no file, just its hash (DARK below).
-  { ...A(79, 'dark_secret', 'dark', 1, 66, 'visibility_fill', 'СЕКРЕТ ТЬМЫ', 'Знает её тот, кто прощался с Создателем в реальной жизни'), secret: true },
+  { ...A(79, 'dark_secret', 'dark', 1, 5000, 'visibility_fill', 'СЕКРЕТ ТЬМЫ', 'Знает её тот, кто прощался с Создателем в реальной жизни'), secret: true },
 ];
 
 // ---- the secret of darkness ------------------------------------------------------

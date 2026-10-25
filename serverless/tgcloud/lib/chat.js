@@ -1234,7 +1234,7 @@ async function announceAchievements(message, who, fresh) {
   const reward = fresh.reduce((n, a) => n + a.xp, 0);
   const shown = fresh.slice(0, ACH_SHOWN);
   let text = fresh.length === 1
-    ? `🏆 ${name} открывает ачивку «${escapeHtml(fresh[0].title)}» · +${fresh[0].xp} XP\n<blockquote>${escapeHtml(fresh[0].text)}</blockquote>`
+    ? `🏆 ${name} открывает ачивку «${escapeHtml(fresh[0].title)}» · +${fmtThousands(fresh[0].xp)} XP\n<blockquote>${escapeHtml(fresh[0].text)}</blockquote>`
     : `🏆 ${name} открывает ачивки · +${fmtThousands(reward)} XP\n<blockquote>` +
       shown.map((a) => `«${escapeHtml(a.title)}» — ${escapeHtml(a.text)}`).join('\n') +
       (fresh.length > shown.length ? `\n…и ещё ${fresh.length - shown.length}` : '') + '</blockquote>';

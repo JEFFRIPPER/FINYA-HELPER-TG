@@ -34,7 +34,7 @@ test('«СЕКРЕТ ТЬМЫ»: the phrase in reply to someone else, then «С�
   await say(a, 'ТЕНЬ, над сквадом…', replyTo(b));
   assert.ok(replies(api).some((c) => /СЛАВА СКВАДУ!/.test(c.params.text)));
   const post = api.called('sendMessage').filter(isAnnouncement).at(-1);
-  assert.match(post.params.text, /открывает ачивку «СЕКРЕТ ТЬМЫ» · \+66 XP/);
+  assert.match(post.params.text, /открывает ачивку «СЕКРЕТ ТЬМЫ» · \+5,000 XP/);
   assert.match(post.params.text, /прощался с Создателем/);
   assert.equal(await has(2, 'dark_secret'), true);
   assert.equal(await has(3, 'dark_secret'), false);
@@ -48,6 +48,8 @@ test('«СЕКРЕТ ТЬМЫ»: the phrase in reply to someone else, then «С�
   const secret = data.achievements.find((x) => x.code === 'dark_secret');
   assert.equal(secret.secret, true);
   assert.ok(secret.at);
+  assert.equal(secret.xp, 5000);
+  assert.equal((await db.get("SELECT points FROM events WHERE user_id = 2 AND kind = 'achievement' AND message_id = 79")).points, 5000);
   assert.equal(data.achievements.filter((x) => x.secret).length, 1);
   // Only the hash is in the code.
   assert.equal(feats.isDarkPhrase('сообщение'), false);
