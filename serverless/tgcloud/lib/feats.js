@@ -1,5 +1,5 @@
-// Chat achievements: 50 more badges for what members do in the Squad chats
-// (messages, active days, reputation, marriage, farm, casino…). Checked after
+// Chat achievements: 63 more badges for what members do in the Squad chats
+// (messages, active days, reputation, marriage, farm, casino…) and one secret. Checked after
 // commands and every 10th message, announced right in the chat; the Mini App
 // shows them together with the club ones (club.js).
 import { db } from 'sdk';
@@ -62,13 +62,91 @@ export const CHAT_ACHIEVEMENTS = [
   A(64, 'about', 'about', 1, 5, 'menu_book_fill', 'Пара слов о себе', 'Заполни «+Описание …»'),
   A(65, 'day_top', 'dayTop', 1, 30, 'leaderboard_fill', 'Звезда дня', 'Стань №1 в итогах дня'),
   A(66, 'reminders_5', 'reminders', 5, 10, 'check_circle_fill', 'Всё под контролем', 'Поставь 5 напоминаний'),
+  A(67, 'couple', 'couple', 1, 20, 'favorite_fill', 'Вместе', 'Начни отношения: «Встречаться» ответом'),
+  A(68, 'couple_30', 'coupleDays', 30, 40, 'celebration_fill', 'Всё серьёзно', '30 дней в отношениях или в браке'),
+  A(69, 'citizen_chat', 'citizen', 1, 15, 'account_balance_fill', 'Паспорт Сквада', 'Получи гражданство: «+Гражданство» в своём чате'),
+  A(70, 'citizen_100', 'citizenDays', 100, 50, 'flag_fill', 'Коренной житель', '100 дней гражданства'),
+  A(71, 'anketa_full', 'anketa', 1, 15, 'menu_book_fill', 'Открытая книга', 'Заполни анкету целиком: +ДР, +Пол и +Город'),
+  A(72, 'staff', 'staff', 1, 30, 'shield_person_fill', 'На службе', 'Получи должность в Штабе Сквада'),
+  A(73, 'award_top', 'topDegree', 8, 50, 'military_tech_fill', 'Высшая степень', 'Получи награду высшей, 8-й степени'),
+  A(74, 'rp_inline_10', 'rpInline', 10, 15, 'share_fill', 'РП без границ', '10 РП через «@finya_helper_Squad_bot» в любом чате'),
+  A(75, 'horo_7', 'horo', 7, 25, 'star_fill', 'Звездочёт', 'Смотри «Гороскоп» 7 дней подряд'),
+  A(76, 'compare_5', 'compared', 5, 20, 'swords_fill', 'Дуэлянт', '«Сравнить» себя с 5 разными участниками'),
+  A(77, 'help_10', 'helped', 10, 15, 'info_fill', 'Любопытный', '«… Помощь» к 10 разным командам'),
+  A(78, 'qday_10', 'qday', 10, 30, 'how_to_vote_fill', 'Мнение дня', 'Ответь на «Вопрос дня» 10 дней'),
+  // Secret: the hint only; the phrase is in no file, just its hash (DARK below).
+  { ...A(79, 'dark_secret', 'dark', 1, 66, 'visibility_fill', 'СЕКРЕТ ТЬМЫ', 'Знает её тот, кто прощался с Создателем в реальной жизни'), secret: true },
 ];
+
+// ---- the secret of darkness ------------------------------------------------------
+
+// cyrb53 of the phrase in plain(): two spellings, «с тобой» and «с тобою».
+const DARK = [3199479368306453, 5637685204277642, 2976434838553535, 303954380210886];
+
+const plain = (text) => String(text).toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9]+/gu, ' ').trim();
+
+// A small 53-bit string hash (cyrb53, public domain): enough to keep the phrase out of the code.
+function cyrb53(str) {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507);
+  h1 ^= Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507);
+  h2 ^= Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return 4294967296 * (2097151 & h2) + (h1 >>> 0);
+}
+
+// The tests add the hash of their own phrase here.
+export const DARK_EXTRA = [];
+export const darkHash = (text) => cyrb53(plain(text));
+
+export function isDarkPhrase(text) {
+  const p = plain(text);
+  if (!p || p.length > 60) return false;
+  const h = cyrb53(p);
+  return DARK.includes(h) || DARK_EXTRA.includes(h);
+}
 
 // ---- counters --------------------------------------------------------------------
 
 export async function bump(userId, key, by = 1) {
   await db.run(sql`INSERT INTO counters (user_id, key, n) VALUES (${userId}, ${key}, ${by})
     ON CONFLICT(user_id, key) DO UPDATE SET n = n + ${by}`);
+}
+
+// Once: whom a member compared with, which commands' help they read.
+export async function mark(userId, key) {
+  await db.run(sql`INSERT OR IGNORE INTO counters (user_id, key, n) VALUES (${userId}, ${key}, 1)`);
+}
+
+const mskDay = (ts) => Math.floor((Math.floor(ts) + MSK_OFFSET) / DAY);
+
+// At most +1 a day: «Вопрос дня» answered in two chats counts once.
+export async function bumpDaily(userId, key, ts = nowInt()) {
+  const day = mskDay(ts);
+  const r = await db.run(sql`INSERT INTO counters (user_id, key, n) VALUES (${userId}, ${key + '_day'}, ${day})
+    ON CONFLICT(user_id, key) DO UPDATE SET n = excluded.n WHERE n < excluded.n`);
+  if (r.rowsAffected === 1) await bump(userId, key);
+}
+
+// Days in a row (`key_run`) and the best run (`key`): «Гороскоп» 7 days running.
+export async function streakDaily(userId, key, ts = nowInt()) {
+  const day = mskDay(ts);
+  const last = await db.get(sql`SELECT n FROM counters WHERE user_id = ${userId} AND key = ${key + '_day'}`);
+  if (last && last.n >= day) return;
+  const prev = await db.get(sql`SELECT n FROM counters WHERE user_id = ${userId} AND key = ${key + '_run'}`);
+  const run = last && last.n === day - 1 && prev ? prev.n + 1 : 1;
+  for (const [k, n] of [[key + '_day', day], [key + '_run', run]]) {
+    await db.run(sql`INSERT INTO counters (user_id, key, n) VALUES (${userId}, ${k}, ${n})
+      ON CONFLICT(user_id, key) DO UPDATE SET n = excluded.n`);
+  }
+  await db.run(sql`INSERT INTO counters (user_id, key, n) VALUES (${userId}, ${key}, ${run})
+    ON CONFLICT(user_id, key) DO UPDATE SET n = MAX(n, excluded.n)`);
 }
 
 // A message at night (0–5 МСК) or early in the morning (5–8 МСК) counts for those badges;
@@ -93,6 +171,12 @@ export async function chatStats(userId, ts = nowInt()) {
   const first = await one(sql`SELECT MIN(first_seen) AS n FROM chat_members WHERE user_id = ${userId} AND first_seen > 0`);
   const spent = {};
   for (const r of await db.all(sql`SELECT kind, COUNT(*) AS c FROM xp_spend WHERE user_id = ${userId} GROUP BY kind`)) spent[r.kind] = r.c;
+  const dating = await db.get(sql`SELECT since FROM dating WHERE user_id = ${userId}`);
+  const citizen = await db.get(sql`SELECT since FROM citizens WHERE user_id = ${userId}`);
+  const info = await db.get(sql`SELECT gender, city FROM profile_info WHERE user_id = ${userId}`);
+  const born = await db.get(sql`SELECT 1 AS n FROM birthdays WHERE user_id = ${userId}`);
+  const daysSince = (row) => (row ? Math.max(0, Math.floor((ts - row.since) / DAY)) : 0);
+  const keys = (prefix) => Object.keys(counts).filter((k) => k.startsWith(prefix)).length;
   return {
     msgs: await one(sql`SELECT SUM(msgs) AS n FROM chat_members WHERE user_id = ${userId}`),
     days: await one(sql`SELECT COUNT(DISTINCT day) AS n FROM chat_activity WHERE user_id = ${userId}`),
@@ -114,6 +198,20 @@ export async function chatStats(userId, ts = nowInt()) {
     early: counts.early || 0,
     dayTop: counts.day_top || 0,
     reminders: counts.reminders || 0,
+    couple: dating || spouse ? 1 : 0,
+    coupleDays: Math.max(daysSince(dating), daysSince(spouse)),
+    citizen: citizen ? 1 : 0,
+    citizenDays: daysSince(citizen),
+    anketa: info && info.gender && info.city && born ? 1 : 0,
+    staff: await one(sql`SELECT COUNT(*) AS n FROM positions WHERE user_id = ${userId}`),
+    topDegree: await one(sql`SELECT MAX(COALESCE(d.degree, 1)) AS n FROM awards a
+      LEFT JOIN award_degrees d ON d.award_id = a.id WHERE a.user_id = ${userId}`),
+    rpInline: counts.rp_inline || 0,
+    horo: counts.horo || 0,
+    compared: keys('cmp:'),
+    helped: keys('help:'),
+    qday: counts.qday || 0,
+    dark: counts.dark || 0,
   };
 }
 

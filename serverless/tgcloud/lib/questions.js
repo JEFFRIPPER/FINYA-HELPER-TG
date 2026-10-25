@@ -2,7 +2,8 @@
 // The questions go round in order, so none repeats until all were asked.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
-import { getSetting } from './store.js';
+import * as feats from './feats.js';
+import { getSetting, setSetting } from './store.js';
 import { MSK_OFFSET, nowInt } from './util.js';
 import { squadChatIds } from './xpchat.js';
 import * as members from './members.js';
@@ -55,12 +56,24 @@ async function nextQuestion(chatId) {
 
 export async function postQuestion(chatId) {
   const [question, options] = await nextQuestion(chatId);
-  return api.sendPoll({
+  const sent = await api.sendPoll({
     chat_id: chatId,
     question: `❓ Вопрос дня: ${question}`,
     options: options.map((text) => ({ text })),
     is_anonymous: false,
   });
+  // Only today's poll of each chat counts for «Мнение дня».
+  if (sent && sent.poll) await setSetting(`question_poll:${chatId}`, String(sent.poll.id));
+  return sent;
+}
+
+// poll_answer: a vote in today's «Вопрос дня» counts once a day; taking it back does not.
+export async function onPollAnswer(answer) {
+  const u = answer.user;
+  if (!u || u.is_bot || !answer.option_ids || !answer.option_ids.length) return;
+  const ours = await db.get(sql`SELECT 1 AS n FROM settings WHERE key LIKE 'question_poll:%'
+    AND value = ${JSON.stringify(String(answer.poll_id))}`);
+  if (ours) await feats.bumpDaily(u.id, 'qday');
 }
 
 // From tick(): once a day after noon in each Squad chat, until 20:00 if nothing woke the bot.

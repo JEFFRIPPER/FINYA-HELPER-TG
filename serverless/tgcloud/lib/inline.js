@@ -4,6 +4,7 @@ import { api, BotApiError } from 'sdk';
 import { boldHtml, escapeHtml, fullName, truncate } from './util.js';
 import * as bio from './bio.js';
 import { premiumMap, wrap } from './emoji.js';
+import * as feats from './feats.js';
 import { mention } from './moder.js';
 import * as social from './social.js';
 
@@ -87,4 +88,11 @@ export async function onInlineQuery(query) {
     if (!(err instanceof BotApiError) || err.code !== 400) throw err;
     await answer(list);
   }
+}
+
+// An RP result was sent: it counts for «РП без границ» and the RP badges.
+export async function onChosenResult(chosen) {
+  if (!chosen.from || chosen.from.is_bot || !String(chosen.result_id || '').startsWith('rp:')) return;
+  await feats.bump(chosen.from.id, 'rp_inline');
+  await feats.bump(chosen.from.id, 'rp');
 }
