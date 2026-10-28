@@ -171,7 +171,8 @@ test('«Финя, напомни»: saved, listed and sent with a later update',
   const now = Date.now();
   Date.now = () => now + 7201 * 1000;
   await pump({ force: true });
-  const reminder = sent(api).at(-1).params;
+  // Late in the evening the day's summary (23:55 МСК) may come right after it.
+  const reminder = sent(api).filter((x) => /напоминаю!/.test(x.params.text)).at(-1).params;
   assert.match(reminder.text, /⏰ <a href="tg:\/\/user\?id=2">Аня<\/a>, напоминаю!\n<blockquote>позвонить<\/blockquote>/);
   assert.equal(reminder.chat_id, DISCUSSION.id);
   assert.equal((await db.get('SELECT COUNT(*) AS c FROM reminders')).c, 0);

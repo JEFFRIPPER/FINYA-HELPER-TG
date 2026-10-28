@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-28-history-card',
+    date: '28 октября 2026',
+    title: 'Вернулась «История» XP в профиле',
+    items: [
+      '📜 На вкладке «Активность» в Mini App снова видна «История»: за что и когда начислялся XP. С 21 октября на её месте была пустая карточка.',
+    ],
+  },
+  {
     id: '2026-10-28-squad-pages',
     date: '28 октября 2026',
     title: 'Зал славы, Календарь, Карта и Летопись Сквада, Огонёк пары и Ёлка',

@@ -2320,7 +2320,7 @@
     next();
   }
 
-  function historyCard() {
+  function importCard() {
     return h('section', { class: 'card history-card' });
   }
 
@@ -2455,7 +2455,7 @@
     });
     adminRoot = h('div', { class: 'admin' },
       clubAdminCard(state.data.club),
-      historyCard(),
+      importCard(),
       h('section', { class: 'card admin-head' }),
       h('div', { class: 'field' }, icon('search'), search, clear),
       h('section', { class: 'card list-card members-card' }),
