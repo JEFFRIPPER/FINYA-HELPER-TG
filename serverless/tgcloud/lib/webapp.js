@@ -10,6 +10,7 @@ import * as chat from './chat.js';
 import * as club from './club.js';
 import { nameOf, usernameOf } from './members.js';
 import * as staff from './staff.js';
+import * as seasons from './seasons.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -158,7 +159,7 @@ export async function profileData(user) {
     };
   }
   // The rest only reads: all at once, so the Mini App opens faster.
-  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow] = await Promise.all([
+  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow, halloween] = await Promise.all([
     db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`),
     chat.profileExtras(user.id),
     place(p),
@@ -169,6 +170,7 @@ export async function profileData(user) {
     topView(false, user.id),
     topView(true, user.id),
     squad(),
+    seasons.halloweenView(user.id, ts),
   ]);
   return {
     me: {
@@ -190,6 +192,8 @@ export async function profileData(user) {
       rep: social.rep,
       marriage: social.marriage,
       positions: social.positions,
+      // «Витрина»: up to three achievements the member picked.
+      showcase: clubView.showcase,
     },
     admin: founder,
     chart: chartNow,
@@ -203,6 +207,8 @@ export async function profileData(user) {
     },
     squad: squadNow,
     club: clubView,
+    // Seasonal events: null outside their dates.
+    season: { halloween },
     now: ts,
   };
 }

@@ -185,10 +185,50 @@ async function achievementsView(userId, base) {
     fresh,
     items: ACHIEVEMENTS.map((a) => ({
       code: a.code, icon: a.icon, title: a.title, text: a.text, xp: a.xp, goal: a.goal, secret: Boolean(a.secret),
+      until: a.until || null,
       progress: Math.min(a.goal, stats[a.stat] || 0),
       at: unlocked.get(a.code) || null,
     })),
   };
+}
+
+// ---- «Витрина»: three favourite achievements --------------------------------------
+
+export const SHOWCASE_MAX = 3;
+const ACH_BY_CODE = new Map(ACHIEVEMENTS.map((a) => [a.code, a]));
+
+const showcaseItem = (a) => ({ code: a.code, icon: a.icon, title: a.title, secret: Boolean(a.secret), limited: Boolean(a.until) });
+
+// The member's showcase as achievements, in their order; codes no longer
+// unlocked (or removed from the list) drop out.
+export async function showcaseOf(userId) {
+  const row = await db.get(sql`SELECT codes FROM showcase WHERE user_id = ${userId}`);
+  if (!row) return [];
+  let codes;
+  try {
+    codes = JSON.parse(row.codes);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(codes) || !codes.length) return [];
+  const have = new Set((await db.all(sql`SELECT code FROM achievements WHERE user_id = ${userId}`)).map((r) => r.code));
+  return codes.filter((c) => have.has(c) && ACH_BY_CODE.has(c)).slice(0, SHOWCASE_MAX).map((c) => showcaseItem(ACH_BY_CODE.get(c)));
+}
+
+export async function setShowcase(user, codes) {
+  if (!Array.isArray(codes)) throw new ClubError('Выбери ачивки для витрины.');
+  codes = codes.map(String);
+  if (codes.length > SHOWCASE_MAX) throw new ClubError(`В витрине до ${SHOWCASE_MAX} ачивок.`);
+  if (new Set(codes).size !== codes.length) throw new ClubError('Ачивки в витрине не должны повторяться.');
+  if (codes.some((c) => !ACH_BY_CODE.has(c))) throw new ClubError('Такой ачивки нет.');
+  if (!codes.length) {
+    await db.run(sql`DELETE FROM showcase WHERE user_id = ${user.id}`);
+    return;
+  }
+  const have = new Set((await db.all(sql`SELECT code FROM achievements WHERE user_id = ${user.id}`)).map((r) => r.code));
+  if (codes.some((c) => !have.has(c))) throw new ClubError('В витрину можно поставить только открытые ачивки.');
+  await db.run(sql`INSERT INTO showcase (user_id, codes, updated_at) VALUES (${user.id}, ${JSON.stringify(codes)}, ${nowInt()})
+    ON CONFLICT(user_id) DO UPDATE SET codes = excluded.codes, updated_at = excluded.updated_at`);
 }
 
 // ---- XP shop -----------------------------------------------------------------
@@ -718,6 +758,7 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
     weekEnds: weekStart(ts) + 7 * DAY,
     achievements: achievements.items,
     fresh: achievements.fresh,
+    showcase: await showcaseOf(user.id),
     shop: await shopView(user.id, p ? p.xp : xpTotal, founder),
     polls: await pollsView(user.id, founder),
     birthday,

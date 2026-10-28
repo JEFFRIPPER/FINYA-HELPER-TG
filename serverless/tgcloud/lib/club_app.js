@@ -2,6 +2,7 @@
 import { OWNER_USER_ID } from './config.js';
 import { isMaintenance, setSetting } from './store.js';
 import * as club from './club.js';
+import * as seasons from './seasons.js';
 import { profileData } from './webapp.js';
 
 const OWNER_SETTINGS = {
@@ -19,6 +20,7 @@ export async function handle(user, input) {
   if (!owner && (await isMaintenance())) throw new club.ClubError('Бот на техработах. Попробуй чуть позже.');
   const action = String(input.action || '');
   let result = null;
+  let trick = null;
   switch (action) {
     case 'daily':
       result = await club.claimDaily(user);
@@ -41,13 +43,31 @@ export async function handle(user, input) {
     case 'ref':
       await club.referralLink(user);
       break;
+    case 'showcase':
+      await club.setShowcase(user, input.codes);
+      break;
+    case 'trick':
+      trick = await trickOrTreat(user);
+      result = trick.result;
+      break;
     default:
       if (!owner) throw new club.ClubError('Неизвестное действие.');
       await ownerAction(user, action, input);
   }
   const data = await profileData(user);
   data.result = result ? { points: result.points, promoted: result.promoted } : null;
+  if (trick) data.result = { points: trick.points, promoted: Boolean(result && result.promoted), text: trick.text, again: trick.again };
   return data;
+}
+
+// «Сладость или гадость» from the Mini App: the same once-a-day roll as in the chat.
+async function trickOrTreat(user) {
+  try {
+    return await seasons.trickOrTreat(user);
+  } catch (err) {
+    if (err instanceof seasons.SeasonError) throw new club.ClubError(err.message);
+    throw err;
+  }
 }
 
 async function ownerAction(user, action, input) {

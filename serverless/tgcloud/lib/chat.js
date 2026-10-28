@@ -23,6 +23,7 @@ import * as games from './games.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
 import * as reminders from './reminders.js';
+import * as seasons from './seasons.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
 import * as xp from './xp.js';
@@ -184,7 +185,7 @@ async function profileCard(chat, who, self) {
   const [rank] = xp.rankFor(points, { founder, manualRank: p ? p.manual_rank : null });
   const group = isGroupChat(chat);
   // Independent reads, all at once: the card is the slowest reply in the chat.
-  const [top, rep, spouse, dating, ach, style, role, home, jobs, sign, card, about, awards] = await Promise.all([
+  const [top, rep, spouse, dating, ach, style, role, home, jobs, sign, card, about, awards, shelf] = await Promise.all([
     place(who.id, points),
     social.repOf(who.id),
     social.spouseOf(who.id),
@@ -198,6 +199,7 @@ async function profileCard(chat, who, self) {
     group ? members.memberCard(chat.id, who.id, ts) : null,
     bio.aboutOf(who.id),
     bio.awardsOf(who.id),
+    club.showcaseOf(who.id),
   ]);
 
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
@@ -220,6 +222,7 @@ async function profileCard(chat, who, self) {
     `🎖 [${rank[1]}] Звание: ${escapeHtml(rank[2])}`,
     `⚡ ${fmtThousands(points)} XP${top ? ` · #${top} в топе` : ''}`,
     `🏆 Ачивок: ${ach.c}`,
+    ...(shelf.length ? [`🎖 Витрина: ${shelf.map((a) => `«${escapeHtml(a.title)}»`).join(' · ')}`] : []),
     `❤️ Репутация: ${rep.points}${rep.given ? ` · ➕ отдано ${rep.given}` : ''}`,
   ];
   if (!who.isBot) stats.push(`📅 В Telegram: примерно с ${extras.accountSinceText(who.id, ts)}`);
@@ -1333,6 +1336,30 @@ async function dailySummary(ts = nowInt()) {
 
 // The help: a menu of sections, each a list of commands with the description
 // quoted under it. Switched by buttons (help:<section>) in place.
+// ---- Хэллоуин: «Сладость или гадость» once a day, 24–31 October -------------------
+
+const HALLOWEEN_WORDS = new Set(['сладость или гадость', 'кошелек или жизнь', 'хэллоуин', 'хеллоуин', 'trick or treat']);
+
+async function halloweenText(self, ts = nowInt()) {
+  let r;
+  try {
+    r = await seasons.trickOrTreat(self.user, ts);
+  } catch (err) {
+    if (!(err instanceof seasons.SeasonError)) throw err;
+    const left = Math.ceil((seasons.nextHalloween(ts) - ts) / 86400);
+    return `🎃 Хэллоуин в Скваде идёт с 24 по 31 октября. Следующий через ${daysWord(left)}.`;
+  }
+  const ev = seasons.halloween(ts);
+  const badge = club.ACHIEVEMENTS.find((a) => a.code === `halloween_${ev.year}`);
+  const goal = seasons.HALLOWEEN_GOAL;
+  const got = r.points ? ` +${r.points} XP` : '';
+  let hunt = `🎃 Тыквенная охота: ${Math.min(r.days, goal)} из ${goal}`;
+  if (badge && r.days < goal) hunt += `. Ещё ${daysWord(goal - r.days)}, и ачивка «${badge.title}» твоя`;
+  else if (badge) hunt += ` · ачивка «${badge.title}» открыта`;
+  if (r.again) return `🎃 Тыква на сегодня уже открыта: ${r.text}${got}.\nНовая завтра.\n\n${hunt}`;
+  return `${r.text}${r.points ? `:${got}` : ''}\n\n${hunt}\n🕯 Хэллоуин до 31 октября, тыква открывается раз в день`;
+}
+
 const HELP = {
   profile: ['👤 Профиль', () => [
     ['👤 Кто Я · Кто Ты (ответом)', 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе и награды'],
@@ -1361,6 +1388,7 @@ const HELP = {
     ['💰 Баланс', 'Сколько XP можно потратить: в лавке, на переводы и в казино'],
     ['🎁 Передать 100 (ответом)', `Перевод XP со своего баланса, до ${games.GIFT_MAX} за раз и ${games.GIFTS_PER_DAY} раз в день`],
     ['🎰 Казино 50 · 🎲 Кости 50', `Ставка XP от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Правила: «Казино»`],
+    ['🎃 Сладость Или Гадость', 'Хэллоуин, 24–31 октября: раз в день конфета с XP или гадость. 3 дня — лимитная ачивка года'],
   ]],
   useful: ['🛠 Полезное', () => [
     ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и твоё место, период переключается кнопками. В 23:55 МСК Финя сама подводит итоги дня'],
@@ -1404,7 +1432,7 @@ const USAGE = [
   },
   {
     keys: ['кто я', 'кто ты', 'профиль', 'мой профиль'], title: '👤 Кто Я',
-    about: 'Профиль с графиком актива: звание, XP, репутация, актив за день, неделю, месяц и всё время, о себе, награды и должность',
+    about: 'Профиль с графиком актива: звание, XP, репутация, витрина ачивок, актив за день, неделю, месяц и всё время, о себе, награды и должность. Витрину (до трёх ачивок) выбирают в Mini App на вкладке «Звания»',
     how: [['Кто Я', 'Твой профиль'], ['Кто Ты (ответом на сообщение)', 'Профиль этого участника'], ['Финя, Кто Ты', 'Профиль самой Фини']],
   },
   {
@@ -1580,6 +1608,11 @@ const USAGE = [
     keys: ['сравнить', 'сравни', 'сравнение'], title: '⚔️ Сравнить',
     about: 'Ты и участник рядом: XP, репутация, ачивки, награды, актив и стаж в чате. 🏆 у того, кто впереди',
     how: [['Сравнить (ответом)', 'Сравнить себя с автором сообщения'], ['Сравнить @ник', 'То же через @ник']],
+  },
+  {
+    keys: ['сладость или гадость', 'кошелек или жизнь', 'хэллоуин', 'хеллоуин', 'trick or treat'], title: '🎃 Сладость Или Гадость',
+    about: 'Хэллоуин в Скваде, с 24 по 31 октября: раз в день Финя открывает тыкву. В ней конфета с XP, редкая золотая тыква или гадость. Три разных дня дают лимитную ачивку года. То же есть кнопкой в Mini App',
+    how: [['Сладость Или Гадость', 'Открыть тыкву на сегодня'], ['Кошелёк Или Жизнь · Хэллоуин', 'То же другими словами']],
   },
   {
     keys: ['навигатор'], title: '👑 Навигатор Сквада',
@@ -2023,6 +2056,10 @@ export async function handleText(message) {
   }
   if (['ближайшие др', 'дни рождения', 'др скоро', 'чьи др', 'кто именинник', 'именинники', 'ближайшие дни рождения'].includes(cmd)) {
     await say(message, await extras.birthdaysText(group ? message.chat.id : null), { temp: true });
+    return true;
+  }
+  if (HALLOWEEN_WORDS.has(cmd)) {
+    await say(message, await halloweenText(self), { temp: true });
     return true;
   }
   const horo = /^гороскоп(?:\s+(.+))?$/u.exec(cmd);
