@@ -93,6 +93,30 @@ export async function nameOf(userId) {
   return p ? p.name : 'Участник';
 }
 
+// Names as nameOf() gives them (nick, then the freshest chat name, then the profile)
+// and @usernames as usernameOf(), for many members in three queries:
+// → name(id), with name.username(id).
+export async function namesOf(ids) {
+  const list = JSON.stringify([...new Set(ids)].filter((id) => Number.isInteger(id)));
+  const names = new Map();
+  const usernames = new Map();
+  for (const r of await db.all(sql`SELECT user_id, name, username FROM profiles WHERE user_id IN (SELECT value FROM json_each(${list}))`)) {
+    names.set(r.user_id, r.name);
+    if (r.username) usernames.set(r.user_id, r.username);
+  }
+  for (const r of await db.all(sql`SELECT user_id, name, username FROM chat_members
+    WHERE user_id IN (SELECT value FROM json_each(${list})) ORDER BY last_active`)) {
+    names.set(r.user_id, r.name);
+    if (r.username) usernames.set(r.user_id, r.username);
+  }
+  for (const r of await db.all(sql`SELECT user_id, nick FROM nicks WHERE user_id IN (SELECT value FROM json_each(${list}))`)) {
+    names.set(r.user_id, r.nick);
+  }
+  const name = (id) => truncate(names.get(id) || 'Участник', 40);
+  name.username = (id) => usernames.get(id) || '';
+  return name;
+}
+
 // The freshest known @username of a member without the @, or '' when they have none.
 export async function usernameOf(userId) {
   const row = await db.get(sql`SELECT username FROM chat_members WHERE user_id = ${userId} AND username != ''

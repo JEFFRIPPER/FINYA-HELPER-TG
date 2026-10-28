@@ -21,6 +21,7 @@ export async function handle(user, input) {
   const action = String(input.action || '');
   let result = null;
   let trick = null;
+  let toy = null;
   switch (action) {
     case 'daily':
       result = await club.claimDaily(user);
@@ -50,6 +51,9 @@ export async function handle(user, input) {
       trick = await trickOrTreat(user);
       result = trick.result;
       break;
+    case 'tree':
+      toy = await seasonal(() => seasons.hangToy(user, String(input.kind || '')));
+      break;
     default:
       if (!owner) throw new club.ClubError('Неизвестное действие.');
       await ownerAction(user, action, input);
@@ -57,13 +61,19 @@ export async function handle(user, input) {
   const data = await profileData(user);
   data.result = result ? { points: result.points, promoted: result.promoted } : null;
   if (trick) data.result = { points: trick.points, promoted: Boolean(result && result.promoted), text: trick.text, again: trick.again };
+  if (toy) data.result = { points: 0, promoted: false, toy: toy.toy.name };
   return data;
 }
 
 // «Сладость или гадость» from the Mini App: the same once-a-day roll as in the chat.
 async function trickOrTreat(user) {
+  return seasonal(() => seasons.trickOrTreat(user));
+}
+
+// Season errors reach the Mini App as club errors: shown to the member as they are.
+async function seasonal(run) {
   try {
-    return await seasons.trickOrTreat(user);
+    return await run();
   } catch (err) {
     if (err instanceof seasons.SeasonError) throw new club.ClubError(err.message);
     throw err;
