@@ -67,6 +67,9 @@
     pumpkin_fill: 'M480-660C560-700 700-720 790-620C880-520 880-300 790-190C700-90 560-100 480-130C400-100 260-90 170-190C80-300 80-520 170-620C260-720 400-700 480-660ZM450-660L455-760Q470-830 560-840L565-800Q510-790 510-750L515-665ZM300-470L400-470L350-560ZM560-470L660-470L610-560ZM250-370Q480-130 710-370L630-350L600-315L565-345L480-335L395-345L360-315L330-350Z',
     visibility_fill: 'M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-134 0-244.5-72T61-462q-5-9-7.5-18.5T51-500q0-10 2.5-19.5T61-538q64-118 174.5-190T480-800q134 0 244.5 72T899-538q5 9 7.5 18.5T909-500q0 10-2.5 19.5T899-462q-64 118-174.5 190T480-200Z',
     schedule_fill: 'M520-496v-144q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640v159q0 8 3 15.5t9 13.5l132 132q11 11 28 11t28-11q11-11 11-28t-11-28L520-496ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
+    location_on_fill: 'M480-480q33 0 56.5-23.5T560-560q0-33-23.5-56.5T480-640q-33 0-56.5 23.5T400-560q0 33 23.5 56.5T480-480Zm0 400Q319-217 239.5-334.5T160-552q0-150 96.5-239T480-880q127 0 223.5 89T800-552q0 100-79.5 217.5T480-80Z',
+    // Drawn for Финя too: a fir tree for «Ёлка Сквада».
+    tree_fill: 'M480-900 250-560h110L210-360h130L170-160h270v80h80v-80h270L620-360h130L600-560h110L480-900Z',
   };
 
   // Brand marks: Simple Icons (CC0), 24×24.
@@ -471,11 +474,15 @@
       shareButton(me));
   }
 
-  // «брак» in the chat: who the member is married to and for how long.
+  // «брак» or «встречаться» in the chat: the pair, for how long, and «Огонёк пары»
+  // while it burns (dimmed when today they have not replied to each other yet).
   function marriageChip(m) {
     if (!m) return null;
-    return h('span', { class: 'love-chip', title: 'Брак в чате Сквада' }, icon('favorite_fill'),
-      h('span', { text: 'Пара: ' + m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }));
+    var f = m.fire;
+    return h('span', { class: 'love-chip', title: m.dating ? 'Отношения в чате Сквада' : 'Брак в чате Сквада' }, icon('favorite_fill'),
+      h('span', { text: 'Пара: ' + m.name + ' · ' + m.days + ' ' + plural(m.days, 'день', 'дня', 'дней') }),
+      f && f.days ? h('span', { class: 'pair-fire' + (f.today ? '' : ' cold'), title: 'Огонёк пары' },
+        icon('local_fire_department_fill'), String(f.days)) : null);
   }
 
   // Positions in the Squad team («+должность» from the owner).
@@ -996,9 +1003,474 @@
     });
   }
 
+  // ---- the Squad's pages: Зал славы, Календарь, Карта, Летопись ----------------------
+
+  var MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+
+  function dateLong(ts) {
+    var d = msk(ts);
+    return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+  }
+
+  // A button under a card that opens the rest in a sheet.
+  function moreButton(text, open) {
+    return h('button', { class: 'btn-tonal wide more-pages ripple', type: 'button', onclick: open }, text, icon('chevron_right'));
+  }
+
+  function sheetWith(title, sub, body) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return null;
+    haptic();
+    content.replaceChildren.apply(content, [h('h2', { class: 'goods-title', text: title }), sub ? h('p', { class: 'fine sheet-sub', text: sub }) : null,
+      body, h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть')].filter(Boolean));
+    return content;
+  }
+
+  // «Зал славы»: the Squad's records and who holds them now. The secret one shows
+  // only once somebody has it.
+  function hallCard(list) {
+    if (!list) return null;
+    var shown = list.filter(function (r) { return r.who || !r.secret; });
+    var held = shown.filter(function (r) { return r.who; }).length;
+    return h('section', { class: 'card hall' },
+      h('div', { class: 'card-title' },
+        h('div', { class: 'title-lead' }, h('span', { class: 'lead gold' }, icon('account_balance_fill')), h('h3', { text: 'Зал славы' })),
+        h('span', { class: 'count-chip', text: held + ' из ' + shown.length })),
+      h('div', { class: 'hall-grid' }, shown.map(function (r) {
+        return h('div', { class: 'hall-tile' + (r.who ? '' : ' empty') + (r.secret ? ' secret' : '') },
+          h('span', { class: 'hall-icon' }, icon(r.icon)),
+          h('span', { class: 'hall-title', text: r.title }),
+          h('b', { class: 'hall-who', text: r.who || 'Свободно' }),
+          h('span', { class: 'hall-value', text: r.value || 'Стань первым' }));
+      })));
+  }
+
+  // «Календарь Сквада»: birthdays, anniversaries of the pairs and holidays, 30 days ahead.
+  function inDays(e) {
+    if (e.in === 0) return 'Сегодня';
+    if (e.in === 1) return 'Завтра';
+    return 'Через ' + e.in + ' ' + plural(e.in, 'день', 'дня', 'дней');
+  }
+
+  function calRow(e) {
+    var d = msk(e.at);
+    return h('li', { class: 'cal-row ' + e.kind + (e.in === 0 ? ' today' : '') },
+      h('div', { class: 'cal-date' }, h('b', { text: String(d.getUTCDate()) }), h('span', { text: MONTHS_SHORT[d.getUTCMonth()] })),
+      h('div', { class: 'body' },
+        h('b', null, h('i', { class: 'cal-emoji', text: e.icon }), e.title),
+        h('span', { text: [inDays(e), e.sub].filter(Boolean).join(' · ') })));
+  }
+
+  var CAL_SHOWN = 4;
+
+  function calendarCard(list) {
+    if (!list) return null;
+    var next = list.slice(0, CAL_SHOWN);
+    return h('section', { class: 'card cal' },
+      h('div', { class: 'card-title' },
+        h('div', { class: 'title-lead' }, h('span', { class: 'lead primary' }, icon('calendar_month_fill')), h('h3', { text: 'Календарь Сквада' })),
+        h('span', { class: 'count-chip', text: '30 дней' })),
+      next.length ? h('ul', { class: 'cal-list' }, next.map(calRow))
+        : h('p', { class: 'pages-empty', text: 'Месяц без событий. Напиши в чате «+ДР 16.12», и Финя добавит твой день рождения.' }),
+      list.length > next.length ? moreButton('Весь месяц · ' + list.length + ' ' + plural(list.length, 'событие', 'события', 'событий'), function () {
+        sheetWith('Календарь Сквада', 'Дни рождения, годовщины пар и праздники на 30 дней', h('ul', { class: 'cal-list' }, list.map(calRow)));
+      }) : null);
+  }
+
+  // «Летопись Сквада»: weddings, citizens, positions, rare badges and new records.
+  function chronRow(e) {
+    return h('li', { class: 'chron-row ' + e.kind },
+      h('span', { class: 'chron-dot', text: e.icon }),
+      h('div', { class: 'body' }, h('b', { text: e.text }), h('span', { text: dateLong(e.at) })));
+  }
+
+  var CHRON_SHOWN = 4;
+
+  function chronicleCard(list) {
+    if (!list) return null;
+    return h('section', { class: 'card chron' },
+      h('div', { class: 'card-title' },
+        h('div', { class: 'title-lead' }, h('span', { class: 'lead primary' }, icon('menu_book_fill')), h('h3', { text: 'Летопись Сквада' }))),
+      list.length ? h('ol', { class: 'chron-list' }, list.slice(0, CHRON_SHOWN).map(chronRow))
+        : h('p', { class: 'pages-empty', text: 'Летопись только начинается: свадьбы, гражданства, должности и рекорды появятся здесь.' }),
+      list.length > CHRON_SHOWN ? moreButton('Вся летопись', function () {
+        sheetWith('Летопись Сквада', 'Главные события Сквада, новые сверху', h('ol', { class: 'chron-list' }, list.map(chronRow)));
+      }) : null);
+  }
+
+  // «Карта Сквада»: the cities from «+Город». The land and the borders (img/map.json,
+  // Natural Earth 1:50m, public domain) load once, on the first show.
+  var geo = { data: null, wait: null };
+
+  function loadGeo() {
+    if (!geo.wait) {
+      geo.wait = fetch('img/map.json?v=1').then(function (r) {
+        if (!r.ok) throw new Error('map ' + r.status);
+        return r.json();
+      }).then(function (d) { geo.data = d; return d; }, function () { geo.wait = null; return null; });
+    }
+    return geo.wait;
+  }
+
+  var MAP_W = 640;
+  var MAP_H = 360;
+
+  // The part of the world around the cities, at least about Europe-wide, in the frame's
+  // proportions. Longitudes shrink by cos(latitude) so the North is not stretched.
+  function mapFrame(cities) {
+    var lon0 = 25, lon1 = 95, lat0 = 42, lat1 = 66;
+    if (cities.length) {
+      lon0 = lat0 = Infinity;
+      lon1 = lat1 = -Infinity;
+      cities.forEach(function (c) {
+        lon0 = Math.min(lon0, c.lon); lon1 = Math.max(lon1, c.lon);
+        lat0 = Math.min(lat0, c.lat); lat1 = Math.max(lat1, c.lat);
+      });
+    }
+    var latC = (lat0 + lat1) / 2;
+    var k = Math.cos(latC * Math.PI / 180);
+    var w = Math.max((lon1 - lon0) * k * 1.35, 34);
+    var ht = Math.max((lat1 - lat0) * 1.35, 16);
+    if (w / ht > MAP_W / MAP_H) ht = w * MAP_H / MAP_W;
+    else w = ht * MAP_W / MAP_H;
+    var s = MAP_W / w;
+    return { k: k, s: s, x0: (lon0 + lon1) / 2 * k - w / 2, y1: latC + ht / 2 };
+  }
+
+  function mapXY(f, lon, lat) {
+    return [(lon * f.k - f.x0) * f.s, (f.y1 - lat) * f.s];
+  }
+
+  function geoPath(f, lines, scale, closed) {
+    var d = '';
+    lines.forEach(function (line) {
+      var pts = [];
+      var inside = false;
+      for (var i = 0; i < line.length; i++) {
+        var p = mapXY(f, line[i][0] / scale, line[i][1] / scale);
+        if (p[0] > -200 && p[0] < MAP_W + 200 && p[1] > -200 && p[1] < MAP_H + 200) inside = true;
+        pts.push(p[0].toFixed(1) + ' ' + p[1].toFixed(1));
+      }
+      if (inside) d += 'M' + pts.join('L') + (closed ? 'Z' : '');
+    });
+    return d;
+  }
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS(SVG, tag);
+    Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+    return el;
+  }
+
+  function drawMap(box, m) {
+    var f = mapFrame(m.cities);
+    var svg = svgEl('svg', { viewBox: '0 0 ' + MAP_W + ' ' + MAP_H, class: 'map-svg', role: 'img', 'aria-label': 'Карта Сквада' });
+    if (geo.data) {
+      svg.appendChild(svgEl('path', { class: 'map-land', d: geoPath(f, geo.data.land, geo.data.scale, true) }));
+      svg.appendChild(svgEl('path', { class: 'map-border', d: geoPath(f, geo.data.borders, geo.data.scale, false) }));
+    }
+    var most = m.cities.length ? m.cities[0].count : 1;
+    var spots = m.cities.map(function (c) {
+      return { c: c, p: mapXY(f, c.lon, c.lat), r: 7 + 9 * Math.sqrt(c.count / most), label: null };
+    });
+    // Names for the five biggest cities: above, below, right or left of the dot, never
+    // over another name, over as little of the other dots as can be.
+    var taken = [];
+    var cross = function (a, b) {
+      return Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])) * Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+    };
+    spots.slice(0, 5).forEach(function (s) {
+      var w = Array.from(s.c.name).length * 9.6;
+      var x = s.p[0];
+      var y = s.p[1];
+      var r = s.r + 6;
+      var best = null;
+      [
+        ['middle', x, y - r - 4, [x - w / 2, y - r - 20, x + w / 2, y - r]],
+        ['middle', x, y + r + 14, [x - w / 2, y + r, x + w / 2, y + r + 18]],
+        ['start', x + r, y + 6, [x + r, y - 10, x + r + w, y + 8]],
+        ['end', x - r, y + 6, [x - r - w, y - 10, x - r, y + 8]],
+      ].forEach(function (side) {
+        var b = side[3];
+        if (b[0] < 4 || b[2] > MAP_W - 4 || b[1] < 4 || b[3] > MAP_H - 4) return;
+        if (taken.some(function (t) { return cross(b, t) > 0; })) return;
+        var cover = spots.reduce(function (n, o) {
+          return o === s ? n : n + cross(b, [o.p[0] - o.r, o.p[1] - o.r, o.p[0] + o.r, o.p[1] + o.r]);
+        }, 0);
+        if (!best || cover < best.cover) best = { side: side, cover: cover };
+      });
+      if (!best) return;
+      taken.push(best.side[3]);
+      s.label = best.side;
+    });
+    // The biggest on top: drawn last.
+    spots.reverse().forEach(function (s, i) {
+      var c = s.c;
+      var x = s.p[0].toFixed(1);
+      var y = s.p[1].toFixed(1);
+      var g = svgEl('g', { class: 'map-city', tabindex: '0', role: 'button', 'aria-label': c.name + ': ' + c.count });
+      var halo = svgEl('circle', { class: 'map-halo', cx: x, cy: y, r: (s.r * 2.2).toFixed(1) });
+      halo.style.animationDelay = (i * 0.37 % 2.4).toFixed(2) + 's';
+      g.appendChild(halo);
+      g.appendChild(svgEl('circle', { class: 'map-dot', cx: x, cy: y, r: s.r.toFixed(1) }));
+      if (c.count > 1) {
+        var n = svgEl('text', { class: 'map-count', x: x, y: (s.p[1] + 5).toFixed(1) });
+        n.textContent = String(c.count);
+        g.appendChild(n);
+      }
+      g.addEventListener('click', function () { showCity(c); });
+      svg.appendChild(g);
+    });
+    // Names on top of every dot.
+    spots.forEach(function (s) {
+      if (!s.label) return;
+      var t = svgEl('text', { class: 'map-label', 'text-anchor': s.label[0], x: s.label[1].toFixed(1), y: s.label[2].toFixed(1) });
+      t.textContent = s.c.name;
+      svg.appendChild(t);
+    });
+    box.replaceChildren(svg);
+  }
+
+  function cityList(cities, onPick) {
+    return h('ul', { class: 'list city-list' }, cities.map(function (c) {
+      return h('li', { class: 'item city-row ripple', role: 'button', tabindex: '0', onclick: function () { onPick(c); } },
+        h('div', { class: 'lead primary' }, icon('location_on_fill')),
+        h('div', { class: 'body' }, h('b', { text: c.name }),
+          h('span', { text: c.people.map(function (p) { return p.name; }).join(', ') })),
+        h('span', { class: 'trail', text: String(c.count) }));
+    }));
+  }
+
+  function cityBody(c) {
+    return [h('p', { class: 'fine sheet-sub', text: c.count + ' ' + plural(c.count, 'человек', 'человека', 'человек') + ' из Сквада' }),
+      h('ul', { class: 'list pos-holders' }, c.people.map(holderRow))];
+  }
+
+  function showCity(c) {
+    sheetWith('📍 ' + c.name, null, h('div', null, cityBody(c)));
+  }
+
+  function showCities(m) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    haptic();
+    function list() {
+      content.replaceChildren.apply(content, [
+        h('h2', { class: 'goods-title', text: 'Города Сквада' }),
+        h('p', { class: 'fine sheet-sub', text: m.people + ' ' + plural(m.people, 'человек', 'человека', 'человек') + ' написали «+Город»' }),
+        m.cities.length ? cityList(m.cities, open) : null,
+        m.other.length ? h('h3', { class: 'pos-sub', text: 'Другие города' }) : null,
+        m.other.length ? cityList(m.other, open) : null,
+        h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть')].filter(Boolean));
+    }
+    function open(c) {
+      haptic();
+      content.replaceChildren.apply(content, [h('h2', { class: 'goods-title', text: '📍 ' + c.name })].concat(cityBody(c), [
+        h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: list }, 'Все города')]));
+      content.scrollTop = 0;
+    }
+    list();
+  }
+
+  function mapCard(m) {
+    if (!m) return null;
+    var box = h('div', { class: 'map-box' });
+    if (geo.data) drawMap(box, m);
+    else {
+      box.appendChild(loader());
+      loadGeo().then(function () { drawMap(box, m); });
+    }
+    var places = m.cities.concat(m.other);
+    var top = m.cities.slice(0, 6);
+    return h('section', { class: 'card map-card' },
+      h('div', { class: 'card-title' },
+        h('div', { class: 'title-lead' }, h('span', { class: 'lead primary' }, icon('location_on_fill')), h('h3', { text: 'Карта Сквада' })),
+        m.people ? h('span', { class: 'count-chip', text: places.length + ' ' + plural(places.length, 'город', 'города', 'городов') }) : null),
+      box,
+      top.length ? h('div', { class: 'map-chips' }, top.map(function (c) {
+        return h('button', { class: 'map-chip ripple', type: 'button', onclick: function () { showCity(c); } },
+          h('span', { text: c.name }), h('b', { text: String(c.count) }));
+      })) : null,
+      h('p', { class: 'pages-empty map-hint', text: 'Напиши в чате «+Город Москва», и ты появишься на карте.' }),
+      places.length ? moreButton('Все города', function () { showCities(m); }) : null);
+  }
+
+  // ---- «Ёлка Сквада»: 1 December – 13 January, one tree for the whole Squad ---------
+
+  var TREE_W = 320;
+  var TREE_H = 360;
+
+  // Where toys hang, in the order they are hung: rows inside the cone, then mixed up
+  // by the golden ratio so the first toys spread over the whole tree.
+  var TREE_SLOTS = (function () {
+    var out = [];
+    for (var row = 0; row < 9; row++) {
+      var y = 112 + row * 22;
+      var half = (y - 40) / 260 * 120 * 0.78;
+      var n = Math.floor((2 * half) / 26) + 1;
+      for (var i = 0; i < n; i++) {
+        out.push([(n === 1 ? 160 : 160 - half + (2 * half * i) / (n - 1)) + (row % 2 ? 5 : -5), y]);
+      }
+    }
+    return out.map(function (p, i) { return { p: p, k: (i * 0.6180339887) % 1 }; })
+      .sort(function (a, b) { return a.k - b.k; }).map(function (x) { return x.p; });
+  })();
+
+  var TOY_NAMES = { ball: 'Алый шар', snow: 'Снежинка', bell: 'Колокольчик', candy: 'Леденец', gift: 'Подарок', star: 'Звезда' };
+
+  // A toy drawn around (0, 0), about 18 units wide.
+  function toyShape(kind) {
+    var g = svgEl('g', { class: 'toy toy-' + kind });
+    if (kind === 'snow') {
+      g.appendChild(svgEl('path', { class: 'toy-arms', d: 'M0-9V9M-7.8-4.5 7.8 4.5M-7.8 4.5 7.8-4.5' }));
+      g.appendChild(svgEl('circle', { class: 'toy-core', r: '2.4' }));
+    } else if (kind === 'bell') {
+      g.appendChild(svgEl('path', { class: 'toy-body', d: 'M-8 6C-8 4-6 3-6-1C-6-6-4-9 0-9S6-6 6-1C6 3 8 4 8 6Z' }));
+      g.appendChild(svgEl('circle', { class: 'toy-core', cy: '7.5', r: '2.4' }));
+    } else if (kind === 'gift') {
+      g.appendChild(svgEl('rect', { class: 'toy-body', x: '-8', y: '-6', width: '16', height: '14', rx: '2' }));
+      g.appendChild(svgEl('path', { class: 'toy-ribbon', d: 'M0-6V8M-8 0H8M0-6C-4-11-8-8-4-6M0-6C4-11 8-8 4-6' }));
+    } else if (kind === 'candy') {
+      g.appendChild(svgEl('circle', { class: 'toy-body', r: '8.5' }));
+      g.appendChild(svgEl('circle', { class: 'toy-swirl', r: '5' }));
+    } else {
+      g.appendChild(svgEl('circle', { class: 'toy-body', r: '9' }));
+      g.appendChild(svgEl('circle', { class: 'toy-glint', cx: '-3', cy: '-3.2', r: '2.6' }));
+    }
+    return g;
+  }
+
+  function starPath(cx, cy, r) {
+    var d = '';
+    for (var i = 0; i < 10; i++) {
+      var a = -Math.PI / 2 + (i * Math.PI) / 5;
+      var rr = i % 2 ? r * 0.45 : r;
+      d += (i ? 'L' : 'M') + (cx + rr * Math.cos(a)).toFixed(1) + ' ' + (cy + rr * Math.sin(a)).toFixed(1);
+    }
+    return d + 'Z';
+  }
+
+  function drawTree(t) {
+    var svg = svgEl('svg', { viewBox: '0 0 ' + TREE_W + ' ' + TREE_H, class: 'tree-svg', role: 'img', 'aria-label': 'Ёлка Сквада' });
+    // Falling snow: transform only, see .flake in style.css.
+    for (var s = 0; s < 18; s++) {
+      var flake = svgEl('circle', { class: 'flake', cx: String((s * 53 + 17) % TREE_W), cy: '-8', r: String(1.2 + (s % 3) * 0.6) });
+      flake.style.animationDelay = ((s * 0.77) % 6).toFixed(2) + 's';
+      flake.style.animationDuration = (6 + (s % 4)).toFixed(0) + 's';
+      svg.appendChild(flake);
+    }
+    svg.appendChild(svgEl('ellipse', { class: 'tree-snow', cx: '160', cy: '334', rx: '138', ry: '14' }));
+    svg.appendChild(svgEl('rect', { class: 'tree-trunk', x: '146', y: '296', width: '28', height: '38', rx: '4' }));
+    svg.appendChild(svgEl('path', { class: 'tree-tier', d: 'M160 150 36 300Q160 318 284 300Z' }));
+    svg.appendChild(svgEl('path', { class: 'tree-tier', d: 'M160 92 62 226Q160 244 258 226Z' }));
+    svg.appendChild(svgEl('path', { class: 'tree-tier', d: 'M160 40 88 156Q160 172 232 156Z' }));
+    // Garland lights twinkle one after another.
+    [[106, 130, 206, 118], [84, 200, 224, 184], [60, 276, 244, 256]].forEach(function (gl, row) {
+      var x0 = gl[0], y0 = gl[1], x1 = gl[2], y1 = gl[3];
+      var cx = (x0 + x1) / 2;
+      var cy = Math.max(y0, y1) + 22;
+      svg.appendChild(svgEl('path', { class: 'garland', d: 'M' + x0 + ' ' + y0 + 'Q' + cx + ' ' + cy + ' ' + x1 + ' ' + y1 }));
+      var lights = 7 + row * 2;
+      for (var i = 1; i < lights; i++) {
+        var u = i / lights;
+        var x = (1 - u) * (1 - u) * x0 + 2 * (1 - u) * u * cx + u * u * x1;
+        var y = (1 - u) * (1 - u) * y0 + 2 * (1 - u) * u * cy + u * u * y1;
+        var light = svgEl('circle', { class: 'light ' + (i % 2 ? 'gold' : 'red'), cx: x.toFixed(1), cy: y.toFixed(1), r: '2.6' });
+        light.style.animationDelay = ((i * 0.23 + row * 0.4) % 1.6).toFixed(2) + 's';
+        svg.appendChild(light);
+      }
+    });
+    t.toys.slice(0, TREE_SLOTS.length).forEach(function (toy, i) {
+      var p = TREE_SLOTS[i];
+      var g = svgEl('g', { class: 'hang' + (toy.mine ? ' mine' : ''), transform: 'translate(' + p[0].toFixed(1) + ' ' + p[1] + ')', role: 'button', tabindex: '0' });
+      g.appendChild(svgEl('path', { class: 'thread', d: 'M0-15V-8' }));
+      if (toy.mine) g.appendChild(svgEl('circle', { class: 'mine-ring', r: '13' }));
+      g.appendChild(toyShape(toy.kind));
+      g.addEventListener('click', function () {
+        haptic();
+        snackbar((TOY_NAMES[toy.kind] || 'Игрушка') + ' от ' + toy.by + (toy.mine ? ' (это ты)' : ''));
+      });
+      svg.appendChild(g);
+    });
+    var star = svgEl('g', { class: 'top-star' + (t.star ? ' lit' : ''), role: 'button', tabindex: '0' });
+    if (t.star) star.appendChild(svgEl('circle', { class: 'star-glow', cx: '160', cy: '34', r: '30' }));
+    star.appendChild(svgEl('path', { class: 'star', d: starPath(160, 34, 20) }));
+    star.addEventListener('click', function () {
+      haptic();
+      snackbar(t.star ? 'Звезда на макушке от ' + t.star.by : 'Звезда на макушке свободна: она одна на всю ёлку');
+    });
+    svg.appendChild(star);
+    return svg;
+  }
+
+  function hangSheet(t) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    haptic();
+    var balance = state.data.club.shop ? state.data.club.shop.balance : 0;
+    var left = t.limit - t.mine;
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: 'Повесить игрушку' }),
+      h('p', { class: 'fine sheet-sub', text: 'Баланс: ' + balance + ' XP · можно ещё ' + left + ' из ' + t.limit }),
+      h('ul', { class: 'list toy-list' }, t.shop.map(function (it) {
+        var taken = it.one && t.star;
+        var preview = svgEl('svg', { viewBox: '-14 -14 28 28', class: 'toy-preview', 'aria-hidden': 'true' });
+        if (it.kind === 'star') preview.appendChild(svgEl('path', { class: 'star', d: starPath(0, 0, 12) }));
+        else preview.appendChild(toyShape(it.kind));
+        var btn = h('button', { class: 'btn-filled small ripple' + (taken || balance < it.price ? ' off' : ''), type: 'button' },
+          taken ? 'Занята' : it.price ? it.price + ' XP' : 'Бесплатно');
+        btn.addEventListener('click', function () {
+          if (taken) { snackbar('Звезду уже повесил другой участник'); return; }
+          if (balance < it.price) { vibrate('error'); snackbar('Не хватает ' + (it.price - balance) + ' XP на балансе'); return; }
+          act({ action: 'tree', kind: it.kind }, btn, function (data) {
+            close();
+            vibrate('success');
+            snackbar('🎄 ' + data.result.toy + ' уже на ёлке!');
+          });
+        });
+        return h('li', { class: 'item toy-row' },
+          h('div', { class: 'lead toy-lead' }, preview),
+          h('div', { class: 'body' }, h('b', { text: it.name }), h('span', { text: it.one ? 'Одна на всю ёлку' : 'С твоим именем' })),
+          btn);
+      })),
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+  }
+
+  function treeCard(t) {
+    if (!t) return null;
+    var count = t.count;
+    var left = t.limit - t.mine;
+    var ends = msk(t.ends - 1);
+    var foot = t.top.length
+      ? 'Больше всех украсили: ' + t.top.map(function (p) { return p.name + ' (' + p.n + ')'; }).join(', ')
+      : 'Пока ни одной игрушки. Повесь первую!';
+    return h('section', { class: 'card tree-card' },
+      h('div', { class: 'card-title' },
+        h('div', { class: 'title-lead' }, h('span', { class: 'lead tree-lead' }, icon('tree_fill')), h('h3', { text: 'Ёлка Сквада' })),
+        h('span', { class: 'count-chip', text: count + ' ' + plural(count, 'игрушка', 'игрушки', 'игрушек') })),
+      t.open ? h('p', { class: 'tree-when', text: 'До ' + ends.getUTCDate() + ' ' + MONTHS[ends.getUTCMonth()] + ' · у каждого до ' + t.limit + ' игрушек' })
+        : h('p', { class: 'tree-when preview', text: 'Откроется 1 декабря. Пока видишь только ты, как владелец' }),
+      h('div', { class: 'tree-box' }, drawTree(t)),
+      h('div', { class: 'tree-facts' },
+        h('span', null, '⭐ ', t.star ? 'Звезда: ' + t.star.by : 'Звезда свободна'),
+        h('span', null, '👥 ', t.people + ' ' + plural(t.people, 'участник', 'участника', 'участников'))),
+      h('p', { class: 'pages-empty', text: foot }),
+      t.open ? h('button', { class: 'btn-filled wide ripple' + (left > 0 ? '' : ' off'), type: 'button', onclick: function () {
+        if (left <= 0) { snackbar('Твои ' + t.limit + ' игрушки уже на ёлке'); return; }
+        hangSheet(t);
+      } }, icon('tree_fill'), left > 0 ? 'Повесить игрушку · ещё ' + left : 'Твои игрушки на ёлке') : null);
+  }
+
   function squadBody(sq) {
     var c = state.data.club;
-    return [quickRow(sq), newsCard(sq), changesCard(), teamCard(sq.team)].concat(c.polls.map(pollCard))
+    var tree = state.data.season && state.data.season.tree;
+    // The tree goes first while it stands; the owner's preview waits lower down.
+    var treeFirst = tree && tree.open ? treeCard(tree) : null;
+    return [quickRow(sq), treeFirst, newsCard(sq), changesCard(), teamCard(sq.team), treeFirst ? null : treeCard(tree), calendarCard(sq.calendar),
+      hallCard(sq.hall), mapCard(sq.map), chronicleCard(sq.chronicle)].concat(c.polls.map(pollCard))
       .concat([referralCard(c.referral), birthdayCard(c.birthday), shopFeature(sq)])
       .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
       .concat([projectsSection()]).filter(Boolean);

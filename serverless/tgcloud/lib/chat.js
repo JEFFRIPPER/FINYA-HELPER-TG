@@ -19,6 +19,7 @@ import * as navigator from './navigator.js';
 import { withPremium } from './emoji.js';
 import { DATIVE } from './inline.js';
 import * as feats from './feats.js';
+import * as fire from './fire.js';
 import * as games from './games.js';
 import * as members from './members.js';
 import * as moder from './moder.js';
@@ -210,12 +211,13 @@ async function profileCard(chat, who, self) {
       : `🏡 Гражданство: чат «${escapeHtml(truncate(await anketa.chatTitle(home.chat_id), 40))}»`);
   }
   if (jobs.length) head.push(`💼 Должность: ${jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}`).join(', ')}`);
+  const flame = spouse || dating ? fire.fireMark(await fire.fireOf(who.id, ts)) : '';
   if (spouse) {
     const partner = await members.nameOf(spouse.partner_id);
-    head.push(`💍 Брак: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}`);
+    head.push(`💍 Брак: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}${flame}`);
   } else if (dating) {
     const partner = await members.nameOf(dating.partner_id);
-    head.push(`💞 Отношения: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}`);
+    head.push(`💞 Отношения: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}${flame}`);
   }
 
   const stats = [
@@ -618,7 +620,8 @@ async function marriageStatus(message) {
   const yearsText = now.years ? `${now.years} ${plural(now.years, 'год', 'года', 'лет')}` : 'первый год';
   await say(message, `💍 Твоя пара: ${escapeHtml(truncate(partner, 40))} · в браке уже ${daysWord(days)}.\n` +
     `${now.icon} Сейчас: ${now.name.toLowerCase()} свадьба (${yearsText})` +
-    (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : ''),
+    (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : '') +
+    `\n${fire.fireLine(await fire.fireOf(message.from.id))}`,
   { temp: true });
 }
 
@@ -694,8 +697,9 @@ async function datingStatus(message, who, self) {
     return;
   }
   const partner = escapeHtml(truncate(await members.nameOf(d.partner_id), 40));
+  const flame = fire.fireLine(await fire.fireOf(who.id), self);
   await say(message, `💞 ${self ? 'Ты встречаешься' : `${name} встречается`} с ${partner} уже ${daysWord(social.marriedDays(d.since))}.` +
-    (self ? '\nСледующий шаг: «Брак» ответом.' : ''), { temp: true });
+    (flame ? `\n${flame}` : '') + (self ? '\nСледующий шаг: «Брак» ответом.' : ''), { temp: true });
 }
 
 async function offerDate(message, target) {
@@ -1379,6 +1383,7 @@ const HELP = {
     ['💞 Встречаться (ответом) · Мои Отношения · Расстаться · Кто Встречается', 'Отношения до брака. Сами не заканчиваются, только по «Расстаться» или когда пара женится'],
     ['📅 Начало Отношений 01.05.2024 · Начало Брака 01.05.2024', 'Если пара была вместе ещё до Фини: дни и годовщины посчитаются с этой даты. Бесплатно, раз в месяц'],
     ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. «Мой Брак» покажет, какая сейчас свадьба (ситцевая, деревянная… золотая) и сколько до следующей. С годовщинами Финя поздравляет сама'],
+    ['🔥 Огонёк', 'Огонёк пары: горит, пока вы оба каждый день отвечаете на сообщения друг друга. 7 и 30 дней подряд дают ачивки'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП». В любом другом чате, даже в личке, напиши @ник Фини, пробел и действие: «@finya_helper_Squad_bot обнять @ник»'],
     ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
   ]],
@@ -1389,6 +1394,7 @@ const HELP = {
     ['🎁 Передать 100 (ответом)', `Перевод XP со своего баланса, до ${games.GIFT_MAX} за раз и ${games.GIFTS_PER_DAY} раз в день`],
     ['🎰 Казино 50 · 🎲 Кости 50', `Ставка XP от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Правила: «Казино»`],
     ['🎃 Сладость Или Гадость', 'Хэллоуин, 24–31 октября: раз в день конфета с XP или гадость. 3 дня — лимитная ачивка года'],
+    ['🎄 Ёлка', 'Ёлка Сквада, 1 декабря – 13 января: игрушки за XP вешаются в профиле Фини, вкладка «Сквад». 31 декабря Финя подводит итоги'],
   ]],
   useful: ['🛠 Полезное', () => [
     ['📊 Стата · Топ Дня / Недели / Месяца', 'Актив чата и твоё место, период переключается кнопками. В 23:55 МСК Финя сама подводит итоги дня'],
@@ -1613,6 +1619,16 @@ const USAGE = [
     keys: ['сладость или гадость', 'кошелек или жизнь', 'хэллоуин', 'хеллоуин', 'trick or treat'], title: '🎃 Сладость Или Гадость',
     about: 'Хэллоуин в Скваде, с 24 по 31 октября: раз в день Финя открывает тыкву. В ней конфета с XP, редкая золотая тыква или гадость. Три разных дня дают лимитную ачивку года. То же есть кнопкой в Mini App',
     how: [['Сладость Или Гадость', 'Открыть тыкву на сегодня'], ['Кошелёк Или Жизнь · Хэллоуин', 'То же другими словами']],
+  },
+  {
+    keys: ['огонек', 'огонек пары', 'мой огонек'], title: '🔥 Огонёк',
+    about: 'Огонёк пары для тех, кто встречается или в браке. Горит за день, когда вы оба ответили на сообщение друг друга в чатах Сквада (РП ответом тоже считается). Пропустите день, и он погаснет. 7 и 30 дней подряд дают ачивки',
+    how: [['Огонёк', 'Сколько дней горит, рекорд и кто сегодня уже ответил']],
+  },
+  {
+    keys: ['елка', 'елка сквада'], title: '🎄 Ёлка Сквада',
+    about: `С 1 декабря по 13 января у Сквада одна ёлка на всех. Игрушки за XP вешаются в профиле Фини, вкладка «Сквад», до ${seasons.TOYS_PER_MEMBER} на человека; звезда на макушку одна. 31 декабря Финя подводит итоги в чате`,
+    how: [['Ёлка', 'Сколько игрушек, кто повесил звезду и когда откроется']],
   },
   {
     keys: ['навигатор'], title: '👑 Навигатор Сквада',
@@ -2062,6 +2078,14 @@ export async function handleText(message) {
     await say(message, await halloweenText(self), { temp: true });
     return true;
   }
+  if (['огонек', 'огонек пары', 'мой огонек'].includes(cmd)) {
+    await say(message, await fireText(self), { temp: true });
+    return true;
+  }
+  if (['елка', 'елка сквада'].includes(cmd)) {
+    await say(message, await seasons.treeText(), { temp: true });
+    return true;
+  }
   const horo = /^гороскоп(?:\s+(.+))?$/u.exec(cmd);
   if (horo) {
     const sign = horo[1] ? extras.signByName(horo[1]) : await extras.zodiacOf(self.id);
@@ -2237,7 +2261,15 @@ export async function onSquadMessage(message, { command = false } = {}) {
   if (message.left_chat_member) await moder.onLeave(message.chat.id, message.left_chat_member.id);
   if (await moder.checkFlood(message)) return { handled: false, checking };
   const handled = command ? false : await handleText(message);
-  if (members.isPerson(message.from) && !message.sender_chat) await checkAchievements(message, handled, tracked);
+  if (members.isPerson(message.from) && !message.sender_chat) {
+    try {
+      await pairFire(message);
+    } catch (err) {
+      // No right to write here is fine: the flame is counted anyway.
+      if (!(err instanceof BotApiError)) await logError('chat.fire', err);
+    }
+    await checkAchievements(message, handled, tracked);
+  }
   return { handled, checking };
 }
 
@@ -2438,11 +2470,63 @@ export async function handleCallback(query) {
 }
 
 // From pump().
+// ---- «Огонёк пары» and «Ёлка Сквада» ----------------------------------------------------
+
+// A reply to the spouse or the one they date. Once both have replied today the flame
+// burns; Финя says so on the first day and on round numbers.
+async function pairFire(message) {
+  const r = message.reply_to_message;
+  if (!r || r.sender_chat || !members.isPerson(r.from)) return;
+  const lit = await fire.touch(message.from.id, r.from.id, nowInt());
+  if (!lit) return;
+  // The flame badges may open for both of them now.
+  for (const u of [message.from, r.from]) await announceAchievements(message, u, await feats.check(u));
+  if (!fire.MILESTONES.has(lit.days)) return;
+  const text = fire.litText(lit.days, mention(message.from.id, await nameFor(message.from)), mention(r.from.id, await nameFor(r.from)));
+  const sent = await withPremium({
+    chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML', link_preview_options: { is_disabled: true },
+    reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
+    reply_markup: withClose(null, message.from.id),
+  }, (p) => api.sendMessage(p));
+  if (sent) await deleteLater(message.chat.id, [sent.message_id], GROUP_REPLY_TTL);
+}
+
+async function fireText(self) {
+  const partner = await fire.partnerOf(self.id);
+  if (!partner) {
+    return '🔥 Огонёк пары горит у тех, кто встречается или в браке: отвечайте друг другу в чате каждый день, ' +
+      'и он растёт. Начать: «Встречаться» ответом.';
+  }
+  const f = await fire.fireOf(self.id);
+  const name = escapeHtml(truncate(await members.nameOf(partner), 40));
+  return `${fire.fireLine(f)}\nПара: ${name}` + (f.best > f.days ? ` · рекорд ${daysWord(f.best)}` : '') +
+    '\nГорит, когда вы оба за день ответили на сообщение друг друга. Пропустите день, и огонёк погаснет.';
+}
+
+// On New Year's Eve each Squad chat gets the season's tree once (with the daily summary on).
+async function treeSummaryPost(ts = nowInt()) {
+  const summary = await seasons.treeSummary(ts);
+  if (!summary || !(await getSetting('chat_daily'))) return;
+  for (const chatId of await squadChatIds()) {
+    const key = `tree_summary:${chatId}`;
+    await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${key}, '0')`);
+    const won = await db.run(sql`UPDATE settings SET value = ${String(summary.season)}
+      WHERE key = ${key} AND CAST(value AS INTEGER) < ${summary.season}`);
+    if (won.rowsAffected !== 1) continue;
+    try {
+      await withPremium({ chat_id: chatId, text: boldHtml(summary.text), parse_mode: 'HTML' }, (p) => api.sendMessage(p));
+    } catch {
+      // No rights in that chat any more.
+    }
+  }
+}
+
 export async function tick(leftMs) {
   await moder.tick(leftMs);
   await reminders.tick(leftMs);
   await anniversaries();
   await dailySummary();
+  await treeSummaryPost();
   await questions.tick();
 }
 
@@ -2450,12 +2534,17 @@ export async function tick(leftMs) {
 export async function profileExtras(userId) {
   const rep = await social.repOf(userId);
   const s = await social.spouseOf(userId);
+  // The hero shows the pair: the marriage, or else the one they date.
+  const pair = s || await social.partnerOf(userId);
   let marriage = null;
-  if (s) {
+  if (pair) {
+    const f = await fire.fireOf(userId);
     marriage = {
-      name: truncate(await members.nameOf(s.partner_id), 40),
-      since: s.since,
-      days: social.marriedDays(s.since),
+      name: truncate(await members.nameOf(pair.partner_id), 40),
+      since: pair.since,
+      days: social.marriedDays(pair.since),
+      dating: !s,
+      fire: f ? { days: f.days, today: f.today, best: f.best } : null,
     };
   }
   const jobs = await staff.positionsOf(userId);

@@ -1,6 +1,6 @@
-// Chat achievements: 64 more badges for what members do in the Squad chats
+// Chat achievements: 67 more badges for what members do in the Squad chats
 // (messages, active days, reputation, marriage, farm, casino…), one secret and
-// one limited. Checked after commands and every 10th message, announced right in
+// two limited. Checked after commands and every 10th message, announced right in
 // the chat; the Mini App shows them together with the club ones (club.js).
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
@@ -78,6 +78,11 @@ export const CHAT_ACHIEVEMENTS = [
   { ...A(79, 'dark_secret', 'dark', 1, 5000, 'visibility_fill', 'СЕКРЕТ ТЬМЫ', 'Знает её тот, кто прощался с Создателем в реальной жизни'), secret: true },
   // Limited: only during Хэллоуин 2026 (seasons.js). `until` is 1 November 2026, 00:00 МСК.
   { ...A(80, 'halloween_2026', 'hw2026', 3, 100, 'pumpkin_fill', 'Хэллоуин 2026', '«Сладость или гадость» 3 разных дня до 31 октября 2026'), until: 1793480400 },
+  // «Огонёк пары» (fire.js): the best run of any pair the member has been in.
+  A(81, 'fire_7', 'fire', 7, 30, 'local_fire_department_fill', 'Огонёк любви', 'Огонёк пары 7 дней подряд: отвечайте друг другу каждый день'),
+  A(82, 'fire_30', 'fire', 30, 100, 'local_fire_department_fill', 'Вечный огонь', 'Огонёк пары 30 дней подряд'),
+  // Limited: «Ёлка Сквада» 2026/27 (seasons.js). `until` is 14 January 2027, 00:00 МСК.
+  { ...A(83, 'tree_2026', 'tree2026', 1, 50, 'tree_fill', 'Ёлка 2026', 'Повесь игрушку на Ёлку Сквада до 13 января 2027'), until: 1799874000 },
 ];
 
 // ---- the secret of darkness ------------------------------------------------------
@@ -215,6 +220,8 @@ export async function chatStats(userId, ts = nowInt()) {
     qday: counts.qday || 0,
     dark: counts.dark || 0,
     hw2026: counts.hw2026 || 0,
+    fire: await one(sql`SELECT MAX(best) AS n FROM pair_fire WHERE a = ${userId} OR b = ${userId}`),
+    tree2026: counts.tree2026 || 0,
   };
 }
 

@@ -11,6 +11,7 @@ import * as club from './club.js';
 import { nameOf, usernameOf } from './members.js';
 import * as staff from './staff.js';
 import * as seasons from './seasons.js';
+import * as hall from './hall.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -111,15 +112,21 @@ async function history(userId) {
   return items.slice(0, HISTORY_LIMIT);
 }
 
-// The "Сквад" tab: the owner's latest announcement and the menu links.
-async function squad() {
-  const [news, lastPost, team] = await Promise.all([getSetting('news'), getSetting('last_channel_post_id'), teamView()]);
+// The "Сквад" tab: the owner's latest announcement, the menu links and the Squad's
+// pages (Зал славы, Календарь, Летопись, Карта).
+async function squad(ts) {
+  const [news, lastPost, team, pages] = await Promise.all([getSetting('news'), getSetting('last_channel_post_id'), teamView(),
+    hall.squadPages(ts)]);
   return {
     news: truncate(String(news || ''), NEWS_LIMIT),
     channel: SQUAD_CHANNEL_URL,
     lastPost: lastPost ? `${SQUAD_CHANNEL_URL}/${lastPost}` : null,
     links: SQUAD_LINKS,
     team,
+    hall: pages.hall,
+    calendar: pages.calendar,
+    chronicle: pages.chronicle,
+    map: pages.map,
   };
 }
 
@@ -159,7 +166,7 @@ export async function profileData(user) {
     };
   }
   // The rest only reads: all at once, so the Mini App opens faster.
-  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow, halloween] = await Promise.all([
+  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow, halloween, tree] = await Promise.all([
     db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`),
     chat.profileExtras(user.id),
     place(p),
@@ -169,8 +176,9 @@ export async function profileData(user) {
     history(user.id),
     topView(false, user.id),
     topView(true, user.id),
-    squad(),
+    squad(ts),
     seasons.halloweenView(user.id, ts),
+    seasons.treeView(user.id, ts),
   ]);
   return {
     me: {
@@ -208,7 +216,7 @@ export async function profileData(user) {
     squad: squadNow,
     club: clubView,
     // Seasonal events: null outside their dates.
-    season: { halloween },
+    season: { halloween, tree },
     now: ts,
   };
 }

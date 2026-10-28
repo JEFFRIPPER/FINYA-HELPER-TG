@@ -536,3 +536,32 @@ export const showcase = table('showcase', {
   codes: text('codes').notNull(),
   updated_at: integer('updated_at').notNull(),
 });
+
+// «Огонёк пары»: a married or dating couple that reply to each other every day.
+// a < b; a_day / b_day: the last Moscow day each of them replied to the other;
+// lit_day: the last day both did; days: the run then; best: the longest run.
+export const pair_fire = table('pair_fire', {
+  a: integer('a').notNull(),
+  b: integer('b').notNull(),
+  a_day: integer('a_day').notNull().default(0),
+  b_day: integer('b_day').notNull().default(0),
+  lit_day: integer('lit_day').notNull().default(0),
+  days: integer('days').notNull().default(0),
+  best: integer('best').notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.a, t.b] }),
+}));
+
+// «Ёлка Сквада»: toys members hang on the shared tree for XP, 1 December – 13 January.
+// season: the year of that December; spend_id: the xp_spend row that paid for it.
+// Where a toy hangs follows the order they were hung in.
+export const tree_toys = table('tree_toys', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season: integer('season').notNull(),
+  user_id: integer('user_id').notNull(),
+  kind: text('kind').notNull(),
+  spend_id: integer('spend_id').notNull(),
+  at: integer('at').notNull(),
+}, (t) => ({
+  bySeason: index('tree_toys_by_season').on(t.season, t.user_id),
+}));

@@ -79,9 +79,9 @@ export function callback(from, data, message = {}) {
   };
 }
 
-// Chat achievement announcements come on their own after commands: skipped here,
-// their own tests look for them.
-export const isAnnouncement = (c) => /открывает ачивк/.test(String(c.params.text || ''));
+// Chat achievement and «Огонёк пары» announcements come on their own after commands:
+// skipped here, their own tests look for them.
+export const isAnnouncement = (c) => /открывает ачивк|огонёк пары|Огонёк пары .* горит уже/.test(String(c.params.text || ''));
 
 // sendMessage calls without those announcements.
 export const replies = (api) => api.called('sendMessage').filter((c) => !isAnnouncement(c));
