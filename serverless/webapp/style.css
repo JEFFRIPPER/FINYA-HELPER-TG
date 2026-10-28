@@ -962,9 +962,8 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   display: grid;
   place-items: center;
   overflow: hidden;
-  background: rgba(5, 1, 2, 0.96);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  /* Opaque instead of backdrop-filter: blur, which stutters in mobile WebViews. */
+  background: radial-gradient(90% 70% at 50% 42%, #2a0408 0%, #0b0102 60%, #040001 100%);
   animation: fade-in 300ms var(--ease-emph-decel) both;
 }
 .celebrate.leave { animation: fade-out 250ms var(--ease-emph-accel) forwards; }
@@ -992,9 +991,9 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   100% { transform: scale(1.4); opacity: 0.25; }
 }
 .celebrate-body { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 24px; text-align: center; }
-.celebrate .kicker { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: 4px; text-transform: uppercase; color: #ff6b7d; animation: rise 600ms var(--ease-emph-decel) 300ms both; }
+.celebrate .kicker { margin: 0; font-size: 16px; font-weight: 700; letter-spacing: 6px; text-transform: uppercase; color: #ff6b7d; text-shadow: 0 0 18px var(--glow); animation: rise 600ms var(--ease-emph-decel) 300ms both; }
 .medal-big {
-  height: 240px;
+  height: min(42vh, 300px);
   margin: 8px 0;
   filter: drop-shadow(0 0 30px rgba(255, 30, 60, 0.8)) drop-shadow(0 20px 30px rgba(0, 0, 0, 0.7));
   animation: medal-in 900ms var(--ease-emph-decel) 150ms both;
@@ -1008,6 +1007,75 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .celebrate h2 em { font-style: normal; color: var(--red); text-shadow: 0 0 20px var(--glow); }
 .celebrate .sub { margin: 0; color: var(--text-2); animation: rise 600ms var(--ease-emph-decel) 700ms both; }
 .celebrate-actions { display: flex; gap: 8px; margin-top: 18px; animation: rise 600ms var(--ease-emph-decel) 800ms both; }
+.celebrate .rank-path { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--text-2); font-size: 15px; letter-spacing: 1px; animation: rise 600ms var(--ease-emph-decel) 500ms both; }
+.celebrate .rank-path .icon { width: 18px; height: 18px; fill: var(--red); }
+.celebrate .rank-path b { color: var(--text); }
+/* The first instant: the whole screen goes white-hot, then scarlet, then clears. */
+.celebrate .flash-screen {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 42%, #fff 0%, #ffd6db 25%, #ff2d48 60%, #7a0614 100%);
+  animation: flash-screen 900ms ease-out both;
+}
+@keyframes flash-screen {
+  0% { opacity: 1; }
+  25% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+.celebrate .shock {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  width: 160px;
+  height: 160px;
+  margin: -80px 0 0 -80px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 90, 110, 0.9);
+  box-shadow: 0 0 40px rgba(255, 30, 60, 0.8), inset 0 0 30px rgba(255, 30, 60, 0.6);
+  animation: shock 1100ms var(--ease-emph-decel) 120ms both;
+}
+@keyframes shock {
+  0% { transform: scale(0.2); opacity: 1; }
+  100% { transform: scale(6); opacity: 0; }
+}
+.embers { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.ember {
+  position: absolute;
+  bottom: -12px;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff3c4 0%, #ff8a3d 35%, #ff2d48 70%, rgba(255, 45, 72, 0) 100%);
+  box-shadow: 0 0 8px rgba(255, 70, 50, 0.9);
+  animation: ember-up 4s linear infinite;
+  will-change: transform, opacity;
+}
+/* The burst: sparks fly out from the insignia once. */
+.spark {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  margin: -3px 0 0 -3px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff3c4 0%, #ff8a3d 40%, #ff2d48 75%, rgba(255, 45, 72, 0) 100%);
+  box-shadow: 0 0 10px rgba(255, 70, 50, 0.95);
+  animation: spark-out 1300ms cubic-bezier(0.1, 0.8, 0.3, 1) 150ms both;
+  will-change: transform, opacity;
+}
+@keyframes spark-out {
+  0% { transform: translate3d(0, 0, 0) scale(1.4); opacity: 1; }
+  80% { opacity: 0.9; }
+  100% { transform: translate3d(var(--tx), var(--ty), 0) scale(0.4); opacity: 0; }
+}
+@keyframes ember-up {
+  0% { transform: translate3d(0, 0, 0); opacity: 0; }
+  10% { opacity: 1; }
+  70% { opacity: 0.9; }
+  100% { transform: translate3d(var(--dx), -105vh, 0); opacity: 0; }
+}
 
 /* ---- easter egg ----------------------------------------------------------------- */
 .logo-ring.tap { animation: halo 3.2s ease-in-out infinite, tap-bump 260ms var(--ease-emph-decel); }
@@ -1480,6 +1548,99 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 .ach small { font-size: 10px; line-height: 12px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .ach.on small { color: var(--gold); }
 @media (max-width: 340px) { .ach-grid { grid-template-columns: repeat(3, 1fr); } }
+/* «Витрина»: three picked badges on top of the card and in the hero. */
+.shelf { margin-top: 12px; padding: 12px; border-radius: 16px; border: 1px solid var(--line-strong); background: linear-gradient(180deg, rgba(255, 30, 60, 0.08), rgba(255, 30, 60, 0.02)); }
+.shelf.picking { border-color: var(--red); box-shadow: 0 0 0 1px rgba(255, 45, 72, 0.35), 0 0 22px rgba(255, 30, 60, 0.18); }
+.shelf-head { display: flex; align-items: center; gap: 8px; }
+.shelf-head .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.shelf-head .body b { font-size: 15px; }
+.shelf-head .body span { font-size: 12px; line-height: 16px; color: var(--text-2); white-space: normal; overflow: visible; text-overflow: clip; }
+.shelf-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+.shelf-actions .btn-text { height: 32px; font-size: 13px; }
+.shelf-note { font-size: 12px; color: var(--text-2); }
+.shelf-slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.shelf-slot { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 8px 4px; border-radius: 14px; text-align: center; }
+.shelf-slot b { font-size: 11px; line-height: 14px; font-weight: 500; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.shelf-slot.on { background: rgba(255, 30, 60, 0.1); }
+.shelf-slot.on .ach-icon { background: radial-gradient(circle at 35% 30%, #ff6b7d, var(--red) 50%, var(--blood)); color: #fff; box-shadow: 0 0 16px var(--glow-soft); }
+.shelf-slot.on.secret .ach-icon { background: radial-gradient(circle at 35% 30%, #ff2d48, #3a0008 60%, #000); }
+.shelf-slot.on.limited .ach-icon { background: radial-gradient(circle at 35% 30%, #ffd08a, #ff7a1a 50%, #8a2c00); color: #2a0d00; }
+.shelf-slot.empty { border: 1px dashed var(--line-strong); color: var(--text-2); }
+.shelf-slot.empty .ach-icon .icon { fill: var(--text-2); }
+.ach.picked { border-color: var(--red); background: rgba(255, 45, 72, 0.16); box-shadow: 0 0 14px rgba(255, 30, 60, 0.3); }
+.ach-pick { position: absolute; top: 4px; left: 4px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; background: var(--red); color: #fff; font-size: 11px; font-weight: 700; font-style: normal; }
+.showcase-row { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 10px; }
+.show-badge { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 8px 4px 6px; border-radius: 14px; background: rgba(255, 207, 90, 0.07); border: 1px solid rgba(255, 207, 90, 0.3); text-align: center; }
+.show-icon { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle at 35% 30%, #fff1b8, var(--gold) 55%, #b9851a); box-shadow: 0 0 12px rgba(255, 207, 90, 0.3); }
+.show-icon .icon { width: 17px; height: 17px; fill: #3d2e00; }
+.show-badge.secret { background: rgba(255, 30, 60, 0.08); border-color: rgba(255, 45, 72, 0.4); }
+.show-badge.secret .show-icon { background: radial-gradient(circle at 35% 30%, #ff2d48, #3a0008 60%, #000); box-shadow: 0 0 12px rgba(255, 30, 60, 0.45); }
+.show-badge.secret .show-icon .icon { fill: #fff; }
+.show-badge.secret .show-title { color: #ff8a98; }
+.show-badge.limited { background: rgba(255, 122, 26, 0.08); border-color: rgba(255, 122, 26, 0.4); }
+.show-badge.limited .show-icon { background: radial-gradient(circle at 35% 30%, #ffd08a, #ff7a1a 50%, #8a2c00); }
+.show-title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; font-size: 11px; line-height: 14px; font-weight: 500; color: #ffe7a8; }
+
+/* Limited badges: a date chip until the event ends, faded after it. */
+.ach { position: relative; }
+.ach-limit {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: #ff7a1a;
+  color: #2a0d00;
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 700;
+  font-style: normal;
+}
+.ach.limited .ach-icon { color: #c9772f; }
+.ach.limited.on .ach-icon { background: radial-gradient(circle at 35% 30%, #ffd08a, #ff7a1a 50%, #8a2c00); color: #2a0d00; box-shadow: 0 0 16px rgba(255, 122, 26, 0.45); }
+.ach.limited.on { border-color: rgba(255, 122, 26, 0.45); background: rgba(255, 122, 26, 0.08); }
+.ach.gone { opacity: 0.45; }
+
+/* ---- Хэллоуин (24–31 October) ------------------------------------------------------ */
+.card.halloween {
+  border-color: rgba(255, 122, 26, 0.4);
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(255, 122, 26, 0.16), transparent 60%),
+    var(--surface);
+}
+.card.halloween h3 { color: #ffb066; }
+.card.halloween .chip-time { border-color: rgba(255, 122, 26, 0.35); }
+.card.halloween .chip-time .icon { fill: #ff7a1a; }
+.hw-sub { margin: 8px 0 0; color: var(--text-2); }
+.hw-hunt { display: flex; align-items: center; gap: 10px; margin: 14px 0 4px; }
+.hw-hunt small { margin-left: auto; color: var(--text-2); font-size: 12px; }
+.hw-pumpkin { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.04); border: 1px dashed rgba(255, 122, 26, 0.35); }
+.hw-pumpkin .icon { width: 28px; height: 28px; fill: #5b3a2a; }
+.hw-pumpkin.lit { border-style: solid; background: radial-gradient(circle at 50% 45%, rgba(255, 140, 40, 0.35), rgba(255, 122, 26, 0.06) 70%); box-shadow: 0 0 18px rgba(255, 122, 26, 0.35); }
+.hw-pumpkin.lit .icon { fill: #ff8a2a; }
+.btn-filled.hw-btn { background: linear-gradient(180deg, #ff8a2a, #e0560a); color: #2a0d00; box-shadow: 0 6px 20px rgba(255, 122, 26, 0.3); }
+.btn-filled.hw-btn .icon { fill: #2a0d00; }
+.hw-result { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; margin-top: 14px; padding: 12px 14px; border-radius: 16px; background: rgba(255, 255, 255, 0.04); border: 1px solid var(--line); }
+.hw-result span { font-weight: 500; }
+.hw-result b { color: #ffb066; font-size: 16px; }
+.hw-result small { grid-column: 1 / -1; color: var(--text-2); font-size: 12px; }
+.hw-result.treat { border-color: rgba(255, 122, 26, 0.4); background: rgba(255, 122, 26, 0.08); }
+
+/* The whole page during Хэллоуин: pumpkin-orange light and a few bats. */
+body.halloween .backdrop i:nth-child(1) { background: radial-gradient(closest-side, rgba(255, 110, 0, 0.11), rgba(255, 110, 0, 0.05) 40%, rgba(255, 110, 0, 0)); }
+body.halloween .backdrop i:nth-child(3) { background: radial-gradient(closest-side, rgba(255, 90, 0, 0.14), rgba(255, 90, 0, 0.06) 40%, rgba(255, 90, 0, 0)); }
+.bats { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.bat { position: absolute; left: -60px; width: 40px; animation: bat-fly 24s linear infinite; will-change: transform; }
+.bat svg { display: block; width: 100%; height: auto; fill: rgba(10, 2, 3, 0.75); animation: bat-flap 380ms ease-in-out infinite alternate; transform-origin: 50% 70%; }
+.bat1 { top: 14%; }
+.bat2 { top: 38%; width: 28px; animation-duration: 31s; animation-delay: -12s; }
+.bat3 { top: 66%; width: 34px; animation-duration: 27s; animation-delay: -20s; }
+@keyframes bat-fly {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(calc(50vw + 30px), -40px, 0); }
+  100% { transform: translate3d(calc(100vw + 120px), 10px, 0); }
+}
+@keyframes bat-flap { from { transform: scaleY(1); } to { transform: scaleY(0.45); } }
 .ach-toast {
   position: fixed;
   left: 50%;

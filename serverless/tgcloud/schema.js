@@ -528,3 +528,11 @@ export const positions = table('positions', {
 }, (t) => ({
   pk: primaryKey({ columns: [t.user_id, t.code] }),
 }));
+
+// «Витрина»: up to three achievements a member shows off in «Кто Я» and the Mini App.
+// codes: a JSON array of achievement codes, in the member's order.
+export const showcase = table('showcase', {
+  user_id: integer('user_id').primaryKey(),
+  codes: text('codes').notNull(),
+  updated_at: integer('updated_at').notNull(),
+});

@@ -1,7 +1,7 @@
-// Chat achievements: 63 more badges for what members do in the Squad chats
-// (messages, active days, reputation, marriage, farm, casino…) and one secret. Checked after
-// commands and every 10th message, announced right in the chat; the Mini App
-// shows them together with the club ones (club.js).
+// Chat achievements: 64 more badges for what members do in the Squad chats
+// (messages, active days, reputation, marriage, farm, casino…), one secret and
+// one limited. Checked after commands and every 10th message, announced right in
+// the chat; the Mini App shows them together with the club ones (club.js).
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { MSK_OFFSET, nowInt } from './util.js';
@@ -76,6 +76,8 @@ export const CHAT_ACHIEVEMENTS = [
   A(78, 'qday_10', 'qday', 10, 30, 'how_to_vote_fill', 'Мнение дня', 'Ответь на «Вопрос дня» 10 дней'),
   // Secret: the hint only; the phrase is in no file, just its hash (DARK below).
   { ...A(79, 'dark_secret', 'dark', 1, 5000, 'visibility_fill', 'СЕКРЕТ ТЬМЫ', 'Знает её тот, кто прощался с Создателем в реальной жизни'), secret: true },
+  // Limited: only during Хэллоуин 2026 (seasons.js). `until` is 1 November 2026, 00:00 МСК.
+  { ...A(80, 'halloween_2026', 'hw2026', 3, 100, 'pumpkin_fill', 'Хэллоуин 2026', '«Сладость или гадость» 3 разных дня до 31 октября 2026'), until: 1793480400 },
 ];
 
 // ---- the secret of darkness ------------------------------------------------------
@@ -212,6 +214,7 @@ export async function chatStats(userId, ts = nowInt()) {
     helped: keys('help:'),
     qday: counts.qday || 0,
     dark: counts.dark || 0,
+    hw2026: counts.hw2026 || 0,
   };
 }
 

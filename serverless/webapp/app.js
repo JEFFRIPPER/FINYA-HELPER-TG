@@ -63,6 +63,8 @@
     send_fill: 'M176-183q-20 8-38-3.5T120-220v-180l320-80-320-80v-180q0-22 18-33.5t38-3.5l616 260q25 11 25 37t-25 37L176-183Z',
     emoji_events_fill: 'M280-528v-152h-80v40q0 38 22 68.5t58 43.5Zm400 0q36-13 58-43.5t22-68.5v-40h-80v152ZM440-200v-124q-49-11-87.5-41.5T296-442q-75-9-125.5-65.5T120-640v-40q0-33 23.5-56.5T200-760h80q0-33 23.5-56.5T360-840h240q33 0 56.5 23.5T680-760h80q33 0 56.5 23.5T840-680v40q0 76-50.5 132.5T664-442q-18 46-56.5 76.5T520-324v124h120q17 0 28.5 11.5T680-160q0 17-11.5 28.5T640-120H320q-17 0-28.5-11.5T280-160q0-17 11.5-28.5T320-200h120Z',
     diamond_fill: 'M368-630h224L486-840h-12L368-630Zm82 474v-414H105l345 414Zm60 0 345-414H510v414Zm148-474h207l-83-166q-11-20-29.5-32T711-840H554l104 210Zm-563 0h207l104-210H249q-23 0-41.5 12T178-796L95-630Z',
+    // Drawn for Финя (the Material set has no pumpkin): body, stem and a carved face.
+    pumpkin_fill: 'M480-660C560-700 700-720 790-620C880-520 880-300 790-190C700-90 560-100 480-130C400-100 260-90 170-190C80-300 80-520 170-620C260-720 400-700 480-660ZM450-660L455-760Q470-830 560-840L565-800Q510-790 510-750L515-665ZM300-470L400-470L350-560ZM560-470L660-470L610-560ZM250-370Q480-130 710-370L630-350L600-315L565-345L480-335L395-345L360-315L330-350Z',
     visibility_fill: 'M480-320q75 0 127.5-52.5T660-500q0-75-52.5-127.5T480-680q-75 0-127.5 52.5T300-500q0 75 52.5 127.5T480-320Zm0-72q-45 0-76.5-31.5T372-500q0-45 31.5-76.5T480-608q45 0 76.5 31.5T588-500q0 45-31.5 76.5T480-392Zm0 192q-134 0-244.5-72T61-462q-5-9-7.5-18.5T51-500q0-10 2.5-19.5T61-538q64-118 174.5-190T480-800q134 0 244.5 72T899-538q5 9 7.5 18.5T909-500q0 10-2.5 19.5T899-462q-64 118-174.5 190T480-200Z',
     schedule_fill: 'M520-496v-144q0-17-11.5-28.5T480-680q-17 0-28.5 11.5T440-640v159q0 8 3 15.5t9 13.5l132 132q11 11 28 11t28-11q11-11 11-28t-11-28L520-496ZM480-80q-83 0-156-31.5T197-197q-54-54-85.5-127T80-480q0-83 31.5-156T197-763q54-54 127-85.5T480-880q83 0 156 31.5T763-763q54 54 85.5 127T880-480q0 83-31.5 156T763-197q-54 54-127 85.5T480-80Z',
   };
@@ -98,6 +100,7 @@
     farm: ['bolt_fill', 'Фарм в чате', 'gold'],
     gift: ['redeem_fill', 'Перевод от участника', 'primary'],
     casino: ['diamond_fill', 'Выигрыш в казино', 'gold'],
+    season: ['pumpkin_fill', 'Хэллоуин: сладость', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
@@ -461,6 +464,7 @@
         h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
         streakChip(me.streak), marriageChip(me.marriage), repChip(me.rep)),
       jobChips(me.positions),
+      showcaseRow(me.showcase),
       total,
       progress,
       note ? h('div', { class: 'note', text: note }) : null,
@@ -480,6 +484,16 @@
     return h('div', { class: 'chips job-chips' }, list.map(function (j) {
       return h('span', { class: 'job-chip', title: 'Должность в Скваде' }, h('i', { text: j.emoji }), h('span', { text: j.title }));
     }));
+  }
+
+  // «Витрина»: up to three achievements the member picked on «Звания».
+  function showcaseRow(list) {
+    if (!list || !list.length) return null;
+    return h('div', { class: 'showcase-row', role: 'button', tabindex: '0', onclick: function () { selectTab('ranks'); } },
+      list.map(function (a) {
+        return h('span', { class: 'show-badge' + (a.secret ? ' secret' : '') + (a.limited ? ' limited' : ''), title: a.title },
+          h('span', { class: 'show-icon' }, icon(a.icon)), h('span', { class: 'show-title', text: a.title }));
+      }));
   }
 
   // «+» in the chat.
@@ -527,10 +541,39 @@
     remember(RANK_KEY, me.rank.roman);
     var forced = window.location.hash === '#rankup';
     if (!forced && (!seen || ROMANS.indexOf(me.rank.roman) <= ROMANS.indexOf(seen))) return;
-    setTimeout(function () { celebrate(me); }, reduceMotion ? 0 : 700);
+    var from = seen && seen !== me.rank.roman ? seen : ROMANS[Math.max(0, ROMANS.indexOf(me.rank.roman) - 1)];
+    setTimeout(function () { celebrate(me, from); }, reduceMotion ? 0 : 700);
   }
 
-  function celebrate(me) {
+  // Scarlet embers flying up over the whole screen; each one only moves and fades.
+  var EMBERS = 34;
+  var SPARKS = 22;
+
+  function embers() {
+    var box = h('div', { class: 'embers', 'aria-hidden': 'true' });
+    if (reduceMotion) return box;
+    for (var i = 0; i < EMBERS; i++) {
+      var e = h('i', { class: 'ember' });
+      e.style.left = (Math.random() * 100).toFixed(1) + '%';
+      e.style.setProperty('--dx', Math.round(Math.random() * 120 - 60) + 'px');
+      e.style.setProperty('--s', (3 + Math.random() * 6).toFixed(1) + 'px');
+      e.style.animationDuration = (2.6 + Math.random() * 3).toFixed(2) + 's';
+      e.style.animationDelay = (-Math.random() * 4).toFixed(2) + 's';
+      box.appendChild(e);
+    }
+    for (var j = 0; j < SPARKS; j++) {
+      var angle = (j / SPARKS) * Math.PI * 2 + Math.random() * 0.3;
+      var dist = 120 + Math.random() * 160;
+      var sp = h('i', { class: 'spark' });
+      sp.style.setProperty('--tx', Math.round(Math.cos(angle) * dist) + 'px');
+      sp.style.setProperty('--ty', Math.round(Math.sin(angle) * dist) + 'px');
+      box.appendChild(sp);
+    }
+    return box;
+  }
+
+  // Full screen: a white-hot flash, a shock ring, the new insignia large and embers.
+  function celebrate(me, from) {
     var layer;
     function close() {
       layer.classList.add('leave');
@@ -538,10 +581,14 @@
     }
     layer = h('div', { class: 'celebrate', role: 'dialog', 'aria-label': 'Новое звание' },
       h('div', { class: 'rays', 'aria-hidden': 'true' }),
+      embers(),
       h('div', { class: 'flash', 'aria-hidden': 'true' }),
+      h('div', { class: 'shock', 'aria-hidden': 'true' }),
+      h('div', { class: 'flash-screen', 'aria-hidden': 'true' }),
       h('div', { class: 'celebrate-body' },
         h('p', { class: 'kicker', text: 'Новое звание' }),
         h('div', { class: 'medal-big' }, insignia(me.rank.roman)),
+        from ? h('p', { class: 'rank-path' }, h('span', { text: from }), icon('chevron_right'), h('b', { text: me.rank.roman })) : null,
         h('h2', null, h('em', { text: me.rank.roman }), ' · ' + me.rank.name),
         h('p', { class: 'sub', text: 'Так держать, ' + me.name + '. Сквад видит.' }),
         h('div', { class: 'celebrate-actions' },
@@ -549,7 +596,8 @@
             icon('share_fill'), 'В сторис') : null,
           h('button', { class: 'btn-filled ripple', onclick: close }, icon('check'), 'Служу Скваду!'))));
     document.body.appendChild(layer);
-    vibrate('success');
+    vibrate('heavy');
+    setTimeout(function () { vibrate('success'); }, reduceMotion ? 0 : 450);
   }
 
   // ---- rival ------------------------------------------------------------------
@@ -1130,6 +1178,65 @@
       h('ul', { class: 'list' }, withDividers(items)));
   }
 
+  // ---- Хэллоуин (24–31 October) -------------------------------------------------
+
+  // «Сладость или гадость» once a day; the pumpkins count the days of the hunt.
+  function halloweenCard(ev) {
+    if (!ev) return null;
+    var left = Math.max(1, Math.ceil((ev.ends - state.data.now) / 86400));
+    var pumpkins = [];
+    for (var i = 0; i < ev.goal; i++) pumpkins.push(h('span', { class: 'hw-pumpkin' + (i < ev.days ? ' lit' : '') }, icon('pumpkin_fill')));
+    var done = ev.days >= ev.goal;
+    var trail;
+    if (ev.today) {
+      trail = h('div', { class: 'hw-result' + (ev.today.points ? ' treat' : '') },
+        h('span', { text: ev.today.text }),
+        ev.today.points ? h('b', { text: '+' + ev.today.points + ' XP' }) : null,
+        h('small', { text: 'Новая тыква завтра' }));
+    } else {
+      trail = h('button', { class: 'btn-filled wide hw-btn ripple', onclick: function () {
+        act({ action: 'trick' }, trail, function (data) {
+          var r = data.result;
+          if (!r) return;
+          vibrate(r.points ? 'success' : 'heavy');
+          if (r.points) burst(r.points);
+          snackbar(r.text + (r.points ? ': +' + r.points + ' XP' : ''));
+        });
+      } }, icon('pumpkin_fill'), 'Сладость или гадость');
+    }
+    return h('section', { class: 'card halloween' },
+      h('div', { class: 'card-title' }, h('h3', { text: 'Хэллоуин в Скваде' }),
+        h('span', { class: 'chip-time' }, icon('schedule_fill'), left === 1 ? 'последний день' : 'ещё ' + left + ' ' + plural(left, 'день', 'дня', 'дней'))),
+      h('p', { class: 'hw-sub', text: done
+        ? 'Тыквенная охота пройдена, ачивка «Хэллоуин ' + ev.year + '» твоя. Тыква всё равно открывается каждый день.'
+        : 'Раз в день тыква: конфета с XP, редкая золотая или гадость. ' + ev.goal + ' разных дня до 31 октября дают лимитную ачивку «Хэллоуин ' + ev.year + '».' }),
+      h('div', { class: 'hw-hunt' }, pumpkins, h('small', { text: 'Охота: ' + Math.min(ev.days, ev.goal) + ' из ' + ev.goal })),
+      trail);
+  }
+
+  // Bats over the page while Хэллоуин runs; only transform moves, so the WebView stays smooth.
+  var BAT = 'M32 12L35 6L36 11Q48 4 62 4Q57 9 57 15Q52 13 48 17Q44 14 40 19Q36 17 32 22Q28 17 24 19Q20 14 16 17Q12 13 7 15Q7 9 2 4Q16 4 28 11L29 6Z';
+
+  function seasonTheme(d) {
+    var on = !!(d.season && d.season.halloween);
+    document.body.classList.toggle('halloween', on);
+    var old = document.querySelector('.bats');
+    if (!on || reduceMotion) { if (old) old.remove(); return; }
+    if (old) return;
+    var layer = h('div', { class: 'bats', 'aria-hidden': 'true' });
+    for (var i = 0; i < 3; i++) {
+      var svg = document.createElementNS(SVG, 'svg');
+      svg.setAttribute('viewBox', '0 0 64 24');
+      var path = document.createElementNS(SVG, 'path');
+      path.setAttribute('d', BAT);
+      svg.appendChild(path);
+      layer.appendChild(h('i', { class: 'bat bat' + (i + 1) }, svg));
+    }
+    var bd = document.querySelector('.backdrop');
+    if (bd) bd.parentNode.insertBefore(layer, bd.nextSibling);
+    else document.body.insertBefore(layer, document.body.firstChild);
+  }
+
   // What to do and how far along: the name is on the tile already.
   function achHint(a) {
     var pct = a.at ? 100 : Math.max(0, Math.min(100, Math.round(a.progress / a.goal * 100)));
@@ -1137,12 +1244,27 @@
       h('span', { class: 'snack-ach-task', text: a.text }),
       h('div', { class: 'snack-ach-row' },
         h('span', { class: 'snack-ach-bar' }, h('i', { style: 'width: ' + pct + '%' })),
-        h('b', { text: a.at ? 'Готово' : a.secret ? 'Секрет' : a.progress + ' / ' + a.goal })));
+        h('b', { text: a.at ? 'Готово' : a.secret ? 'Секрет' : gone(a) ? 'Ивент прошёл' : a.progress + ' / ' + a.goal })));
+  }
+
+  // A limited badge that can no longer be opened.
+  function gone(a) {
+    return !a.at && a.until && state.data.now >= a.until;
+  }
+
+  function achSmall(a) {
+    if (a.at) return '+' + a.xp + ' XP';
+    if (a.secret) return '???';
+    if (gone(a)) return 'Ивент прошёл';
+    return a.progress + '/' + a.goal;
   }
 
   // Opened ones first, then the closest to opening; two rows until «Все ачивки».
   var ACH_FOLDED = 8;
+  var SHOWCASE_MAX = 3;
   var achOpen = false;
+  // Codes being picked for «Витрина», or null when not picking.
+  var pick = null;
 
   function achievementsCard(c) {
     var got = c.achievements.filter(function (a) { return a.at; }).length;
@@ -1151,25 +1273,85 @@
       if (x.at) return y.at - x.at;
       return y.progress / y.goal - x.progress / x.goal;
     });
+    var opened = list.filter(function (a) { return a.at; });
+    var byCode = {};
+    c.achievements.forEach(function (a) { byCode[a.code] = a; });
     var grid = h('div', { class: 'ach-grid' });
+    var shelf = h('div', { class: 'shelf' });
     var more = list.length > ACH_FOLDED ? h('button', { class: 'btn-text ripple ach-more', type: 'button' }) : null;
+    function toggle(a) {
+      var i = pick.indexOf(a.code);
+      if (i >= 0) pick.splice(i, 1);
+      else if (pick.length >= SHOWCASE_MAX) { vibrate('error'); snackbar('В витрине до ' + SHOWCASE_MAX + ' ачивок. Сними одну.'); return; }
+      else pick.push(a.code);
+      haptic();
+      draw();
+    }
+    function drawShelf() {
+      var codes = pick || (c.showcase || []).map(function (a) { return a.code; });
+      var slots = [];
+      for (var i = 0; i < SHOWCASE_MAX; i++) {
+        var a = byCode[codes[i]];
+        slots.push(a
+          ? h('div', { class: 'shelf-slot on' + (a.secret ? ' secret' : '') + (a.until ? ' limited' : '') },
+            h('span', { class: 'ach-icon' }, icon(a.icon)), h('b', { text: a.title }))
+          : h('div', { class: 'shelf-slot empty' }, h('span', { class: 'ach-icon' }, icon('add')), h('b', { text: 'Пусто' })));
+      }
+      var actions;
+      if (pick) {
+        var save = h('button', { class: 'btn-filled small ripple', type: 'button', onclick: function () {
+          var codesNow = pick.slice();
+          // The screen is redrawn from the answer, so leave picking first; a failure brings it back.
+          pick = null;
+          act({ action: 'showcase', codes: codesNow }, save, function () {
+            vibrate('success');
+            snackbar(codesNow.length ? 'Витрина сохранена' : 'Витрина пуста');
+          }).then(function (data) { if (!data) pick = codesNow; });
+        } }, icon('check'), 'Сохранить');
+        actions = [h('button', { class: 'btn-text ripple', type: 'button', onclick: function () { pick = null; haptic(); draw(); } }, 'Отмена'), save];
+      } else if (opened.length) {
+        actions = [h('button', { class: 'btn-tonal small ripple', type: 'button', onclick: function () {
+          pick = codes.slice();
+          haptic();
+          draw();
+        } }, icon('star_fill'), codes.length ? 'Изменить' : 'Выбрать')];
+      } else {
+        actions = [h('span', { class: 'shelf-note', text: 'Открой первую ачивку' })];
+      }
+      shelf.classList.toggle('picking', !!pick);
+      shelf.replaceChildren(
+        h('div', { class: 'shelf-head' },
+          h('div', { class: 'body' }, h('b', { text: 'Витрина' }),
+            h('span', { text: pick ? 'Отметь до ' + SHOWCASE_MAX + ' открытых ачивок' : 'Видна в «Кто Я» и в шапке профиля' })),
+          h('div', { class: 'shelf-actions' }, actions)),
+        h('div', { class: 'shelf-slots' }, slots));
+    }
     function draw() {
-      grid.replaceChildren.apply(grid, (achOpen ? list : list.slice(0, ACH_FOLDED)).map(function (a) {
-        return h('button', { class: 'ach ripple' + (a.at ? ' on' : '') + (a.secret ? ' secret' : ''), type: 'button', onclick: function () {
+      drawShelf();
+      var shown = pick ? opened : achOpen ? list : list.slice(0, ACH_FOLDED);
+      grid.replaceChildren.apply(grid, shown.map(function (a) {
+        var place = pick ? pick.indexOf(a.code) : -1;
+        return h('button', { class: 'ach ripple' + (a.at ? ' on' : '') + (a.secret ? ' secret' : '') + (a.until ? ' limited' : '') + (gone(a) ? ' gone' : '') + (place >= 0 ? ' picked' : ''), type: 'button', onclick: function () {
+          if (pick) { toggle(a); return; }
           haptic();
           snackbar(achHint(a));
         } },
+          place >= 0 ? h('i', { class: 'ach-pick', text: String(place + 1) }) : null,
           h('span', { class: 'ach-icon' }, icon(a.icon), a.at ? null : h('i', { class: 'ach-lock' }, icon('lock_fill'))),
+          a.until && !gone(a) ? h('i', { class: 'ach-limit', text: 'до ' + pad(msk(a.until - 1).getUTCDate()) + '.' + pad(msk(a.until - 1).getUTCMonth() + 1) }) : null,
           h('b', { text: a.title }),
-          h('small', { text: a.at ? '+' + a.xp + ' XP' : a.secret ? '???' : a.progress + '/' + a.goal }));
+          h('small', { text: achSmall(a) }));
       }));
-      if (more) more.textContent = achOpen ? 'Свернуть' : 'Все ачивки · ' + list.length;
+      if (more) {
+        more.hidden = !!pick;
+        more.textContent = achOpen ? 'Свернуть' : 'Все ачивки · ' + list.length;
+      }
     }
     if (more) more.addEventListener('click', function () { haptic(); achOpen = !achOpen; draw(); });
     draw();
     return h('section', { class: 'card' },
       h('div', { class: 'card-title' }, h('h3', { text: 'Ачивки' }), h('span', { class: 'count-chip', text: got + ' из ' + c.achievements.length })),
-      grid, more);
+      shelf, grid, more);
   }
 
   // ---- XP shop ----------------------------------------------------------------
@@ -1739,7 +1921,7 @@
     if (state.tab === 'top') return [topCard(d.top)];
     if (state.tab === 'ranks') return ranksCards(d.ranks, d.rules, d.me);
     if (state.tab === 'shop') return shopBody(d.club.shop, d.me);
-    return [dailyCard(d.club.daily), questsCard(d.club), chart(d.chart), historyCard(d.history)];
+    return [halloweenCard(d.season && d.season.halloween), dailyCard(d.club.daily), questsCard(d.club), chart(d.chart), historyCard(d.history)].filter(Boolean);
   }
 
   // ---- owner's rank panel -------------------------------------------------------
@@ -2345,6 +2527,7 @@
     if (nav) nav.remove();
     nav = navbar();
     document.body.appendChild(nav);
+    seasonTheme(d);
     checkRankUp(d.me);
     announce(d.club.fresh);
   }
