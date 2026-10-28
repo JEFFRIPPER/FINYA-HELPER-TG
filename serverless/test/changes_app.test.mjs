@@ -22,3 +22,13 @@ test('the Mini App shows «Все обновления» to everyone in the squa
   assert.match(app, /return \[quickRow\(sq\), treeFirst, newsCard\(sq\), changesCard\(\)/);
   assert.match(app, /api\('changes', \{\}\)/);
 });
+
+test('the Mini App has no two functions of one name: the later one silently wins', () => {
+  const app = readFileSync(new URL('../webapp/app.js', import.meta.url), 'utf8');
+  const names = [...app.matchAll(/^ {2}function (\w+)\(/gm)].map((m) => m[1]);
+  const twice = names.filter((n, i) => names.indexOf(n) !== i);
+  assert.deepEqual(twice, []);
+  // «История» XP on «Активность» and the history import on «Панель» are two cards.
+  assert.match(app, /historyCard\(d\.history\)/);
+  assert.match(app, /importCard\(\),/);
+});
