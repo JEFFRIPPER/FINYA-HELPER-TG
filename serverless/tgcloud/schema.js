@@ -602,3 +602,10 @@ export const member_refs = table('member_refs', {
   user_id: integer('user_id').primaryKey(),
   ref: text('ref').notNull().unique(),
 });
+
+// Every poll question Финя has ever asked: none is asked twice in any chat.
+export const asked_questions = table('asked_questions', {
+  question: text('question').primaryKey(),
+  chat_id: integer('chat_id').notNull(),
+  asked_at: integer('asked_at').notNull(),
+});
