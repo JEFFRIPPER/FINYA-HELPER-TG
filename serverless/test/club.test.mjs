@@ -136,7 +136,7 @@ test('XP shop: spends the balance, never XP or rank; equip and show in the top',
   const alice = user(1, { first_name: 'Alice' });
   let data = await call(alice, { action: 'buy', item: 'frame_ember' });
   assert.equal(data.me.xp, 320);
-  assert.equal(data.me.rank.roman, 'III');
+  assert.equal(data.me.rank.roman, 'II');
   assert.equal(data.club.shop.balance, 170);
   assert.equal(data.club.shop.items.find((i) => i.id === 'frame_ember').equipped, true);
   await assert.rejects(call(alice, { action: 'buy', item: 'frame_ice' }), clubError);

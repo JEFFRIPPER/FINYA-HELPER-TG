@@ -26,22 +26,22 @@ test('/admin is owner-only and private-only', async () => {
 
 test('add XP: amount → preview → confirm → saved with history', async () => {
   const mock = await setup();
-  await addMember(50, 90);
+  await addMember(50, 290);
   await onCallbackQuery(callback(OWNER, 'admin:xp:add:50'));
   assert.match(lastText(mock), /Сколько XP добавить/);
   await onMessage(privateMessage(OWNER, '25'));
-  assert.match(lastText(mock), /XP: 90 → 115/);
+  assert.match(lastText(mock), /XP: 290 → 315/);
   assert.match(lastText(mock), /I · Искра → II · Звено/);
   const token = confirmToken(mock);
   assert.ok(token);
   await onCallbackQuery(callback(OWNER, token));
   assert.match(lastText(mock), /Изменение сохранено/);
-  assert.equal((await db.get('SELECT xp FROM profiles WHERE user_id = 50')).xp, 115);
+  assert.equal((await db.get('SELECT xp FROM profiles WHERE user_id = 50')).xp, 315);
   // Pressing confirm again does not apply twice.
   await onCallbackQuery(callback(OWNER, token));
-  assert.equal((await db.get('SELECT xp FROM profiles WHERE user_id = 50')).xp, 115);
+  assert.equal((await db.get('SELECT xp FROM profiles WHERE user_id = 50')).xp, 315);
   await onCallbackQuery(callback(OWNER, 'admin:xp:history:50'));
-  assert.match(lastText(mock), /XP: 90 → 115/);
+  assert.match(lastText(mock), /XP: 290 → 315/);
 });
 
 test('manual rank, then back to automatic', async () => {

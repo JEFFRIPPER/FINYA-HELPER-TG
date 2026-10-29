@@ -70,7 +70,7 @@ test('daily limit caps XP at 100', async () => {
 test('promotion message goes only to users known to the bot', async () => {
   const mock = await setup();
   await onMessage(privateMessage(user(30), '/start'));
-  await db.run(`INSERT INTO profiles (user_id, name, username, xp) VALUES (30, 'U30', 'user30', 97)`);
+  await db.run(`INSERT INTO profiles (user_id, name, username, xp) VALUES (30, 'U30', 'user30', 297)`);
   const root = channelRoot();
   await onMessage(root);
   mock.calls = [];
@@ -83,8 +83,13 @@ test('promotion message goes only to users known to the bot', async () => {
 test('rank math: thresholds, founder and manual ranks', () => {
   assert.equal(xp.rankFor(0)[0][1], 'I');
   assert.equal(xp.rankFor(99)[1][1], 'II');
-  assert.equal(xp.rankFor(10000)[0][1], 'IX');
-  assert.equal(xp.rankFor(10000)[1], null);
+  // Thresholds ×3 since 2026-10-29.
+  assert.equal(xp.rankFor(299)[0][1], 'I');
+  assert.equal(xp.rankFor(300)[0][1], 'II');
+  assert.equal(xp.rankFor(3000)[0][1], 'V');
+  assert.equal(xp.rankFor(29999)[0][1], 'VIII');
+  assert.equal(xp.rankFor(30000)[0][1], 'IX');
+  assert.equal(xp.rankFor(30000)[1], null);
   assert.equal(xp.rankFor(5, { founder: true })[0][1], 'X');
   assert.equal(xp.rankFor(5, { manualRank: 'VII' })[0][2], 'Маршал Свободы');
 });
