@@ -45,11 +45,41 @@ export async function repOf(userId) {
 // ---- marriages -----------------------------------------------------------------
 
 export const PROPOSAL_TTL = 3600;
+// Several marriages at once: up to this many spouses each.
+export const MAX_SPOUSES = 5;
 
 export class SocialError extends Error {}
 
+// The one-marriage table `spouses` goes into `marriages` once, before the first read.
+let copied = null;
+function ready() {
+  copied ||= (async () => {
+    if (await getSetting('marriages_copied')) return;
+    await db.run(sql`INSERT OR IGNORE INTO marriages (user_id, partner_id, since)
+      SELECT user_id, partner_id, since FROM spouses`);
+    await setSetting('marriages_copied', true);
+  })().catch((err) => {
+    copied = null;
+    throw err;
+  });
+  return copied;
+}
+
+// All spouses, the longest marriage first: [{ partner_id, since }].
+export async function spousesOf(userId) {
+  await ready();
+  return db.all(sql`SELECT partner_id, since FROM marriages WHERE user_id = ${userId} ORDER BY since, partner_id`);
+}
+
+// The longest marriage, or null.
 export async function spouseOf(userId) {
-  return db.get(sql`SELECT partner_id, since FROM spouses WHERE user_id = ${userId}`);
+  return (await spousesOf(userId))[0] || null;
+}
+
+// The marriage of these two, or null.
+export async function marriageOf(userId, partnerId) {
+  await ready();
+  return (await db.get(sql`SELECT partner_id, since FROM marriages WHERE user_id = ${userId} AND partner_id = ${partnerId}`)) || null;
 }
 
 export const marriedDays = (since, ts = nowInt()) => Math.max(0, Math.floor((ts - since) / DAY));
@@ -89,10 +119,12 @@ export function weddingOn(days) {
 // A proposal waits for the other one's button for an hour.
 export async function propose(chatId, fromId, toId) {
   if (fromId === toId) throw new SocialError('Жениться на себе нельзя, даже в Скваде 😏');
-  if (await spouseOf(fromId)) throw new SocialError('Ты уже в браке. Сначала «Развод».');
-  if (await spouseOf(toId)) throw new SocialError('Этот участник уже в браке.');
-  const mine = await partnerOf(fromId);
-  if (mine && mine.partner_id !== toId) throw new SocialError('Ты встречаешься с другим человеком. Сначала «Расстаться».');
+  const mine = await spousesOf(fromId);
+  if (mine.some((s) => s.partner_id === toId)) throw new SocialError('Вы и так в браке друг с другом.');
+  if (mine.length >= MAX_SPOUSES) throw new SocialError(`У тебя уже ${MAX_SPOUSES} браков, это максимум. Сначала «Развод».`);
+  if ((await spousesOf(toId)).length >= MAX_SPOUSES) throw new SocialError(`У этого участника уже ${MAX_SPOUSES} браков, это максимум.`);
+  const dating = await partnerOf(fromId);
+  if (dating && dating.partner_id !== toId) throw new SocialError('Ты встречаешься с другим человеком. Сначала «Расстаться».');
   const theirs = await partnerOf(toId);
   if (theirs && theirs.partner_id !== fromId) throw new SocialError('Этот участник встречается с другим.');
   await db.run(sql`INSERT INTO proposals (from_id, to_id, chat_id, message_id, created_at)
@@ -115,12 +147,15 @@ async function takeProposal(fromId, toId) {
 export async function accept(fromId, toId) {
   if (!(await takeProposal(fromId, toId))) throw new SocialError('Предложение уже не действует.');
   const ts = nowInt();
-  // Both rows in one statement, and only if neither of them married meanwhile.
-  const r = await db.run(sql`INSERT INTO spouses (user_id, partner_id, since)
+  await ready();
+  // Both rows in one statement, and only while both still have room for one more.
+  const r = await db.run(sql`INSERT INTO marriages (user_id, partner_id, since)
     SELECT u, p, s FROM (SELECT ${fromId} AS u, ${toId} AS p, ${ts} AS s UNION ALL SELECT ${toId}, ${fromId}, ${ts})
-    WHERE NOT EXISTS (SELECT 1 FROM spouses WHERE user_id IN (${fromId}, ${toId}))`);
-  if (r.rowsAffected !== 2) throw new SocialError('Кто-то из вас уже успел вступить в брак.');
-  await db.run(sql`DELETE FROM proposals WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
+    WHERE NOT EXISTS (SELECT 1 FROM marriages WHERE user_id = ${fromId} AND partner_id = ${toId})
+      AND (SELECT COUNT(*) FROM marriages WHERE user_id = ${fromId}) < ${MAX_SPOUSES}
+      AND (SELECT COUNT(*) FROM marriages WHERE user_id = ${toId}) < ${MAX_SPOUSES}`);
+  if (r.rowsAffected !== 2) throw new SocialError(`Уже не выйдет: у кого-то из вас ${MAX_SPOUSES} браков или вы уже в браке.`);
+  await db.run(sql`DELETE FROM proposals WHERE (from_id = ${fromId} AND to_id = ${toId}) OR (from_id = ${toId} AND to_id = ${fromId})`);
   // Dating grows into the marriage.
   await db.run(sql`DELETE FROM dating WHERE user_id IN (${fromId}, ${toId}) OR partner_id IN (${fromId}, ${toId})`);
   await db.run(sql`DELETE FROM date_offers WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
@@ -133,19 +168,22 @@ export async function decline(fromId, toId) {
 
 // → true when this marriage existed and is over now.
 export async function divorce(userId, partnerId) {
-  const r = await db.run(sql`DELETE FROM spouses
+  await ready();
+  const r = await db.run(sql`DELETE FROM marriages
     WHERE (user_id = ${userId} AND partner_id = ${partnerId}) OR (user_id = ${partnerId} AND partner_id = ${userId})`);
   return r.rowsAffected > 0;
 }
 
 // Couples, the longest together first.
 export async function couples(limit = 15) {
-  return db.all(sql`SELECT user_id AS a, partner_id AS b, since FROM spouses
+  await ready();
+  return db.all(sql`SELECT user_id AS a, partner_id AS b, since FROM marriages
     WHERE user_id < partner_id ORDER BY since, user_id LIMIT ${limit}`);
 }
 
 export async function coupleCount() {
-  const row = await db.get(sql`SELECT COUNT(*) AS c FROM spouses WHERE user_id < partner_id`);
+  await ready();
+  const row = await db.get(sql`SELECT COUNT(*) AS c FROM marriages WHERE user_id < partner_id`);
   return row.c;
 }
 
@@ -187,11 +225,12 @@ async function takeDateOffer(fromId, toId) {
 export async function acceptDate(fromId, toId) {
   if (!(await takeDateOffer(fromId, toId))) throw new SocialError('Предложение уже не действует.');
   const ts = nowInt();
+  await ready();
   // Both rows in one statement, and only if neither of them paired up meanwhile.
   const r = await db.run(sql`INSERT INTO dating (user_id, partner_id, since)
     SELECT u, p, s FROM (SELECT ${fromId} AS u, ${toId} AS p, ${ts} AS s UNION ALL SELECT ${toId}, ${fromId}, ${ts})
     WHERE NOT EXISTS (SELECT 1 FROM dating WHERE user_id IN (${fromId}, ${toId}))
-      AND NOT EXISTS (SELECT 1 FROM spouses WHERE user_id IN (${fromId}, ${toId}))`);
+      AND NOT EXISTS (SELECT 1 FROM marriages WHERE user_id IN (${fromId}, ${toId}))`);
   if (r.rowsAffected !== 2) throw new SocialError('Кто-то из вас уже занят.');
   await db.run(sql`DELETE FROM date_offers WHERE from_id IN (${fromId}, ${toId}) OR to_id IN (${fromId}, ${toId})`);
   return ts;
@@ -236,11 +275,23 @@ export function parseDate(text) {
   return ms / 1000 - MSK_OFFSET;
 }
 
-// kind: 'marriage' or 'dating'. → the pair's partner id.
-export async function setPairSince(kind, userId, value, ts = nowInt()) {
+// kind: 'marriage' or 'dating'; partnerId: the spouse it is about, needed with
+// several marriages. → { partnerId, since }.
+export async function setPairSince(kind, userId, value, ts = nowInt(), partnerId = null) {
   const married = kind === 'marriage';
-  const pair = married ? await spouseOf(userId) : await partnerOf(userId);
-  if (!pair) throw new SocialError(married ? 'Ты не в браке.' : 'Ты ни с кем не встречаешься.');
+  let pair;
+  if (married) {
+    const all = await spousesOf(userId);
+    if (!all.length) throw new SocialError('Ты не в браке.');
+    pair = partnerId ? all.find((s) => s.partner_id === partnerId) : all.length === 1 ? all[0] : null;
+    if (!pair) {
+      throw new SocialError(partnerId ? 'Вы с этим участником не в браке.'
+        : 'У тебя несколько браков: напиши «Начало Брака 01.05.2024» ответом на сообщение супруга.');
+    }
+  } else {
+    pair = await partnerOf(userId);
+    if (!pair) throw new SocialError('Ты ни с кем не встречаешься.');
+  }
   const since = parseDate(value);
   if (since == null) throw new SocialError(`Напиши дату так: «Начало ${married ? 'брака' : 'отношений'} 01.05.2024».`);
   if (since > ts) throw new SocialError('Эта дата ещё не наступила.');
@@ -254,12 +305,12 @@ export async function setPairSince(kind, userId, value, ts = nowInt()) {
     throw new SocialError(`Дату пары можно менять раз в месяц. Следующий раз: ${pad(next.getUTCDate())}.${pad(next.getUTCMonth() + 1)}.${next.getUTCFullYear()}.`);
   }
   if (married) {
-    await db.run(sql`UPDATE spouses SET since = ${since} WHERE user_id IN (${a}, ${b})`);
+    await db.run(sql`UPDATE marriages SET since = ${since} WHERE (user_id = ${a} AND partner_id = ${b}) OR (user_id = ${b} AND partner_id = ${a})`);
   } else {
     await db.run(sql`UPDATE dating SET since = ${since} WHERE user_id IN (${a}, ${b})`);
   }
   await setSetting(key, ts);
-  return pair.partner_id;
+  return { partnerId: pair.partner_id, since };
 }
 
 // ---- RP actions ----------------------------------------------------------------

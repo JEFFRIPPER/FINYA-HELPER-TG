@@ -14,6 +14,7 @@ import * as bio from './bio.js';
 import { activityChart } from './chart.js';
 import * as club from './club.js';
 import * as extras from './extras.js';
+import * as family from './family.js';
 import * as questions from './questions.js';
 import * as navigator from './navigator.js';
 import { withPremium } from './emoji.js';
@@ -31,6 +32,8 @@ import * as xp from './xp.js';
 
 const { mention } = moder;
 const MAX_TEXT = 500;
+const MAX_SUMMON_TEXT = 1200;
+const SUMMON_START = /^\s*(?:\S+[\s,]+)?(?:созови|созыв|созвать всех|позови всех|тегни всех)/iu;
 
 export const norm = (t) => String(t || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim();
 const bare = (t) => norm(t).replace(/[\s!.?,)]+$/u, '');
@@ -178,6 +181,19 @@ const ABOUT_PREVIEW = 160;
 
 // The profile, like Iris has it: who, rank and XP, activity in this chat, «о себе»
 // and awards. → { text, card } (card: activity in this chat, for the chart).
+async function namesList(ids, max = 30) {
+  return (await Promise.all(ids.map(async (id) => escapeHtml(truncate(await members.nameOf(id), max))))).join(', ');
+}
+
+// «💍 Брак: Аня · 12 дней» or, with several marriages, «💍 Браки: Аня · 12 дней, Боря · 3 дня».
+async function marriagesLine(userId, spouses, ts = nowInt()) {
+  const parts = await Promise.all(spouses.map(async (s) => {
+    const flame = fire.fireMark(await fire.fireOf(userId, ts, s.partner_id));
+    return `${escapeHtml(truncate(await members.nameOf(s.partner_id), spouses.length > 1 ? 25 : 40))} · ${daysWord(social.marriedDays(s.since, ts))}${flame}`;
+  }));
+  return `💍 ${spouses.length > 1 ? 'Браки' : 'Брак'}: ${parts.join(', ')}`;
+}
+
 async function profileCard(chat, who, self) {
   const ts = nowInt();
   const p = self ? await xp.profile(who.user) : await db.get(sql`SELECT * FROM profiles WHERE user_id = ${who.id}`);
@@ -186,10 +202,10 @@ async function profileCard(chat, who, self) {
   const [rank] = xp.rankFor(points, { founder, manualRank: p ? p.manual_rank : null });
   const group = isGroupChat(chat);
   // Independent reads, all at once: the card is the slowest reply in the chat.
-  const [top, rep, spouse, dating, ach, style, role, home, jobs, sign, card, about, awards, shelf] = await Promise.all([
+  const [top, rep, spouses, dating, ach, style, role, home, jobs, sign, card, about, awards, shelf, kids, parents] = await Promise.all([
     place(who.id, points),
     social.repOf(who.id),
-    social.spouseOf(who.id),
+    social.spousesOf(who.id),
     social.partnerOf(who.id),
     db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${who.id}`),
     club.myStyle(who.id),
@@ -201,6 +217,8 @@ async function profileCard(chat, who, self) {
     bio.aboutOf(who.id),
     bio.awardsOf(who.id),
     club.showcaseOf(who.id),
+    family.childrenOf(who.id),
+    family.parentsOf(who.id),
   ]);
 
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
@@ -211,14 +229,14 @@ async function profileCard(chat, who, self) {
       : `🏡 Гражданство: чат «${escapeHtml(truncate(await anketa.chatTitle(home.chat_id), 40))}»`);
   }
   if (jobs.length) head.push(`💼 Должность: ${jobs.map((j) => `${j.emoji} ${escapeHtml(j.title)}`).join(', ')}`);
-  const flame = spouse || dating ? fire.fireMark(await fire.fireOf(who.id, ts)) : '';
-  if (spouse) {
-    const partner = await members.nameOf(spouse.partner_id);
-    head.push(`💍 Брак: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(spouse.since))}${flame}`);
-  } else if (dating) {
+  if (spouses.length) head.push(await marriagesLine(who.id, spouses, ts));
+  else if (dating) {
     const partner = await members.nameOf(dating.partner_id);
+    const flame = fire.fireMark(await fire.fireOf(who.id, ts));
     head.push(`💞 Отношения: ${escapeHtml(truncate(partner, 40))} · ${daysWord(social.marriedDays(dating.since))}${flame}`);
   }
+  if (parents.length) head.push(`👪 Родители: ${await namesList(parents.map((r) => r.parent_id))}`);
+  if (kids.length) head.push(`👶 Дети: ${kids.length}`);
 
   const stats = [
     `🎖 [${rank[1]}] Звание: ${escapeHtml(rank[2])}`,
@@ -352,11 +370,12 @@ async function anketaCard(who, self) {
       (ts - c.since < 86400 ? 'с сегодня' : `${ageText(ts - c.since)} (с ${fmtMsk(c.since).slice(0, 10)})`));
   }
   if (d.favourite) about.push(`❤️ Любимый чат: «${escapeHtml(truncate(d.favourite.title, 40))}»`);
-  const spouse = await social.spouseOf(who.id);
-  const dating = spouse || await social.partnerOf(who.id);
-  if (dating) {
+  const spouses = await social.spousesOf(who.id);
+  const dating = spouses.length ? null : await social.partnerOf(who.id);
+  if (spouses.length) about.push(await marriagesLine(who.id, spouses, ts));
+  else if (dating) {
     const partner = escapeHtml(truncate(await members.nameOf(dating.partner_id), 40));
-    about.push(`${spouse ? '💍 Брак:' : '💞 Отношения:'} ${partner} · ${daysWord(social.marriedDays(dating.since))}`);
+    about.push(`💞 Отношения: ${partner} · ${daysWord(social.marriedDays(dating.since))}`);
   }
   const blocks = [head.join('\n'), about.join('\n')];
 
@@ -608,21 +627,26 @@ async function minusRep(message, target) {
 }
 
 async function marriageStatus(message) {
-  const s = await social.spouseOf(message.from.id);
-  if (!s) {
+  const uid = message.from.id;
+  const all = await social.spousesOf(uid);
+  if (!all.length) {
     await say(message, '💔 Ты не в браке.\nЧтобы сделать предложение, ответь «Брак» на сообщение избранника.', { temp: true });
     return;
   }
-  const partner = await members.nameOf(s.partner_id);
-  const days = social.marriedDays(s.since);
-  const now = social.weddingOf(days);
-  const next = social.nextWedding(days);
-  const yearsText = now.years ? `${now.years} ${plural(now.years, 'год', 'года', 'лет')}` : 'первый год';
-  await say(message, `💍 Твоя пара: ${escapeHtml(truncate(partner, 40))} · в браке уже ${daysWord(days)}.\n` +
-    `${now.icon} Сейчас: ${now.name.toLowerCase()} свадьба (${yearsText})` +
-    (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : '') +
-    `\n${fire.fireLine(await fire.fireOf(message.from.id))}`,
-  { temp: true });
+  const blocks = [];
+  for (const s of all) {
+    const partner = await members.nameOf(s.partner_id);
+    const days = social.marriedDays(s.since);
+    const now = social.weddingOf(days);
+    const next = social.nextWedding(days);
+    const yearsText = now.years ? `${now.years} ${plural(now.years, 'год', 'года', 'лет')}` : 'первый год';
+    blocks.push(`💍 ${all.length > 1 ? 'Пара' : 'Твоя пара'}: ${escapeHtml(truncate(partner, 40))} · в браке уже ${daysWord(days)}.\n` +
+      `${now.icon} Сейчас: ${now.name.toLowerCase()} свадьба (${yearsText})` +
+      (next ? `\n⏳ Дальше: ${next.name.toLowerCase()} свадьба (${next.years} ${plural(next.years, 'год', 'года', 'лет')}) через ${daysWord(next.inDays)}` : '') +
+      `\n${fire.fireLine(await fire.fireOf(uid, nowInt(), s.partner_id))}`);
+  }
+  const head = all.length > 1 ? `💒 Твои браки: ${all.length} из ${social.MAX_SPOUSES}\n\n` : '';
+  await say(message, head + blocks.join('\n\n'), { temp: true });
 }
 
 async function propose(message, target) {
@@ -663,18 +687,126 @@ async function couplesText() {
   return text;
 }
 
-async function divorcePrompt(message) {
-  const s = await social.spouseOf(message.from.id);
-  if (!s) {
+// «Развод» in reply: with that spouse. Without a reply: the only one, or buttons for each.
+async function divorcePrompt(message, target = null) {
+  const uid = message.from.id;
+  const all = await social.spousesOf(uid);
+  if (!all.length) {
     await say(message, '💔 Ты и так не в браке.', { temp: true });
     return;
   }
-  const partner = await members.nameOf(s.partner_id);
-  const uid = message.from.id;
+  const chosen = target ? all.find((s) => s.partner_id === target.id) : all.length === 1 ? all[0] : null;
+  if (target && !chosen) {
+    await say(message, '💔 Вы с этим участником не в браке.', { temp: true });
+    return;
+  }
+  if (!chosen) {
+    const rows = [];
+    for (const s of all) rows.push([button(`💔 ${truncate(await members.nameOf(s.partner_id), 30)}`, { callback_data: `div:y:${uid}:${s.partner_id}` })]);
+    rows.push([button('Отмена', { callback_data: `div:n:${uid}:0` })]);
+    await say(message, '💔 С кем развод?', { markup: keyboard(rows) });
+    return;
+  }
+  const partner = await members.nameOf(chosen.partner_id);
   await say(message, `💔 Точно развод с ${escapeHtml(truncate(partner, 40))}?`, {
     markup: keyboard([[
-      button('Да, развод', { callback_data: `div:y:${uid}:${s.partner_id}` }),
-      button('Нет', { callback_data: `div:n:${uid}:${s.partner_id}` }),
+      button('Да, развод', { callback_data: `div:y:${uid}:${chosen.partner_id}` }),
+      button('Нет', { callback_data: `div:n:${uid}:${chosen.partner_id}` }),
+    ]]),
+  });
+}
+
+// ---- families: «Усыновить» in reply, «Моя Семья» ------------------------------------
+
+async function adoptOffer(message, target) {
+  const from = message.from;
+  if (target.isBot) {
+    await say(message, '🤖 Ботов не усыновляем 😅', { temp: true });
+    return;
+  }
+  try {
+    await family.offer(message.chat.id, from.id, target.id);
+  } catch (err) {
+    if (!(err instanceof family.FamilyError)) throw err;
+    await say(message, `👶 ${err.message}`, { temp: true });
+    return;
+  }
+  const a = mention(from.id, await nameFor(from));
+  const b = mention(target.id, target.name);
+  const sent = await say(message, `👶 ${a} → ${b}: предложение стать ${await family.roleInstr(target.id)} в семье!\n\n${b}, принимаешь?`, {
+    markup: keyboard([[
+      button('👶 Да', { callback_data: `kid:y:${from.id}:${target.id}` }),
+      button('Нет', { callback_data: `kid:n:${from.id}:${target.id}` }),
+    ]]),
+  });
+  if (sent && sent.message_id) await family.setOfferMessage(from.id, target.id, sent.message_id);
+}
+
+async function familyText(who, self) {
+  const [spouses, parents, kids, siblings] = await Promise.all([
+    social.spousesOf(who.id), family.parentsOf(who.id), family.childrenOf(who.id), family.siblingsOf(who.id),
+  ]);
+  const name = escapeHtml(truncate(who.name, 40));
+  if (!spouses.length && !parents.length && !kids.length) {
+    return self
+      ? '👪 Семьи пока нет.\nЧтобы начать: «Брак» или «Усыновить» ответом на сообщение участника.'
+      : `👪 У ${name} пока нет семьи.`;
+  }
+  const ts = nowInt();
+  const lines = [`👪 Семья · ${name}`, ''];
+  if (spouses.length) lines.push(await marriagesLine(who.id, spouses, ts));
+  if (parents.length) lines.push(`👪 Родители: ${await namesList(parents.map((r) => r.parent_id))}`);
+  if (kids.length) {
+    lines.push(`👶 Дети: ${kids.length} из ${family.MAX_CHILDREN}`);
+    for (const k of kids) {
+      const role = await family.roleOf(k.child_id);
+      lines.push(`• ${role[0].toUpperCase()}${role.slice(1)}: ${escapeHtml(truncate(await members.nameOf(k.child_id), 30))} · в семье ${daysWord(social.marriedDays(k.since, ts))}`);
+    }
+  }
+  if (siblings.length) lines.push(`🧒 Братья и сёстры: ${await namesList(siblings)}`);
+  return lines.join('\n');
+}
+
+// «Отказаться от ребёнка»: in reply, the only child, or buttons for each.
+async function disownPrompt(message, target = null) {
+  const uid = message.from.id;
+  const kids = await family.childrenOf(uid);
+  if (!kids.length) {
+    await say(message, '👶 Детей у тебя нет.', { temp: true });
+    return;
+  }
+  const chosen = target ? kids.find((k) => k.child_id === target.id) : kids.length === 1 ? kids[0] : null;
+  if (target && !chosen) {
+    await say(message, '👶 Это не твой ребёнок.', { temp: true });
+    return;
+  }
+  if (!chosen) {
+    const rows = [];
+    for (const k of kids) rows.push([button(`👶 ${truncate(await members.nameOf(k.child_id), 30)}`, { callback_data: `unkid:y:${uid}:${k.child_id}` })]);
+    rows.push([button('Отмена', { callback_data: `unkid:n:${uid}:0` })]);
+    await say(message, '👶 От кого отказаться?', { markup: keyboard(rows) });
+    return;
+  }
+  const kid = escapeHtml(truncate(await members.nameOf(chosen.child_id), 40));
+  await say(message, `👶 Точно отказаться от ребёнка: ${kid}?`, {
+    markup: keyboard([[
+      button('Да, отказаться', { callback_data: `unkid:y:${uid}:${chosen.child_id}` }),
+      button('Нет', { callback_data: `unkid:n:${uid}:${chosen.child_id}` }),
+    ]]),
+  });
+}
+
+async function leavePrompt(message) {
+  const uid = message.from.id;
+  const parents = await family.parentsOf(uid);
+  if (!parents.length) {
+    await say(message, '👪 У тебя и так нет родителей в Скваде.', { temp: true });
+    return;
+  }
+  await say(message, `👪 Точно уйти из семьи? Родители: ${await namesList(parents.map((r) => r.parent_id))}.`, {
+    markup: keyboard([[
+      button('Да, уйти', { callback_data: `leave:y:${uid}` }),
+      button('Нет', { callback_data: `leave:n:${uid}` }),
     ]]),
   });
 }
@@ -1000,6 +1132,7 @@ async function repTopText() {
 export const SUMMON_COOLDOWN = 30 * 60;
 const SUMMON_LIMIT = 50;
 const SUMMON_PER_MESSAGE = 5;
+const SUMMON_NOTE_MAX = 1000;
 
 // «Финя, созови»: the latest active members, tagged five to a message (Iris does the same).
 async function summon(message, self, text) {
@@ -1024,7 +1157,7 @@ async function summon(message, self, text) {
   }
   await setSetting(key, ts);
   const note = String(text || '').trim();
-  const head = `📣 ${mention(self.id, self.name)} созывает всех!` + (note ? `\n<blockquote>${escapeHtml(truncate(note, 300))}</blockquote>` : '');
+  const head = `📣 ${mention(self.id, self.name)} созывает всех!` + (note ? `\n<blockquote>${escapeHtml(truncate(note, SUMMON_NOTE_MAX))}</blockquote>` : '');
   for (let i = 0; i < rows.length; i += SUMMON_PER_MESSAGE) {
     const tags = rows.slice(i, i + SUMMON_PER_MESSAGE).map((r) => mention(r.id, r.name)).join(', ');
     const body = i === 0 ? `${head}\n\n${tags}` : tags;
@@ -1382,7 +1515,8 @@ const HELP = {
     ['❤️ + или «Спасибо» (ответом) · - (ответом) · Топ Репы', 'Репутация участнику плюсом или минусом, без лимита, и топ репутации Сквада'],
     ['💞 Встречаться (ответом) · Мои Отношения · Расстаться · Кто Встречается', 'Отношения до брака. Сами не заканчиваются, только по «Расстаться» или когда пара женится'],
     ['📅 Начало Отношений 01.05.2024 · Начало Брака 01.05.2024', 'Если пара была вместе ещё до Фини: дни и годовщины посчитаются с этой даты. Бесплатно, раз в месяц'],
-    ['💍 Брак (ответом) · Мой Брак · Развод · Браки', 'Предложение руки и сердца, стаж брака и все пары Сквада. «Мой Брак» покажет, какая сейчас свадьба (ситцевая, деревянная… золотая) и сколько до следующей. С годовщинами Финя поздравляет сама'],
+    ['💍 Брак (ответом) · Мой Брак · Развод · Браки', `Предложение руки и сердца, стаж брака и все пары Сквада. Можно до ${social.MAX_SPOUSES} браков сразу. «Мой Брак» покажет, какая сейчас свадьба (ситцевая, деревянная… золотая) и сколько до следующей. С годовщинами Финя поздравляет сама`],
+    ['👪 Усыновить (ответом) · Моя Семья · Отказаться от ребёнка · Уйти из семьи', 'Участник становится сыном или дочкой, если согласится. «Моя Семья» покажет супругов, родителей, детей, братьев и сестёр'],
     ['🔥 Огонёк', 'Огонёк пары: горит, пока вы оба каждый день отвечаете на сообщения друг друга. 7 и 30 дней подряд дают ачивки'],
     ['🤗 Обнять, Поцеловать, Ударить… (ответом)', 'РП-действия. Весь список: «РП». В любом другом чате, даже в личке, напиши @ник Фини, пробел и действие: «@finya_helper_Squad_bot обнять @ник»'],
     ['⛓️ Штаб · Должность (ответом) · Должность Креативщик', 'Команда Сквада по должностям, чья-то должность и обязанности'],
@@ -1411,7 +1545,7 @@ const HELP = {
   ]],
   admin: ['🛡 Админам', (moderation) => [
     ['🏅 Наградить 4 (ответом или с @ником) · Снять Награду N · Снять Все Награды', 'Степень 1–8: 🎗 🥉 🥈 🥇 🎖 🏅 🏆 🏵. Текст награды с новой строки, например:\nНаградить 4 @ник\n«Агент ириса» с. Иван'],
-    ['📣 Финя, Созови Текст', `Тегает активных участников по ${SUMMON_PER_MESSAGE} в сообщении, не чаще раза в ${fmtWait(SUMMON_COOLDOWN)}`],
+    ['📣 Созвать всех · Финя, Созови Текст', `Причину можно писать с новой строки. Тегает активных участников по ${SUMMON_PER_MESSAGE} в сообщении, не чаще раза в ${fmtWait(SUMMON_COOLDOWN)}`],
     ...(moderation ? [['🛡 Мут 1ч · Размут · Бан · Разбан · Кик · Варн · Снять Варн · Варны',
       'Ответом на сообщение. Причину пиши с новой строки']] : []),
   ]],
@@ -1508,8 +1642,13 @@ const USAGE = [
   },
   {
     keys: ['брак', 'мой брак', 'развод', 'браки', 'пары'], title: '💍 Брак',
-    about: 'Свадьба в чате. С годовщинами Финя поздравляет сама, по русским традициям: ситцевая, деревянная… золотая',
-    how: [['Брак (ответом)', 'Предложение руки и сердца, человек отвечает кнопкой'], ['Мой Брак', 'С кем, сколько дней, какая сейчас свадьба и сколько до следующей'], ['Развод', 'Развестись, с подтверждением'], ['Браки', 'Все пары Сквада'], ['Начало Брака 01.05.2024', 'Если поженились ещё до Фини']],
+    about: () => `Свадьба в чате, можно до ${social.MAX_SPOUSES} браков сразу. С годовщинами Финя поздравляет сама, по русским традициям: ситцевая, деревянная… золотая`,
+    how: [['Брак (ответом)', 'Предложение руки и сердца, человек отвечает кнопкой. Другие супруги получат новость'], ['Мой Брак', 'Все браки: с кем, сколько дней, какая сейчас свадьба и сколько до следующей'], ['Развод (ответом)', 'Развестись с этим супругом, с подтверждением. Без ответа Финя спросит, с кем'], ['Браки', 'Все пары Сквада'], ['Начало Брака 01.05.2024', 'Если поженились ещё до Фини. При нескольких браках ответом на сообщение супруга']],
+  },
+  {
+    keys: ['усыновить', 'удочерить', 'семья', 'моя семья', 'мои дети', 'мои родители', 'отказаться от ребенка', 'уйти из семьи'], title: '👪 Семья',
+    about: () => `Дети в Скваде: сын или дочь по полу из анкеты («+Пол М» или «+Пол Ж»). До ${family.MAX_PARENTS} родителей у ребёнка и до ${family.MAX_CHILDREN} детей у родителя`,
+    how: [['Усыновить (ответом)', 'Участник станет твоим сыном или дочкой, если нажмёт «Да»'], ['Моя Семья · Семья (ответом)', 'Супруги, родители, дети, братья и сёстры'], ['Отказаться от ребёнка (ответом)', 'С подтверждением. Без ответа Финя спросит, от кого'], ['Уйти из семьи', 'Ребёнок уходит от родителей, с подтверждением']],
   },
   {
     keys: ['рп', 'рп список', 'список рп', 'рп команды'], title: '🤗 РП-действия',
@@ -1578,7 +1717,7 @@ const USAGE = [
   {
     keys: ['созови', 'созови всех', 'созыв', 'созвать всех', 'позови всех', 'тегни всех'], title: '📣 Финя, Созови',
     about: () => `Тегает активных участников по ${SUMMON_PER_MESSAGE} в сообщении, не чаще раза в ${fmtWait(SUMMON_COOLDOWN)}`,
-    how: [['Финя, Созови Идём на стрим', 'Созыв с текстом'], ['Созыв', 'Без текста']],
+    how: [['Финя, Созови Идём на стрим', 'Созыв с текстом'], ['Созвать всех, а с новой строки причина', `Причина выйдет цитатой с переносами строк, до ${SUMMON_NOTE_MAX} символов`], ['Созыв', 'Без текста']],
   },
   {
     keys: ['мут', 'размут', 'бан', 'разбан', 'кик', 'варн', 'снять варн', 'варны'], title: '🛡 Модерация',
@@ -1830,7 +1969,9 @@ const MOD_VERBS = /^(мут|размут|бан|разбан|кик|варн|с�
 // → true when the message was a command for Финя.
 export async function handleText(message) {
   const text = typeof message.text === 'string' ? message.text : '';
-  if (!text || Array.from(text).length > MAX_TEXT || !message.from || message.from.is_bot || message.sender_chat) return false;
+  // A call to everyone may carry a long reason; other long texts are not commands.
+  const limit = SUMMON_START.test(text) ? MAX_SUMMON_TEXT : MAX_TEXT;
+  if (!text || Array.from(text).length > limit || !message.from || message.from.is_bot || message.sender_chat) return false;
   const group = isGroupChat(message.chat);
   const owner = message.from.id === OWNER_USER_ID;
   const [addressed, rest] = await address(text);
@@ -1891,8 +2032,24 @@ export async function handleText(message) {
     await marriageStatus(message);
     return true;
   }
-  if (cmd === 'развод') {
-    await divorcePrompt(message);
+  if (/^развод(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = group ? await targetOf(message) : null;
+    await divorcePrompt(message, asked && !asked.isBot && asked.id !== self.id ? asked : null);
+    return true;
+  }
+  if (/^(?:моя семья|семья|мои дети|мои родители)(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = group && !cmd.startsWith('мо') ? await targetOf(message) : null;
+    const who = asked && !asked.isBot ? asked : self;
+    await say(message, await familyText(who, who.id === self.id), { temp: true });
+    return true;
+  }
+  if (/^отказаться от (?:ребенка|сына|дочки|дочери)(?:\s+@\w+)?$/u.test(cmd)) {
+    const asked = group ? await targetOf(message) : null;
+    await disownPrompt(message, asked && !asked.isBot && asked.id !== self.id ? asked : null);
+    return true;
+  }
+  if (['уйти из семьи', 'покинуть семью'].includes(cmd)) {
+    await leavePrompt(message);
     return true;
   }
   if (['мои отношения', 'мои отны', 'отношения', 'отны'].includes(cmd)) {
@@ -1905,9 +2062,9 @@ export async function handleText(message) {
   if (start) {
     const kind = start[1] === 'брака' ? 'marriage' : 'dating';
     try {
-      const partnerId = await social.setPairSince(kind, self.id, start[2]);
-      const pair = kind === 'marriage' ? await social.spouseOf(self.id) : await social.partnerOf(self.id);
-      const partner = escapeHtml(truncate(await members.nameOf(partnerId), 40));
+      const asked = group && kind === 'marriage' ? await targetOf(message) : null;
+      const pair = await social.setPairSince(kind, self.id, start[2], nowInt(), asked && asked.id !== self.id ? asked.id : null);
+      const partner = escapeHtml(truncate(await members.nameOf(pair.partnerId), 40));
       await say(message, `${kind === 'marriage' ? '💍 Брак' : '💞 Отношения'} с ${partner} теперь ${kind === 'marriage' ? 'считается' : 'считаются'} с ` +
         `${fmtMsk(pair.since).slice(0, 10)}: ${daysWord(social.marriedDays(pair.since))} вместе. Поменять снова можно через месяц.`, { temp: true });
     } catch (err) {
@@ -2150,8 +2307,9 @@ export async function handleText(message) {
     await say(message, await adminsText(message.chat.id), { temp: true });
     return true;
   }
+  // The reason goes after the command, on the same line or on the next ones.
   const call = /^(?:созови(?:\s+всех)?|созыв|созвать всех|позови всех|тегни всех)(?:[\s,:]+([\s\S]*))?$/iu.exec(rest.trim());
-  if (call && (addressed || /^(?:созыв|созвать всех)$/u.test(cmd))) {
+  if (call && (addressed || /^(?:созыв|созвать всех|созови всех)$/u.test(bare(rest.split('\n')[0])))) {
     await summon(message, self, call[1]);
     return true;
   }
@@ -2165,6 +2323,11 @@ export async function handleText(message) {
   if (cmd === 'встречаться') {
     if (target && target.id !== self.id) await offerDate(message, target);
     else await datingStatus(message, self, true);
+    return true;
+  }
+  if (/^(?:усыновить|удочерить|взять в семью)(?:\s+@\w+)?$/u.test(cmd)) {
+    if (target && target.id !== self.id) await adoptOffer(message, target);
+    else await say(message, '👶 Ответь «Усыновить» на сообщение участника: он станет твоим сыном или дочкой, если согласится.', { temp: true });
     return true;
   }
   const appoint = /^([+-])\s?должность(?:\s+([\s\S]*))?$/iu.exec(rest.trim());
@@ -2360,8 +2523,14 @@ async function marryButton(query, yes, fromId, toId) {
     await edit(query, `💍 ${err.message}`);
     return;
   }
+  // Earlier spouses hear the news by a mention.
+  const others = [...await social.spousesOf(fromId), ...await social.spousesOf(toId)]
+    .map((x) => x.partner_id).filter((id, i, list) => id !== fromId && id !== toId && list.indexOf(id) === i);
+  const news = others.length
+    ? `\n💌 Новость для других супругов: ${(await Promise.all(others.map(async (id) => mention(id, await members.nameOf(id))))).join(', ')}`
+    : '';
   await answer(query, 'Совет да любовь! 💍');
-  await edit(query, `💒 ${a} и ${b} теперь в браке!\nСовет да любовь 🥂`);
+  await edit(query, `💒 ${a} и ${b} теперь в браке!\nСовет да любовь 🥂${news}`);
 }
 
 async function dateButton(query, yes, fromId, toId) {
@@ -2427,6 +2596,65 @@ async function divorceButton(query, yes, userId, partnerId) {
   await edit(query, `💔 ${mention(userId, await nameFor(query.from))} и ${mention(partnerId, await members.nameOf(partnerId))} больше не в браке.`);
 }
 
+async function adoptButton(query, yes, parentId, childId) {
+  const presser = query.from.id;
+  if (presser !== childId && !(presser === parentId && !yes)) {
+    await answer(query, presser === parentId ? 'Ждём ответа 👶' : 'Это предложение не тебе 🙂', true);
+    return;
+  }
+  const a = mention(parentId, await members.nameOf(parentId));
+  const b = mention(childId, presser === childId ? await nameFor(query.from) : await members.nameOf(childId));
+  if (!yes) {
+    const had = await family.decline(parentId, childId);
+    await answer(query);
+    if (had) await edit(query, presser === parentId ? `👶 ${a} передумывает.` : `👶 ${b} отвечает ${a} отказом.`);
+    else await edit(query, '👶 Предложение уже не действует.');
+    return;
+  }
+  try {
+    await family.accept(parentId, childId);
+  } catch (err) {
+    if (!(err instanceof family.FamilyError)) throw err;
+    await answer(query, err.message, true);
+    await edit(query, `👶 ${err.message}`);
+    return;
+  }
+  const role = await family.roleOf(childId);
+  await answer(query, 'Добро пожаловать в семью! 👪');
+  await edit(query, `👪 В семье пополнение!\n${a} — родитель, ${b} — ${role}.\nВся семья: «Моя Семья».`);
+}
+
+async function disownButton(query, yes, parentId, childId) {
+  if (query.from.id !== parentId) {
+    await answer(query, 'Это решение не за тобой 🙂', true);
+    return;
+  }
+  await answer(query);
+  if (!yes) {
+    await edit(query, '👪 Семья сохранена.');
+    return;
+  }
+  if (!(await family.disown(parentId, childId))) {
+    await edit(query, '👶 Этого ребёнка в семье уже нет.');
+    return;
+  }
+  await edit(query, `👶 ${mention(parentId, await nameFor(query.from))} и ${mention(childId, await members.nameOf(childId))} больше не родитель и ребёнок.`);
+}
+
+async function leaveButton(query, yes, childId) {
+  if (query.from.id !== childId) {
+    await answer(query, 'Это решение не за тобой 🙂', true);
+    return;
+  }
+  await answer(query);
+  if (!yes) {
+    await edit(query, '👪 Семья сохранена.');
+    return;
+  }
+  const n = await family.leave(childId);
+  await edit(query, n ? `👪 ${mention(childId, await nameFor(query.from))} уходит из семьи.` : '👪 Родителей уже нет.');
+}
+
 // Anyone in the chat switches the period; the panel is edited in place.
 async function statsButton(query, period) {
   const viewer = await withNick(person(query.from));
@@ -2449,7 +2677,7 @@ async function helpButton(query, section, ownerMenu) {
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|date|part|cap|mod|stat|help|close):/.exec(data);
+  const m = /^(marry|div|date|part|kid|unkid|leave|cap|mod|stat|help|close):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -2461,6 +2689,9 @@ export async function handleCallback(query) {
   else if ((p = new RegExp(`^${CLOSE_PREFIX}(\\d+)$`).exec(data))) await closeButton(query, Number(p[1]));
   else if ((p = /^date:([yn]):(\d+):(\d+)$/.exec(data))) await dateButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
   else if ((p = /^part:([yn]):(\d+):(\d+)$/.exec(data))) await breakUpButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = /^kid:([yn]):(\d+):(\d+)$/.exec(data))) await adoptButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = /^unkid:([yn]):(\d+):(\d+)$/.exec(data))) await disownButton(query, p[1] === 'y', Number(p[2]), Number(p[3]));
+  else if ((p = /^leave:([yn]):(\d+)$/.exec(data))) await leaveButton(query, p[1] === 'y', Number(p[2]));
   else if ((p = /^cap:(\d+)$/.exec(data))) await moder.captchaButton(query, Number(p[1]));
   else if ((p = /^mod:unmute:(\d+)$/.exec(data))) await moder.unmuteButton(query, Number(p[1]));
   else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);
@@ -2533,14 +2764,16 @@ export async function tick(leftMs) {
 // For the Mini App profile.
 export async function profileExtras(userId) {
   const rep = await social.repOf(userId);
-  const s = await social.spouseOf(userId);
-  // The hero shows the pair: the marriage, or else the one they date.
+  const all = await social.spousesOf(userId);
+  const s = all[0];
+  // The hero shows the pair: the marriage (all spouses by name), or else the one they date.
   const pair = s || await social.partnerOf(userId);
   let marriage = null;
   if (pair) {
-    const f = await fire.fireOf(userId);
+    const f = await fire.fireOf(userId, nowInt(), pair.partner_id);
+    const names = s ? await Promise.all(all.map((x) => members.nameOf(x.partner_id))) : [await members.nameOf(pair.partner_id)];
     marriage = {
-      name: truncate(await members.nameOf(pair.partner_id), 40),
+      name: truncate(names.join(', '), 60),
       since: pair.since,
       days: social.marriedDays(pair.since),
       dating: !s,

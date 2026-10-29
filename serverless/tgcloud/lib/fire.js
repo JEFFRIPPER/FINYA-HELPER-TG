@@ -12,7 +12,7 @@ const mskDay = (ts) => Math.floor((Math.floor(ts) + MSK_OFFSET) / DAY);
 // Days of the flame Финя says out loud in the chat; the rest it counts quietly.
 export const MILESTONES = new Set([1, 3, 7, 14, 30, 50, 100, 150, 200, 300, 365, 500, 1000]);
 
-// The spouse, or else the one they date.
+// The first spouse, or else the one they date.
 export async function partnerOf(userId) {
   const s = await social.spouseOf(userId);
   if (s) return s.partner_id;
@@ -20,11 +20,18 @@ export async function partnerOf(userId) {
   return d ? d.partner_id : null;
 }
 
+// Married or dating: every spouse keeps a flame of its own.
+async function isPair(x, y) {
+  if (await social.marriageOf(x, y)) return true;
+  const d = await social.partnerOf(x);
+  return Boolean(d) && d.partner_id === y;
+}
+
 const pair = (x, y) => (x < y ? [x, y] : [y, x]);
 
 // fromId replied to toId. → { days } when this lit the flame for today, else null.
 export async function touch(fromId, toId, ts = nowInt()) {
-  if (fromId === toId || (await partnerOf(fromId)) !== toId) return null;
+  if (fromId === toId || !(await isPair(fromId, toId))) return null;
   const day = mskDay(ts);
   const [a, b] = pair(fromId, toId);
   await db.run(sql`INSERT OR IGNORE INTO pair_fire (a, b) VALUES (${a}, ${b})`);
@@ -40,11 +47,11 @@ export async function touch(fromId, toId, ts = nowInt()) {
   return r.rowsAffected === 1 && r.rows && r.rows[0] ? { days: r.rows[0].days } : null;
 }
 
-// The flame of the member's pair: → { days, best, today, mine, theirs }, or null
-// without a pair. days is 0 once it went out; today: already burns today; mine /
-// theirs: who has replied today.
-export async function fireOf(userId, ts = nowInt()) {
-  const partner = await partnerOf(userId);
+// The flame of the member's pair (with `partnerId`: of that spouse): → { days, best,
+// today, mine, theirs }, or null without a pair. days is 0 once it went out; today:
+// already burns today; mine / theirs: who has replied today.
+export async function fireOf(userId, ts = nowInt(), partnerId = null) {
+  const partner = partnerId || await partnerOf(userId);
   if (!partner) return null;
   const [a, b] = pair(userId, partner);
   const row = await db.get(sql`SELECT a_day, b_day, lit_day, days, best FROM pair_fire WHERE a = ${a} AND b = ${b}`);

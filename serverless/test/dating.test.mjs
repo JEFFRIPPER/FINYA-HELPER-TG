@@ -73,7 +73,7 @@ test('dating grows into marriage', async () => {
   await say(b, 'брак', replyTo(a));
   assert.match(last(api), /предложение руки и сердца/);
   await onCallbackQuery(groupButton(a, 'marry:y:2:1'));
-  assert.equal(await pairs('spouses'), 2);
+  assert.equal(await pairs('marriages'), 2);
   assert.equal(await pairs('dating'), 0);
   await say(a, 'встречаться', replyTo(b));
   assert.match(last(api), /Ты уже в браке/);

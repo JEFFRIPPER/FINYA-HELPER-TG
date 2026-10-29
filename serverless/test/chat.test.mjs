@@ -179,15 +179,15 @@ test('marriage: proposal, only the other one accepts, Mini App shows the partner
   // The proposer and strangers cannot accept.
   await onCallbackQuery(groupButton(a, yes));
   await onCallbackQuery(groupButton(c, yes));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 0);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 0);
   assert.equal(api.called('answerCallbackQuery').filter((x) => x.params.show_alert).length, 2);
   await onCallbackQuery(groupButton(b, yes));
   assert.match(api.called('editMessageText').at(-1).params.text, /теперь в браке/);
   // A second tap or a rival proposal changes nothing.
   await onCallbackQuery(groupButton(b, yes));
-  await say(c, 'брак', replyTo(a));
-  assert.match(lastSent(api), /уже в браке/);
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 2);
+  await say(b, 'брак', replyTo(a));
+  assert.match(lastSent(api), /и так в браке друг с другом/);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 2);
   await say(c, 'браки');
   assert.match(lastSent(api), /Аня \+ Боря — 0 дней/);
   const data = await profileEndpoint({}, { initData: { user: a } });
@@ -199,15 +199,15 @@ test('marriage: proposal, only the other one accepts, Mini App shows the partner
   const div = sent(api).at(-1).params.reply_markup.inline_keyboard[0][0].callback_data;
   assert.equal(div, 'div:y:1:2');
   await onCallbackQuery(groupButton(b, div));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 2);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 2);
   await onCallbackQuery(groupButton(a, div));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 0);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 0);
   assert.equal((await profileEndpoint({}, { initData: { user: a } })).me.marriage, null);
   // An old prompt cannot end a newer marriage.
   await say(a, 'брак', replyTo(c));
   await onCallbackQuery(groupButton(c, 'marry:y:1:3'));
   await onCallbackQuery(groupButton(a, div));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 2);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 2);
 });
 
 test('a bare «топ» is praise; «Финя, топ» is the XP top', async () => {
@@ -232,11 +232,11 @@ test('a declined or expired proposal cannot be accepted', async () => {
   await onCallbackQuery(groupButton(b, 'marry:n:1:2'));
   assert.match(api.called('editMessageText').at(-1).params.text, /отказом/);
   await onCallbackQuery(groupButton(b, 'marry:y:1:2'));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 0);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 0);
   await say(a, 'брак', replyTo(b));
   await db.run('UPDATE proposals SET created_at = created_at - 7200');
   await onCallbackQuery(groupButton(b, 'marry:y:1:2'));
-  assert.equal((await db.get('SELECT COUNT(*) AS c FROM spouses')).c, 0);
+  assert.equal((await db.get('SELECT COUNT(*) AS c FROM marriages')).c, 0);
 });
 
 test('RP actions need a target; the owner adds his own', async () => {
