@@ -9,7 +9,7 @@ import { MSK_OFFSET, nowInt, truncate } from './util.js';
 import { ACHIEVEMENTS } from './club.js';
 import { chatTitle } from './anketa.js';
 import { isAnniversary } from './chat.js';
-import { namesOf, TELEGRAM_SERVICE_ID } from './members.js';
+import { namesOf, refsOf, TELEGRAM_SERVICE_ID } from './members.js';
 import * as citymap from './citymap.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
@@ -222,7 +222,8 @@ async function rawMap() {
 export async function cityMap() {
   const rows = await rawMap();
   const name = await namesOf(rows.map((r) => r.id));
-  const person = (id) => ({ name: name(id), username: name.username(id) });
+  const refs = await refsOf(rows.map((r) => r.id));
+  const person = (id) => ({ name: name(id), username: name.username(id), ref: refs.get(id) || null });
   const known = new Map();
   const other = new Map();
   for (const r of rows) {
@@ -247,18 +248,23 @@ async function build(ts) {
   await noteRecords(records, ts);
   const calendar = await rawCalendar(ts);
   const chronicle = await rawChronicle();
-  const name = await namesOf([
+  const ids = [
     ...records.flatMap((r) => r.who || []),
     ...calendar.flatMap((e) => e.who),
     ...chronicle.flatMap((e) => e.who),
-  ]);
+  ];
+  const name = await namesOf(ids);
+  // A tap on the people opens their card in the Mini App.
+  const refs = await refsOf(ids);
+  const refList = (who) => (who || []).map((id) => refs.get(id)).filter(Boolean);
   return {
     at: ts,
     hall: records.map((r) => ({ key: r.key, icon: r.icon, title: r.title, secret: Boolean(r.secret),
-      who: r.who ? r.who.map(name).join(' + ') : null, value: r.value })),
+      who: r.who ? r.who.map(name).join(' + ') : null, value: r.value, refs: refList(r.who) })),
     calendar: calendar.map((e) => ({ at: e.at, in: e.in, kind: e.kind, icon: e.icon,
-      title: e.title || e.who.map(name).join(' + '), sub: e.sub || null })),
-    chronicle: await Promise.all(chronicle.map(async (e) => ({ at: e.at, icon: e.icon, kind: e.kind, text: await chronicleText(e, name) }))),
+      title: e.title || e.who.map(name).join(' + '), sub: e.sub || null, refs: refList(e.who) })),
+    chronicle: await Promise.all(chronicle.map(async (e) => ({ at: e.at, icon: e.icon, kind: e.kind,
+      text: await chronicleText(e, name), refs: refList(e.who) }))),
   };
 }
 
