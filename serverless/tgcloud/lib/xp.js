@@ -10,16 +10,17 @@ export const DAILY_REACTION_LIMIT = 20;
 export const COMMENT_COOLDOWN = 60;
 export const MAX_XP = 1_000_000_000;
 // X is the founder's title, never an automatic promotion for other members.
+// 2026-10-29 the owner raised every threshold ×3: ranks came too fast.
 export const RANKS = [
   [0, 'I', 'Искра'],
-  [100, 'II', 'Звено'],
-  [300, 'III', 'Клинок'],
-  [500, 'IV', 'Страж Круга'],
-  [1000, 'V', 'Вестник Свободы'],
-  [3000, 'VI', 'Командор Алой Звезды'],
-  [4000, 'VII', 'Маршал Свободы'],
-  [5000, 'VIII', 'Архонт Круга'],
-  [10000, 'IX', 'Верховный Архонт'],
+  [300, 'II', 'Звено'],
+  [900, 'III', 'Клинок'],
+  [1500, 'IV', 'Страж Круга'],
+  [3000, 'V', 'Вестник Свободы'],
+  [9000, 'VI', 'Командор Алой Звезды'],
+  [12000, 'VII', 'Маршал Свободы'],
+  [15000, 'VIII', 'Архонт Круга'],
+  [30000, 'IX', 'Верховный Архонт'],
 ];
 export const ROMANS = new Set(RANKS.map((r) => r[1]));
 

@@ -35,8 +35,8 @@ test('profile endpoint: rank, progress, place, chart and history of the caller',
   const ts = await seed();
   const data = await call(user(1, { first_name: 'Alice' }));
   assert.equal(data.me.xp, 120);
-  assert.deepEqual(data.me.rank, { roman: 'II', name: 'Звено', from: 100 });
-  assert.deepEqual(data.me.progress, { next: { roman: 'III', name: 'Клинок', from: 300 }, left: 180, percent: 10 });
+  assert.deepEqual(data.me.rank, { roman: 'I', name: 'Искра', from: 0 });
+  assert.deepEqual(data.me.progress, { next: { roman: 'II', name: 'Звено', from: 300 }, left: 180, percent: 40 });
   assert.equal(data.me.place, 2);
   assert.equal(data.me.participants, 3);
   assert.equal(data.me.today, 6);
@@ -46,7 +46,7 @@ test('profile endpoint: rank, progress, place, chart and history of the caller',
   assert.equal(data.chart[5].xp, 5);
   // Denied attempts (0 points) are not history.
   assert.deepEqual(data.history.map((h) => [h.kind, h.points]), [['reaction', 1], ['comment', 5], ['comment', 5]]);
-  assert.deepEqual(data.ranks.filter((r) => r.reached).map((r) => r.roman), ['I', 'II']);
+  assert.deepEqual(data.ranks.filter((r) => r.reached).map((r) => r.roman), ['I']);
 });
 
 test('profile endpoint: the top shows names and XP only', async () => {
@@ -165,8 +165,8 @@ test('rank panel: only the owner, list with search and rank counts', async () =>
     err.parameters.code === 'FORBIDDEN');
   const all = await ranks(OWNER, { action: 'list' });
   assert.deepEqual(all.items.map((i) => i.name), ['Carol', 'Alice', 'Bob']);
-  assert.equal(all.ranks.find((r) => r.roman === 'IV').count, 1);
   assert.equal(all.ranks.find((r) => r.roman === 'II').count, 1);
+  assert.equal(all.ranks.find((r) => r.roman === 'I').count, 2);
   assert.deepEqual((await ranks(OWNER, { action: 'list', query: 'ali' })).items.map((i) => i.id), [1]);
   assert.deepEqual((await ranks(OWNER, { action: 'list', query: '@user2' })).items.map((i) => i.id), [2]);
   assert.deepEqual((await ranks(OWNER, { action: 'list', query: '3' })).items.map((i) => i.id), [3]);
@@ -175,12 +175,12 @@ test('rank panel: only the owner, list with search and rank counts', async () =>
 test('rank panel: XP and manual rank changes are audited and idempotent', async () => {
   await setup();
   await seed();
-  let card = await ranks(OWNER, { action: 'xp', id: 2, delta: 70, op: 'abcdef12' });
-  assert.equal(card.xp, 110);
+  let card = await ranks(OWNER, { action: 'xp', id: 2, delta: 270, op: 'abcdef12' });
+  assert.equal(card.xp, 310);
   assert.equal(card.rank.roman, 'II');
   // Retrying the same operation does not add XP twice.
-  card = await ranks(OWNER, { action: 'xp', id: 2, delta: 70, op: 'abcdef12' });
-  assert.equal(card.xp, 110);
+  card = await ranks(OWNER, { action: 'xp', id: 2, delta: 270, op: 'abcdef12' });
+  assert.equal(card.xp, 310);
   card = await ranks(OWNER, { action: 'rank', id: 2, roman: 'VII', op: 'abcdef13' });
   assert.equal(card.rank.roman, 'VII');
   assert.equal(card.manual, true);
