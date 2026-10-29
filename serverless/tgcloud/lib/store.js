@@ -22,8 +22,10 @@ const DEFAULTS = {
   chat_daily: true,
   // «👋 … покидает чат» when somebody leaves a Squad chat.
   chat_farewell: true,
-  // «❓ Вопрос дня» poll in each Squad chat at 12:00 МСК.
+  // «❓ Вопрос дня» poll in each Squad chat every 3 hours, the result 3 hours later.
   chat_question: true,
+  // Quizzes, «Персонажи дня», topics for a quiet chat and «Завтра в Скваде» (events.js).
+  chat_events: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
   chat_moderation: false,
 };

@@ -8,6 +8,7 @@ import { profileData } from './webapp.js';
 const OWNER_SETTINGS = {
   weekly: 'club_weekly', welcome: 'club_welcome', birthdays: 'club_birthdays',
   antiflood: 'chat_antiflood', captcha: 'chat_captcha', daily: 'chat_daily',
+  question: 'chat_question', events: 'chat_events',
 };
 
 function int(value) {

@@ -219,6 +219,11 @@ async function rawMap() {
 
 // Cities with the most people first; the unknown ones by the text as written.
 // Not cached: a member who just wrote «+Город» looks for themselves right away.
+// The calendar entries `days` from today (1 = tomorrow), for the announcements.
+export async function calendarOn(days, ts = nowInt()) {
+  return (await rawCalendar(ts)).filter((e) => e.in === days);
+}
+
 export async function cityMap() {
   const rows = await rawMap();
   const name = await namesOf(rows.map((r) => r.id));

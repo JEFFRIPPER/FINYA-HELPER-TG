@@ -53,7 +53,7 @@ function validInt(value, label, min = 0, max = Number.MAX_SAFE_INTEGER) {
 
 // Bonus XP (daily reward, quests, achievements, ...) from lib/club.js.
 // Stored in `events` with chat_id = 0 and message_id = the reward's key.
-export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly', 'farm', 'gift', 'casino', 'season']);
+export const BONUS_KINDS = new Set(['daily', 'quest', 'achievement', 'referral', 'invited', 'birthday', 'poll', 'weekly', 'farm', 'gift', 'casino', 'season', 'qpoll', 'quiz']);
 
 async function points(userId, start, end) {
   const row = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events

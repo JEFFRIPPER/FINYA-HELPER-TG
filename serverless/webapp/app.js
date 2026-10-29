@@ -104,6 +104,8 @@
     gift: ['redeem_fill', 'Перевод от участника', 'primary'],
     casino: ['diamond_fill', 'Выигрыш в казино', 'gold'],
     season: ['pumpkin_fill', 'Хэллоуин: сладость', 'gold'],
+    qpoll: ['how_to_vote_fill', 'Голос в опросе Фини', ''],
+    quiz: ['quiz_fill', 'Угадал загадку первым', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
@@ -2397,7 +2399,9 @@
         setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК'),
         setting('captcha', 'Капча для новичков', 'Кнопка «Я не бот», иначе кик через 5 минут'),
         setting('antiflood', 'Антифлуд в чатах', 'Мут на 10 минут за 8 сообщений за 10 секунд'),
-        setting('daily', 'Итоги дня в чатах', '23:55 МСК: топ-3 дня по сообщениям')),
+        setting('daily', 'Итоги дня в чатах', '23:55 МСК: топ-3 дня по сообщениям'),
+        setting('question', 'Опросы Фини', 'Каждые 3 часа с 9:00 до 00:00 МСК, через 3 часа итог и XP'),
+        setting('events', 'Ивенты Фини', 'Загадки, персонажи дня, темы в тишине, анонсы на завтра')),
       h('div', { class: 'row-btns' },
         h('button', { class: 'btn-filled ripple', onclick: openPollSheet }, icon('add'), 'Новый опрос'), preview),
       polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);

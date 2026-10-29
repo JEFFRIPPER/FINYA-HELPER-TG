@@ -609,3 +609,41 @@ export const asked_questions = table('asked_questions', {
   chat_id: integer('chat_id').notNull(),
   asked_at: integer('asked_at').notNull(),
 });
+
+// «Вопрос дня» polls: closed after 3 hours with the result and XP for each voter.
+export const question_polls = table('question_polls', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  poll_id: text('poll_id').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id').notNull(),
+  question: text('question').notNull(),
+  options: text('options').notNull(),
+  posted_at: integer('posted_at').notNull(),
+  closed: integer('closed').notNull().default(0),
+}, (t) => ({
+  byPoll: index('question_polls_by_poll').on(t.poll_id),
+  open: index('question_polls_open').on(t.closed, t.posted_at),
+}));
+
+export const question_votes = table('question_votes', {
+  poll_id: text('poll_id').notNull(),
+  user_id: integer('user_id').notNull(),
+  option: integer('option').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.poll_id, t.user_id] }),
+}));
+
+// Riddles, anagrams and sums: the first right answer in the chat takes the XP.
+export const quizzes = table('quizzes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  chat_id: integer('chat_id').notNull(),
+  question: text('question').notNull(),
+  answers: text('answers').notNull(),
+  shown: text('shown').notNull(),
+  posted_at: integer('posted_at').notNull(),
+  expires_at: integer('expires_at').notNull(),
+  winner_id: integer('winner_id'),
+  done: integer('done').notNull().default(0),
+}, (t) => ({
+  open: index('quizzes_open').on(t.chat_id, t.done),
+}));
