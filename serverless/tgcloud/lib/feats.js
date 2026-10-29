@@ -5,6 +5,7 @@
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { MSK_OFFSET, nowInt } from './util.js';
+import * as social from './social.js';
 import * as xp from './xp.js';
 
 const DAY = 86400;
@@ -174,7 +175,7 @@ export async function chatStats(userId, ts = nowInt()) {
   const counts = {};
   for (const r of await db.all(sql`SELECT key, n FROM counters WHERE user_id = ${userId}`)) counts[r.key] = r.n;
   const rep = await db.get(sql`SELECT points, given FROM reputation WHERE user_id = ${userId}`);
-  const spouse = await db.get(sql`SELECT since FROM spouses WHERE user_id = ${userId}`);
+  const spouse = await social.spouseOf(userId);
   const first = await one(sql`SELECT MIN(first_seen) AS n FROM chat_members WHERE user_id = ${userId} AND first_seen > 0`);
   const spent = {};
   for (const r of await db.all(sql`SELECT kind, COUNT(*) AS c FROM xp_spend WHERE user_id = ${userId} GROUP BY kind`)) spent[r.kind] = r.c;

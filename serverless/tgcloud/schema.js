@@ -317,12 +317,42 @@ export const rep_votes = table('rep_votes', {
   byTime: index('rep_votes_by_time').on(t.at),
 }));
 
-// A marriage is two rows, one per spouse; the primary key keeps everyone in one marriage.
+// The marriages before several spouses were allowed: one per member. Copied into
+// `marriages` once (social.js) and not written any more.
 export const spouses = table('spouses', {
   user_id: integer('user_id').primaryKey(),
   partner_id: integer('partner_id').notNull(),
   since: integer('since').notNull(),
 });
+
+// A marriage is two rows, one per spouse; a member may have up to social.MAX_SPOUSES.
+export const marriages = table('marriages', {
+  user_id: integer('user_id').notNull(),
+  partner_id: integer('partner_id').notNull(),
+  since: integer('since').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.user_id, t.partner_id] }),
+}));
+
+// Families: «Усыновить» in reply makes the other member a child. Up to two parents.
+export const children = table('children', {
+  child_id: integer('child_id').notNull(),
+  parent_id: integer('parent_id').notNull(),
+  since: integer('since').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.child_id, t.parent_id] }),
+  byParent: index('children_by_parent').on(t.parent_id),
+}));
+
+export const adopt_offers = table('adopt_offers', {
+  from_id: integer('from_id').notNull(),
+  to_id: integer('to_id').notNull(),
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id'),
+  created_at: integer('created_at').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.from_id, t.to_id] }),
+}));
 
 export const proposals = table('proposals', {
   from_id: integer('from_id').notNull(),
@@ -334,7 +364,7 @@ export const proposals = table('proposals', {
   pk: primaryKey({ columns: [t.from_id, t.to_id] }),
 }));
 
-// Dating («Встречаться»): the step before marriage. Both rows, like spouses; it lasts
+// Dating («Встречаться»): the step before marriage. Both rows, like marriages; it lasts
 // until one of them says «Расстаться» or they marry.
 export const dating = table('dating', {
   user_id: integer('user_id').primaryKey(),

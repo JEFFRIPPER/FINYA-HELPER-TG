@@ -44,7 +44,7 @@ test('a tap on a person in the top opens their card: rank, pair, badges, city, n
   await member(2, 'Аня', 300, { username: 'anya', city: 'Москва' });
   await member(3, 'Боря', 120);
   const ts = nowInt();
-  await db.run('INSERT INTO spouses (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?)', [ts - 40 * DAY, ts - 40 * DAY]);
+  await db.run('INSERT INTO marriages (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?)', [ts - 40 * DAY, ts - 40 * DAY]);
   await db.run("INSERT INTO achievements (user_id, code, unlocked_at) VALUES (2, 'first_comment', 1), (2, 'nick', 2)");
 
   const data = await profileData(user(3));
@@ -71,6 +71,12 @@ test('a tap on a person in the top opens their card: rank, pair, badges, city, n
   assert.equal(borya.pair.ref, anya.ref);
   // Nothing in the card is a Telegram ID.
   assert.doesNotMatch(JSON.stringify(c), /"(user_id|id|partner_id)":/);
+  // Several spouses: the chip names them all and opens nobody's card.
+  await member(4, 'Вика', 50);
+  await db.run('INSERT INTO marriages (user_id, partner_id, since) VALUES (2, 4, ?), (4, 2, ?)', [ts - DAY, ts - DAY]);
+  const two = await card(3, anya.ref);
+  assert.equal(two.pair.name, 'Боря, Вика');
+  assert.equal(two.pair.ref, null);
 });
 
 test('the member card refuses a made-up ref and a call from outside Telegram', async () => {

@@ -14,6 +14,7 @@ import * as staff from './staff.js';
 import * as seasons from './seasons.js';
 import * as hall from './hall.js';
 import * as fire from './fire.js';
+import * as social from './social.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -251,7 +252,7 @@ export async function profileData(user) {
 export async function memberView(viewerId, ref) {
   const userId = await userOfRef(ref);
   if (!userId) return null;
-  const [row, name, username, extras, looks, showcase, badges, info, first, partner] = await Promise.all([
+  const [row, name, username, extras, looks, showcase, badges, info, first, partner, spouses] = await Promise.all([
     db.get(sql`SELECT user_id, xp, manual_rank FROM profiles WHERE user_id = ${userId}`),
     nameOf(userId),
     usernameOf(userId),
@@ -262,9 +263,11 @@ export async function memberView(viewerId, ref) {
     db.get(sql`SELECT city FROM profile_info WHERE user_id = ${userId}`),
     db.get(sql`SELECT MIN(first_seen) AS t FROM chat_members WHERE user_id = ${userId} AND first_seen > 0`),
     fire.partnerOf(userId),
+    social.spousesOf(userId),
   ]);
   const p = row || { user_id: userId, xp: 0, manual_rank: null };
-  const partnerRef = partner ? (await refsOf([partner])).get(partner) || null : null;
+  // The pair chip opens the partner's card; with several spouses the chip names them all, so it opens none.
+  const partnerRef = partner && spouses.length < 2 ? (await refsOf([partner])).get(partner) || null : null;
   return {
     ref,
     me: userId === viewerId,
