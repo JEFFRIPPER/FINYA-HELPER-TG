@@ -1,9 +1,10 @@
 // «Вопрос дня»: every 3 hours from 9:00 to 00:00 (Moscow) Финя posts an absurd poll
-// in each Squad chat to talk about. The questions go round in order, so none repeats
-// until all were asked.
+// in each Squad chat to talk about. First the hand-written QUESTIONS, then thousands
+// from question_gen.js; asked_questions keeps every one ever asked, so none repeats.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import * as feats from './feats.js';
+import { GENERATED, questionAt } from './question_gen.js';
 import { getSetting, setSetting } from './store.js';
 import { MSK_OFFSET, nowInt } from './util.js';
 import { squadChatIds } from './xpchat.js';
@@ -109,25 +110,38 @@ export const QUESTIONS = [
   ['Ты мог бы год не мыться за 1 000 000 ₽?', ['Да', 'Нет', 'Я и так не моюсь', 'За 2 000 000 — да']],
 ];
 
-// The next question for a chat, round-robin by a counter in settings. → [n, question]
-async function nextQuestion(chatId) {
-  const key = `question_next:${chatId}`;
-  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${key}, '0')`);
-  const r = await db.run(sql`UPDATE settings SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)
-    WHERE key = ${key} RETURNING value`);
-  const n = Number(r.rows[0].value) - 1;
-  return [n, QUESTIONS[((n % QUESTIONS.length) + QUESTIONS.length) % QUESTIONS.length]];
+// The n-th question of the whole sequence: the hand-written ones, then the generated.
+export function questionNo(n) {
+  if (n < QUESTIONS.length) return QUESTIONS[n];
+  return questionAt((n - QUESTIONS.length) % GENERATED);
 }
 
-export async function postQuestion(chatId) {
-  const [n, [question, options]] = await nextQuestion(chatId);
+// The next question nobody was asked yet, in any chat. One counter for all chats.
+// The journal skips any that came back after the lists changed. → [n, question]
+async function nextQuestion(chatId, ts) {
+  const key = 'question_seq';
+  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${key}, '0')`);
+  for (let tries = 0; tries < 50; tries++) {
+    const r = await db.run(sql`UPDATE settings SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)
+      WHERE key = ${key} RETURNING value`);
+    const n = Number(r.rows[0].value) - 1;
+    const q = questionNo(n);
+    const fresh = await db.run(sql`INSERT OR IGNORE INTO asked_questions (question, chat_id, asked_at)
+      VALUES (${q[0]}, ${chatId}, ${ts})`);
+    if (fresh.rowsAffected === 1) return [n, q];
+  }
+  throw new Error('no fresh poll question left');
+}
+
+export async function postQuestion(chatId, ts = nowInt()) {
+  const [, [question, options]] = await nextQuestion(chatId, ts);
   const sent = await api.sendPoll({
     chat_id: chatId,
     question: `❓ ${question}`,
     options: options.map((text) => ({ text })),
     is_anonymous: false,
   });
-  if (sent && sent.poll) await setSetting(`question_poll:${chatId}:${n % POLLS_KEPT}`, String(sent.poll.id));
+  if (sent && sent.poll) await setSetting(`question_poll:${chatId}:${Math.floor(ts / QUESTION_EVERY) % POLLS_KEPT}`, String(sent.poll.id));
   return sent;
 }
 
@@ -152,7 +166,7 @@ export async function tick(ts = nowInt()) {
       WHERE key = ${key} AND CAST(value AS INTEGER) < ${slot}`);
     if (won.rowsAffected !== 1) continue;
     try {
-      await postQuestion(chatId);
+      await postQuestion(chatId, ts);
     } catch {
       // No rights to post polls in that chat.
     }

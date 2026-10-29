@@ -5,6 +5,7 @@ import { db, fetchMock } from 'sdk';
 import { onMessage } from '../tgcloud/lib/bot.js';
 import { countdownTarget, parseHoroscope, signByName, zodiac } from '../tgcloud/lib/extras.js';
 import * as questions from '../tgcloud/lib/questions.js';
+import { GENERATED } from '../tgcloud/lib/question_gen.js';
 import { setSetting } from '../tgcloud/lib/store.js';
 import { nowInt } from '../tgcloud/lib/util.js';
 import { checkErrors, DISCUSSION, groupMessage, OWNER, privateMessage, replies, setup, user } from './helpers.mjs';
@@ -143,12 +144,29 @@ test('question polls: every 3 hours from 9:00, none at night, once per slot, swi
   assert.equal(api.called('sendPoll').length, 5);
 });
 
-test('question polls: Telegram limits, no repeats', () => {
-  assert.ok(questions.QUESTIONS.length >= 90);
-  assert.equal(new Set(questions.QUESTIONS.map(([q]) => q)).size, questions.QUESTIONS.length);
-  for (const [q, options] of questions.QUESTIONS) {
+test('question polls: thousands, all distinct, within Telegram limits', () => {
+  const total = questions.QUESTIONS.length + GENERATED;
+  assert.ok(total >= 4000, String(total));
+  const seen = new Set();
+  for (let n = 0; n < total; n++) {
+    const [q, options] = questions.questionNo(n);
+    assert.ok(!seen.has(q), q);
+    seen.add(q);
     assert.ok(q.length + 2 <= 300, q);
     assert.ok(options.length >= 2 && options.length <= 10, q);
+    assert.equal(new Set(options).size, options.length, q);
     for (const o of options) assert.ok(o.length >= 1 && o.length <= 100, o);
   }
+});
+
+test('question polls: never the same question twice, in any chat', async () => {
+  const api = await setup();
+  const other = -100777;
+  for (let i = 0; i < 30; i++) await questions.postQuestion(i % 2 ? other : DISCUSSION.id);
+  // The lists changed and the counter went back: the journal still skips the asked ones.
+  await db.run(`UPDATE settings SET value = '0' WHERE key = 'question_seq'`);
+  for (let i = 0; i < 10; i++) await questions.postQuestion(DISCUSSION.id);
+  const asked = api.called('sendPoll').map((c) => c.params.question);
+  assert.equal(asked.length, 40);
+  assert.equal(new Set(asked).size, 40);
 });
