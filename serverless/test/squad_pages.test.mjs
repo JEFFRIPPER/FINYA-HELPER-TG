@@ -51,7 +51,7 @@ test('Зал славы: records and who holds them; the secret one only once so
   await member(2, 'Аня', { msgs: 500 });
   await member(3, 'Боря', { msgs: 20 });
   await member(4, 'Вика', { msgs: 40 });
-  await pair('spouses', 2, 3, T - 400 * DAY);
+  await pair('marriages', 2, 3, T - 400 * DAY);
   await db.run('INSERT INTO chat_activity (chat_id, user_id, day, msgs) VALUES (?, 2, ?, 120), (?, 2, ?, 30), (?, 4, ?, 31)',
     [DISCUSSION.id, today - 1, DISCUSSION.id, today - 2, DISCUSSION.id, today - 3]);
   await db.run('INSERT INTO reputation (user_id, points, given) VALUES (4, 77, 0)');
@@ -86,7 +86,7 @@ test('Календарь: birthdays, pair anniversaries and holidays for 30 days
   await member(7, 'Ева');
   await db.run('INSERT INTO birthdays (user_id, day, month, announce, updated_at) VALUES (2, 28, 10, 1, 0), (5, 29, 10, 1, 0), (6, 30, 10, 0, 0), (3, 3, 11, 1, 0)');
   // One year married in 9 days; 100 days together tomorrow.
-  await pair('spouses', 2, 3, T - 356 * DAY);
+  await pair('marriages', 2, 3, T - 356 * DAY);
   await pair('dating', 6, 7, T - 99 * DAY);
   const { calendar } = await hall.squadPages(T);
   const line = (e) => `${e.in} ${e.kind} ${e.title}${e.sub ? ` · ${e.sub}` : ''}`;
@@ -106,7 +106,7 @@ test('Летопись: weddings, citizens, positions and records, newest first'
   await member(2, 'Аня');
   await member(3, 'Боря');
   await member(4, 'Вика');
-  await pair('spouses', 2, 3, T - 10 * DAY);
+  await pair('marriages', 2, 3, T - 10 * DAY);
   await db.run("INSERT INTO squad_chats (chat_id, title, added_by, added_at) VALUES (?, 'SQUAD FAMILY CHAT', 1, 0)", [DISCUSSION.id]);
   await db.run('INSERT INTO citizens (user_id, chat_id, since, set_at) VALUES (4, ?, ?, ?)', [DISCUSSION.id, T - 90 * DAY, T - 2 * DAY]);
   await db.run("INSERT INTO positions (user_id, code, given_by, given_at) VALUES (2, 'creative', 1, ?)", [T - 5 * DAY]);

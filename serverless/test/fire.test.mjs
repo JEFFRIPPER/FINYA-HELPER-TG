@@ -28,7 +28,7 @@ const say = (from, text, to) => onMessage(msg(from, text, to));
 const fires = (api) => api.called('sendMessage').filter((x) => /огон[её]к пары/iu.test(x.params.text));
 
 async function married(x, y, since = T - 30 * DAY) {
-  await db.run('INSERT INTO spouses (user_id, partner_id, since) VALUES (?, ?, ?), (?, ?, ?)', [x.id, y.id, since, y.id, x.id, since]);
+  await db.run('INSERT INTO marriages (user_id, partner_id, since) VALUES (?, ?, ?), (?, ?, ?)', [x.id, y.id, since, y.id, x.id, since]);
 }
 
 // Both reply to each other on the day `ts` falls on.

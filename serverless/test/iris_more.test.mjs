@@ -242,7 +242,7 @@ test('anniversaries: round numbers of days, once a day from 12:00', async () => 
   const now = Date.UTC(2026, 9, 21, 10, 0, 0);
   Date.now = () => now;
   const ts = nowInt();
-  await db.run('INSERT INTO spouses (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?), (4, 5, ?), (5, 4, ?)',
+  await db.run('INSERT INTO marriages (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?), (4, 5, ?), (5, 4, ?)',
     [ts - 100 * DAY - 60, ts - 100 * DAY - 60, ts - 99 * DAY, ts - 99 * DAY]);
   await db.run(`INSERT INTO chat_members (chat_id, user_id, name, username, status, first_seen, last_active, msgs)
     VALUES (?, 2, 'Аня', '', 'member', ?, ?, 1), (?, 4, 'Вова', '', 'member', ?, ?, 1)`, [DISCUSSION.id, ts, ts, DISCUSSION.id, ts, ts]);
@@ -270,7 +270,7 @@ test('wedding names like in Russia: «мой брак», «браки» and the 
   const now = Date.UTC(2026, 9, 21, 10, 0, 0);
   Date.now = () => now;
   const ts = nowInt();
-  await db.run('INSERT INTO spouses (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?)',
+  await db.run('INSERT INTO marriages (user_id, partner_id, since) VALUES (2, 3, ?), (3, 2, ?)',
     [ts - 365 * 5 * DAY - 60, ts - 365 * 5 * DAY - 60]);
   await db.run(`INSERT INTO chat_members (chat_id, user_id, name, username, status, first_seen, last_active, msgs)
     VALUES (?, 2, 'Аня', '', 'member', ?, ?, 1)`, [DISCUSSION.id, ts, ts]);
