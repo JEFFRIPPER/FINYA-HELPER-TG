@@ -1551,6 +1551,7 @@ const HELP = {
   ]],
   owner: ['👑 Владельцу', () => [
     ['👑 +РП Команда = Действие · -РП Команда', 'Свои РП-действия'],
+    ['👑 Поженить @ник @ник · Развести @ник @ник', 'Брак или развод без предложения и кнопок, в чате Сквада'],
     ['👑 +Должность Креативщик · -Должность … (ответом)', `Назначить или снять должность, до ${staff.PER_USER} на человека. «-Должность» без названия снимает все`],
     ['👑 Антифлуд / Капча / Модерация Вкл/Выкл', 'Защита чата'],
     ['👑 Итоги Дня Вкл/Выкл', 'Топ-3 дня в каждом чате Сквада в 23:55 МСК'],
@@ -1775,6 +1776,10 @@ const USAGE = [
     how: [['Финя, Навигатор', 'Поставить и закрепить в этом чате'], ['Финя, Навигатор Выкл', 'Убрать из этого чата']],
   },
   {
+    keys: ['поженить', 'развести'], title: '👑 Поженить · Развести',
+    about: () => `Только владелец, в чате Сквада. Без предложения и кнопок, лимит тот же: до ${social.MAX_SPOUSES} браков у каждого`,
+    how: [['Поженить @ник @ник', 'Сразу в брак, другие супруги получат новость'], ['Развести @ник @ник', 'Расторгнуть их брак']],
+  },  {
     keys: ['+рп', '-рп'], title: '👑 +РП',
     about: 'Только владелец: свои РП-действия',
     how: [['+РП Погладить = 🤚 гладит', 'Команда, знак «=», эмодзи и глагол'], ['-РП Погладить', 'Удалить своё действие']],
@@ -1890,7 +1895,75 @@ export async function historyKeyboard(chat) {
   return keyboard([[button('📥 Открыть загрузку', { url: `https://t.me/${me.username}?start=history` })]]);
 }
 
+// Every member named in the message: @username of someone Финя saw here, or a text mention.
+async function targetsOf(message) {
+  const me = await getMe();
+  const text = String(message.text || '');
+  const out = [];
+  for (const e of message.entities || []) {
+    let who = null;
+    if (e.type === 'text_mention' && e.user && !e.user.is_bot) who = await withNick(person(e.user));
+    if (e.type === 'mention') {
+      const username = text.slice(e.offset + 1, e.offset + e.length);
+      if (username.toLowerCase() === String(me.username || '').toLowerCase()) continue;
+      const found = await members.byUsername(message.chat.id, username);
+      who = found ? await withNick({ id: found.id, name: found.name, isBot: false }) : { missing: username };
+    }
+    if (who && !out.some((x) => x.id && x.id === who.id)) out.push(who);
+  }
+  return out;
+}
+
+// The owner's «Поженить @a @b» and «Развести @a @b». → true when it was one.
+async function ownerPair(message, rest) {
+  const m = /^(поженить|развести)(?:\s|$)/u.exec(norm(rest));
+  // Without anyone named it is just a word in the talk.
+  if (!m || !(message.entities || []).some((e) => ['mention', 'text_mention'].includes(e.type))) return false;
+  const marry = m[1] === 'поженить';
+  const word = marry ? 'Поженить' : 'Развести';
+  if (!isGroupChat(message.chat)) {
+    await say(message, `💍 Это работает в чате Сквада: «${word} @ник @ник».`);
+    return true;
+  }
+  const people = await targetsOf(message);
+  const missing = people.find((x) => x.missing);
+  if (missing) {
+    await say(message, `💍 Не знаю @${escapeHtml(missing.missing)}: Финя ещё не видела, как этот участник пишет здесь.`, { temp: true });
+    return true;
+  }
+  if (people.length !== 2) {
+    await say(message, `💍 Нужны два участника: «${word} @ник @ник».`, { temp: true });
+    return true;
+  }
+  const [a, b] = people;
+  const names = `${mention(a.id, a.name)} и ${mention(b.id, b.name)}`;
+  if (!marry) {
+    await say(message, (await social.divorce(a.id, b.id))
+      ? `💔 По решению владельца ${names} больше не в браке.`
+      : `💔 ${names} и так не в браке.`);
+    return true;
+  }
+  try {
+    await social.marryByOwner(a.id, b.id);
+  } catch (err) {
+    if (!(err instanceof social.SocialError)) throw err;
+    await say(message, `💍 ${err.message}`, { temp: true });
+    return true;
+  }
+  await say(message, `💒 По решению владельца ${names} теперь в браке!\nСовет да любовь 🥂${await spouseNews(a.id, b.id)}`);
+  return true;
+}
+
+// «💌 Новость для других супругов: …» after a wedding, or ''.
+async function spouseNews(fromId, toId) {
+  const others = [...await social.spousesOf(fromId), ...await social.spousesOf(toId)]
+    .map((x) => x.partner_id).filter((id, i, list) => id !== fromId && id !== toId && list.indexOf(id) === i);
+  if (!others.length) return '';
+  return `\n💌 Новость для других супругов: ${(await Promise.all(others.map(async (id) => mention(id, await members.nameOf(id))))).join(', ')}`;
+}
+
 async function ownerCommand(message, rest) {
+  if (await ownerPair(message, rest)) return true;
   if (/^обновить\s+инфо$/u.test(norm(rest))) {
     await say(message, HISTORY_TEXT, { markup: await historyKeyboard(message.chat), temp: true });
     return true;
@@ -2524,11 +2597,7 @@ async function marryButton(query, yes, fromId, toId) {
     return;
   }
   // Earlier spouses hear the news by a mention.
-  const others = [...await social.spousesOf(fromId), ...await social.spousesOf(toId)]
-    .map((x) => x.partner_id).filter((id, i, list) => id !== fromId && id !== toId && list.indexOf(id) === i);
-  const news = others.length
-    ? `\n💌 Новость для других супругов: ${(await Promise.all(others.map(async (id) => mention(id, await members.nameOf(id))))).join(', ')}`
-    : '';
+  const news = await spouseNews(fromId, toId);
   await answer(query, 'Совет да любовь! 💍');
   await edit(query, `💒 ${a} и ${b} теперь в браке!\nСовет да любовь 🥂${news}`);
 }
