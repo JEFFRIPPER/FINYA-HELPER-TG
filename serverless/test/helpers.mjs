@@ -27,6 +27,8 @@ export async function setup(overrides = {}) {
   clearEmojiCache();
   // The current news is out already: only the CHANGELOG tests post it.
   await setSetting('changelog_posted', CHANGES[0].id);
+  // Финя's own events depend on the hour: only the events tests switch them on.
+  await setSetting('chat_events', false);
   apiMock.reset();
   apiMock.handler = async (method, params) => {
     if (overrides[method]) return overrides[method](params);

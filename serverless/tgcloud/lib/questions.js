@@ -1,19 +1,21 @@
 // «Вопрос дня»: every 3 hours from 9:00 to 00:00 (Moscow) Финя posts an absurd poll
 // in each Squad chat to talk about. First the hand-written QUESTIONS, then thousands
 // from question_gen.js; asked_questions keeps every one ever asked, so none repeats.
+// After 3 hours the poll is closed: the result goes to the chat, each voter gets XP.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import * as feats from './feats.js';
 import { GENERATED, questionAt } from './question_gen.js';
 import { getSetting, setSetting } from './store.js';
-import { MSK_OFFSET, nowInt } from './util.js';
+import { boldHtml, escapeHtml, MSK_OFFSET, nowInt, plural } from './util.js';
+import * as xp from './xp.js';
 import { squadChatIds } from './xpchat.js';
 
 export const QUESTION_EVERY = 3 * 3600;
 // Slots start at 00:00, 03:00 … 21:00; the night ones are skipped.
 const QUIET_SLOTS = new Set([1, 2]);
-// The polls of the last day count for «Мнение дня».
-const POLLS_KEPT = 8;
+export const POLL_OPEN = 3 * 3600;
+export const VOTE_XP = 5;
 
 export const QUESTIONS = [
   ['Тебе дают миллион, но всю жизнь ты ходишь в костюме банана. Берёшь?', ['Беру, я и так банан 🍌', 'Только если костюм с подогревом', 'Нет, у меня гордость', 'За два миллиона подумаю']],
@@ -141,24 +143,101 @@ export async function postQuestion(chatId, ts = nowInt()) {
     options: options.map((text) => ({ text })),
     is_anonymous: false,
   });
-  if (sent && sent.poll) await setSetting(`question_poll:${chatId}:${Math.floor(ts / QUESTION_EVERY) % POLLS_KEPT}`, String(sent.poll.id));
+  if (sent && sent.poll) {
+    await db.run(sql`INSERT INTO question_polls (poll_id, chat_id, message_id, question, options, posted_at)
+      VALUES (${String(sent.poll.id)}, ${chatId}, ${sent.message_id}, ${question}, ${JSON.stringify(options)}, ${ts})`);
+  }
   return sent;
 }
 
-// poll_answer: a vote in a recent «Вопрос дня» counts once a day; taking it back does not.
+// poll_answer: the vote is kept for the result; a vote in a «Вопрос дня» counts once a
+// day for «Мнение дня»; taking it back drops the vote but not the day.
 export async function onPollAnswer(answer) {
   const u = answer.user;
-  if (!u || u.is_bot || !answer.option_ids || !answer.option_ids.length) return;
-  const ours = await db.get(sql`SELECT 1 AS n FROM settings WHERE key LIKE 'question_poll:%'
-    AND value = ${JSON.stringify(String(answer.poll_id))}`);
+  if (!u || u.is_bot || !answer.option_ids) return;
+  const pollId = String(answer.poll_id);
+  const poll = await db.get(sql`SELECT closed FROM question_polls WHERE poll_id = ${pollId}`);
+  if (poll && !poll.closed) {
+    if (answer.option_ids.length) {
+      await db.run(sql`INSERT INTO question_votes (poll_id, user_id, option) VALUES (${pollId}, ${u.id}, ${answer.option_ids[0]})
+        ON CONFLICT (poll_id, user_id) DO UPDATE SET option = excluded.option`);
+    } else {
+      await db.run(sql`DELETE FROM question_votes WHERE poll_id = ${pollId} AND user_id = ${u.id}`);
+    }
+  }
+  if (!answer.option_ids.length) return;
+  // Polls posted before the question_polls table are known by settings only.
+  const ours = poll || await db.get(sql`SELECT 1 AS n FROM settings WHERE key LIKE 'question_poll:%'
+    AND value = ${JSON.stringify(pollId)}`);
   if (ours) await feats.bumpDaily(u.id, 'qday');
 }
 
-// From tick(): once per 3-hour slot in each Squad chat, at the first wake-up within it.
+const MEDALS = ['🥇', '🥈', '🥉'];
+
+// A line on how the Squad voted, by the winner's share.
+export function verdict(shares) {
+  const [a, b] = shares;
+  if (b != null && a === b) return '⚖️ Ничья. Сквад расколот, готовьте вилы.';
+  if (a >= 80) return '🤝 Сквад единодушен. Подозрительно, кто-то кого-то купил.';
+  if (a >= 60) return '😎 Большинство решило. Меньшинство, ваше мнение очень важно для нас (нет).';
+  if (a >= 40) return '🔥 Почти поровну. Идите выясняйте в чате.';
+  return '🌀 Сквад разбежался по всем вариантам. Ничего не понятно, но очень интересно.';
+}
+
+export function resultText(poll, votes) {
+  const options = JSON.parse(poll.options);
+  const head = `📊 Итог опроса: «${escapeHtml(poll.question)}»`;
+  if (!votes.length) return `${head}
+
+💀 Никто не ответил. Сквад, вы живые?`;
+  const counts = options.map((text, i) => ({ text, n: votes.filter((v) => v.option === i).length }));
+  const ranked = counts.filter((c) => c.n).sort((x, y) => y.n - x.n);
+  const shares = ranked.map((c) => Math.round((c.n * 100) / votes.length));
+  const lines = ranked.map((c, i) => `${MEDALS[i] || '▫️'} ${escapeHtml(c.text)} — ${shares[i]}% (${c.n})`);
+  const word = plural(votes.length, 'голос', 'голоса', 'голосов');
+  return `${head}
+
+${lines.join('\n')}
+
+👥 ${votes.length} ${word} · каждому +${VOTE_XP} XP
+${verdict(shares)}`;
+}
+
+// Polls open for POLL_OPEN or longer: closed, the result posted, the voters paid.
+// Not at night: the last poll of the day closes in the morning.
+export async function closePolls(ts = nowInt()) {
+  const hour = Math.floor(((ts + MSK_OFFSET) % 86400) / 3600);
+  if (hour >= 1 && hour < 9) return;
+  const due = await db.all(sql`SELECT * FROM question_polls WHERE closed = 0 AND posted_at <= ${ts - POLL_OPEN}
+    ORDER BY posted_at LIMIT 5`);
+  for (const poll of due) {
+    const won = await db.run(sql`UPDATE question_polls SET closed = 1 WHERE id = ${poll.id} AND closed = 0`);
+    if (won.rowsAffected !== 1) continue;
+    const votes = await db.all(sql`SELECT user_id, option FROM question_votes WHERE poll_id = ${poll.poll_id}`);
+    for (const v of votes) await xp.grant(v.user_id, 'qpoll', poll.id, VOTE_XP, ts);
+    try {
+      await api.stopPoll({ chat_id: poll.chat_id, message_id: poll.message_id });
+    } catch {
+      // Too old or deleted: the result goes out anyway.
+    }
+    try {
+      await api.sendMessage({
+        chat_id: poll.chat_id, parse_mode: 'HTML', text: boldHtml(resultText(poll, votes)),
+        reply_parameters: { message_id: poll.message_id, allow_sending_without_reply: true },
+      });
+    } catch {
+      // No rights in that chat any more.
+    }
+  }
+}
+
+// From tick(): results of the old polls, then once per 3-hour slot in each Squad chat
+// a new one, at the first wake-up within it.
 export async function tick(ts = nowInt()) {
+  if (!(await getSetting('chat_question'))) return;
+  await closePolls(ts);
   const slot = Math.floor((ts + MSK_OFFSET) / QUESTION_EVERY);
   if (QUIET_SLOTS.has(slot % (86400 / QUESTION_EVERY))) return;
-  if (!(await getSetting('chat_question'))) return;
   for (const chatId of await squadChatIds()) {
     const key = `question_slot:${chatId}`;
     await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${key}, ${String(slot - 1)})`);

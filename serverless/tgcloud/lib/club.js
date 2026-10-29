@@ -793,6 +793,8 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
       antiflood: Boolean(await getSetting('chat_antiflood')),
       captcha: Boolean(await getSetting('chat_captcha')),
       daily: Boolean(await getSetting('chat_daily')),
+      question: Boolean(await getSetting('chat_question')),
+      events: Boolean(await getSetting('chat_events')),
     };
   }
   return data;
