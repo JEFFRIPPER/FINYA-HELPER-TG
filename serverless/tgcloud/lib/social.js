@@ -146,6 +146,22 @@ async function takeProposal(fromId, toId) {
 
 export async function accept(fromId, toId) {
   if (!(await takeProposal(fromId, toId))) throw new SocialError('Предложение уже не действует.');
+  return wed(fromId, toId);
+}
+
+// The owner's «Поженить @a @b»: no proposal, the same limits.
+export async function marryByOwner(a, b) {
+  if (a === b) throw new SocialError('Нужны два разных участника.');
+  if (await marriageOf(a, b)) throw new SocialError('Они и так в браке.');
+  for (const [x, y] of [[a, b], [b, a]]) {
+    if ((await spousesOf(x)).length >= MAX_SPOUSES) throw new SocialError(`У одного из них уже ${MAX_SPOUSES} браков, это максимум.`);
+    const d = await partnerOf(x);
+    if (d && d.partner_id !== y) throw new SocialError('Один из них встречается с другим человеком: сначала «Расстаться».');
+  }
+  return wed(a, b);
+}
+
+async function wed(fromId, toId) {
   const ts = nowInt();
   await ready();
   // Both rows in one statement, and only while both still have room for one more.

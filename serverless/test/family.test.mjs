@@ -7,7 +7,7 @@ import { onCallbackQuery, onMessage } from '../tgcloud/lib/bot.js';
 import { setSetting } from '../tgcloud/lib/store.js';
 import * as social from '../tgcloud/lib/social.js';
 import { nowInt } from '../tgcloud/lib/util.js';
-import { BOT, callback, checkErrors, DISCUSSION, groupMessage, setup, user, replies } from './helpers.mjs';
+import { BOT, callback, checkErrors, DISCUSSION, groupMessage, OWNER, setup, user, replies } from './helpers.mjs';
 
 afterEach(async () => {
   await checkErrors();
@@ -192,4 +192,30 @@ test('«Созвать всех» with the reason on the next lines, without «�
   const n = replies(api).length;
   await say(user(21), 'созвать всех бы на шашлыки');
   assert.equal(replies(api).length, n);
+});
+
+test('the owner marries and divorces two members by @username', async () => {
+  const api = await setup();
+  await setSetting('chat_captcha', false);
+  const owner = OWNER;
+  const a = user(1, { first_name: 'Аня', username: 'anya' });
+  const b = user(2, { first_name: 'Боря', username: 'borya' });
+  for (const u of [a, b]) await say(u, 'привет');
+  const at = (text) => ({ entities: [...text.matchAll(/@\w+/g)].map((m) => ({ type: 'mention', offset: m.index, length: m[0].length })) });
+  // Not the owner: an ordinary word.
+  const n = replies(api).length;
+  await say(a, 'поженить @anya @borya', at('поженить @anya @borya'));
+  assert.equal(replies(api).length, n);
+  await say(owner, 'Поженить @anya @borya', at('Поженить @anya @borya'));
+  assert.match(lastSent(api), /По решению владельца .*Аня.* и .*Боря.* теперь в браке!/);
+  assert.equal(await count('marriages'), 2);
+  await say(owner, 'Поженить @anya @borya', at('Поженить @anya @borya'));
+  assert.match(lastSent(api), /и так в браке/);
+  await say(owner, 'Поженить @anya @nobody', at('Поженить @anya @nobody'));
+  assert.match(lastSent(api), /Не знаю @nobody/);
+  await say(owner, 'Поженить @anya', at('Поженить @anya'));
+  assert.match(lastSent(api), /Нужны два участника/);
+  await say(owner, 'Развести @anya @borya', at('Развести @anya @borya'));
+  assert.match(lastSent(api), /больше не в браке/);
+  assert.equal(await count('marriages'), 0);
 });
