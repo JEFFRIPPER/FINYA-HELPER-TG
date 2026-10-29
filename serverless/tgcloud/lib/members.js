@@ -4,7 +4,7 @@
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { bumpHour } from './feats.js';
-import { fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
+import { fullName, MSK_OFFSET, nowInt, randomHex, truncate, weekStart } from './util.js';
 
 const DAY = 86400;
 const RECENT_DAYS = 14;
@@ -124,6 +124,38 @@ export async function usernameOf(userId) {
   if (row) return row.username;
   const p = await db.get(sql`SELECT username FROM profiles WHERE user_id = ${userId}`);
   return p && p.username ? p.username : '';
+}
+
+// Random refs of members for the Mini App (member_refs): a tap on a person sends the
+// ref back, so no Telegram ID leaves the bot. → Map(user_id → ref); new ones are made.
+export const REF_RE = /^[0-9a-f]{12}$/;
+
+export async function refsOf(ids) {
+  const list = [...new Set(ids)].filter((id) => Number.isInteger(id) && id > 0);
+  const out = new Map();
+  if (!list.length) return out;
+  const json = JSON.stringify(list);
+  const read = async () => {
+    for (const r of await db.all(sql`SELECT user_id, ref FROM member_refs WHERE user_id IN (SELECT value FROM json_each(${json}))`)) {
+      out.set(r.user_id, r.ref);
+    }
+  };
+  await read();
+  // A clash of two random refs is ignored and tried once more.
+  for (let round = 0; round < 2 && out.size < list.length; round++) {
+    for (const id of list) {
+      if (!out.has(id)) await db.run(sql`INSERT OR IGNORE INTO member_refs (user_id, ref) VALUES (${id}, ${randomHex(6)})`);
+    }
+    await read();
+  }
+  return out;
+}
+
+// The member behind a ref, or null.
+export async function userOfRef(ref) {
+  if (typeof ref !== 'string' || !REF_RE.test(ref)) return null;
+  const row = await db.get(sql`SELECT user_id FROM member_refs WHERE ref = ${ref}`);
+  return row ? row.user_id : null;
 }
 
 export async function byUsername(chatId, username) {

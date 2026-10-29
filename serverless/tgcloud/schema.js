@@ -595,3 +595,10 @@ export const tree_toys = table('tree_toys', {
 }, (t) => ({
   bySeason: index('tree_toys_by_season').on(t.season, t.user_id),
 }));
+
+// A random ref for each member the Mini App shows: a tap on a person sends the ref,
+// never the Telegram ID. Made once, the first time the member is listed.
+export const member_refs = table('member_refs', {
+  user_id: integer('user_id').primaryKey(),
+  ref: text('ref').notNull().unique(),
+});

@@ -170,7 +170,7 @@
   var prevXp = 0;
   var prevPercent = null;
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
-  var state = { data: null, tab: 'activity', top: 'all' };
+  var state = { data: null, tab: 'activity', top: 'all', squad: 'main' };
   var page = null;
   var me = null;
   var view = null;
@@ -432,6 +432,106 @@
     return frame ? h('div', { class: 'frame ' + frame }, box) : box;
   }
 
+  // Someone else's avatar: the first letter (the Mini App has no photos of others), in their frame.
+  function personAvatar(name, style) {
+    var box = h('div', { class: 'avatar', 'aria-hidden': 'true' }, Array.from(name || '?')[0].toUpperCase());
+    var frame = style && style.frame;
+    return frame ? h('div', { class: 'frame ' + frame }, box) : box;
+  }
+
+  // ---- a member's card: a tap on a person anywhere in the app -----------------------------
+
+  // Opens in a new sheet, or in place of the open one with «Назад» to it.
+  function showPerson(ref) {
+    if (!ref) return;
+    haptic();
+    var open = document.querySelector('.sheet:not(.leave) .sheet-body');
+    if (open) {
+      personInto(open, ref, Array.prototype.slice.call(open.childNodes), open.scrollTop);
+      return;
+    }
+    var content = h('div', { class: 'sheet-body' });
+    if (!openSheet(content)) return;
+    personInto(content, ref, null, 0);
+  }
+
+  function closeSheet() {
+    var scrim = document.querySelector('.scrim:not(.leave)');
+    if (scrim) scrim.click();
+  }
+
+  function personInto(content, ref, prev, prevScroll) {
+    var back = prev ? function () {
+      haptic();
+      content.replaceChildren.apply(content, prev);
+      content.scrollTop = prevScroll || 0;
+    } : null;
+    var bottom = function () {
+      return h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: back || closeSheet }, back ? 'Назад' : 'Закрыть');
+    };
+    content.replaceChildren(h('div', { class: 'state small' }, loader()));
+    content.scrollTop = 0;
+    api('member', { ref: ref }).then(function (p) {
+      if (!content.isConnected) return;
+      content.replaceChildren.apply(content, personBody(p, content).concat([bottom()]));
+    }, function (err) {
+      if (!content.isConnected) return;
+      vibrate('error');
+      content.replaceChildren(h('p', { class: 'empty', text: errorText(err) }), bottom());
+    });
+  }
+
+  function personBody(p, content) {
+    var st = p.style;
+    var url = p.username ? 'https://t.me/' + p.username : null;
+    var pair = null;
+    if (p.pair) {
+      pair = marriageChip(p.pair);
+      if (p.pair.ref) {
+        pair.classList.add('ripple', 'tap');
+        pair.setAttribute('role', 'button');
+        pair.addEventListener('click', function () {
+          haptic();
+          personInto(content, p.pair.ref, Array.prototype.slice.call(content.childNodes), content.scrollTop);
+        });
+      }
+    }
+    var facts = [
+      ['emoji_events_fill', p.achievements.got + ' из ' + p.achievements.total, 'ачивок'],
+      p.since ? ['calendar_month_fill', squadAge(p.since), 'в Скваде'] : null,
+      p.city ? ['location_on_fill', p.city, 'город'] : null,
+    ].filter(Boolean);
+    return [
+      h('div', { class: 'person-head' },
+        h('div', { class: 'pava big' }, p.me ? avatar(state.data.me, (st && st.frame) || null) : personAvatar(p.name, st)),
+        h('div', { class: 'body' },
+          h('h2', { class: 'person-name' }, h('em', { class: 'nm' + nickClass(st), text: p.name })),
+          st && st.title ? h('span', { class: 'title-chip', text: st.title }) : null,
+          url ? h('button', { class: 'person-user ripple', type: 'button', onclick: function () { openLink(url); } }, '@' + p.username) : null)),
+      h('div', { class: 'person-rank' },
+        h('div', { class: 'person-medal' }, insignia(p.rank.roman)),
+        h('div', { class: 'body' },
+          h('b', { text: p.rank.roman + ' · ' + p.rank.name }),
+          h('span', { text: p.founder ? 'Основатель Сквада' : p.xp + ' XP' + (p.place ? ' · #' + p.place + ' в Скваде' : '') }))),
+      h('div', { class: 'chips' }, pair, repChip(p.rep)),
+      jobChips(p.positions),
+      showcaseRow(p.showcase, true),
+      h('div', { class: 'person-facts' }, facts.map(function (f) {
+        return h('div', { class: 'person-fact' }, icon(f[0]), h('b', { text: f[1] }), h('span', { text: f[2] }));
+      })),
+      url && !p.me ? h('button', { class: 'btn-filled wide ripple', type: 'button', onclick: function () { openLink(url); } }, icon('send_fill'), 'Написать в Telegram') : null,
+    ].filter(Boolean);
+  }
+
+  // How long they are in the Squad: days for the first year, then years.
+  function squadAge(since) {
+    var now = (state.data && state.data.now) || Math.floor(Date.now() / 1000);
+    var days = Math.max(1, Math.floor((now - since) / 86400));
+    if (days < 365) return days + ' ' + plural(days, 'день', 'дня', 'дней');
+    var years = Math.floor(days / 365);
+    return years + ' ' + plural(years, 'год', 'года', 'лет');
+  }
+
   function nickClass(style) {
     return style && style.color ? ' nick ' + style.color : '';
   }
@@ -493,10 +593,12 @@
     }));
   }
 
-  // «Витрина»: up to three achievements the member picked on «Звания».
-  function showcaseRow(list) {
+  // «Витрина»: up to three achievements the member picked on «Звания». Someone
+  // else's (`still`) only shows.
+  function showcaseRow(list, still) {
     if (!list || !list.length) return null;
-    return h('div', { class: 'showcase-row', role: 'button', tabindex: '0', onclick: function () { selectTab('ranks'); } },
+    return h('div', { class: 'showcase-row', role: still ? null : 'button', tabindex: still ? null : '0',
+      onclick: still ? null : function () { selectTab('ranks'); } },
       list.map(function (a) {
         return h('span', { class: 'show-badge' + (a.secret ? ' secret' : '') + (a.limited ? ' limited' : ''), title: a.title },
           h('span', { class: 'show-icon' }, icon(a.icon)), h('span', { class: 'show-title', text: a.title }));
@@ -701,19 +803,60 @@
     return h('section', { class: 'card' }, h('h3', { text: 'История' }), body);
   }
 
+  function topRow(r) {
+    var st = r.style;
+    var open = r.ref ? function () { showPerson(r.ref); } : null;
+    return h('li', { class: 'item' + (r.me ? ' me' : '') + (open ? ' ripple' : ''), role: open ? 'button' : null, tabindex: open ? '0' : null, onclick: open },
+      h('div', { class: 'lead place' + (r.place <= 3 ? ' p' + r.place : ''), text: String(r.place) }),
+      h('div', { class: 'body' },
+        h('b', null, h('em', { class: 'nm' + nickClass(st), text: r.name }), r.me ? ' · ты' : ''),
+        h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
+      h('div', { class: 'trail', text: r.score + ' XP' }));
+  }
+
+  // The member's own face (their Telegram photo) or someone else's first letter, in their frame.
+  function faceOf(r) {
+    return r.me ? avatar(state.data.me, (r.style && r.style.frame) || null) : personAvatar(r.name, r.style);
+  }
+
+  // The top three on steps, 2 · 1 · 3, with their frames, name colours and titles.
+  function podium(three) {
+    return h('div', { class: 'podium' }, [three[1], three[0], three[2]].map(function (r) {
+      var st = r.style;
+      return h('button', { class: 'pod pod' + r.place + (r.me ? ' me' : ''), type: 'button',
+        onclick: function () { if (r.ref) showPerson(r.ref); } },
+        h('div', { class: 'pava' }, faceOf(r), r.place === 1 ? h('i', { class: 'pod-crown', text: '👑' }) : null),
+        h('b', { class: 'pod-name' }, h('em', { class: 'nm' + nickClass(st), text: r.name })),
+        h('span', { class: 'pod-sub', text: st && st.title ? st.title : r.rank.roman + ' · ' + r.rank.name }),
+        h('span', { class: 'pod-score', text: r.score + ' XP' }),
+        h('div', { class: 'pod-step' }, h('span', { text: String(r.place) })));
+    }));
+  }
+
+  // «Ты» under the ten, held at the bottom of the screen while the list scrolls.
+  function youRow(mine, rows) {
+    var last = rows[rows.length - 1];
+    var gap = rows.length >= 10 && last ? last.score - mine.score + 1 : 0;
+    return h('div', { class: 'you-row' },
+      h('div', { class: 'lead place', text: String(mine.place) }),
+      h('div', { class: 'body' }, h('b', { text: 'Ты' }),
+        h('span', { text: gap > 0 ? 'До десятки ещё ' + gap + ' XP' : 'Твоё место в Скваде' })),
+      h('div', { class: 'trail', text: mine.score + ' XP' }));
+  }
+
   function topList(top) {
     var rows = state.top === 'week' ? top.week : top.all;
-    var body = rows.length ? h('ul', { class: 'list' }, withDividers(rows.map(function (r) {
-      var st = r.style;
-      return h('li', { class: 'item' + (r.me ? ' me' : '') },
-        h('div', { class: 'lead place' + (r.place <= 3 ? ' p' + r.place : ''), text: String(r.place) }),
-        h('div', { class: 'body' },
-          h('b', null, h('em', { class: 'nm' + nickClass(st), text: r.name }), r.me ? ' · ты' : ''),
-          h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
-        h('div', { class: 'trail', text: r.score + ' XP' }));
-    }))) : h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' });
+    if (!rows.length) {
+      return [h('p', { class: 'empty', text: state.top === 'week' ? 'На этой неделе ещё никто не заработал XP.' : 'Пока никто не заработал XP.' })];
+    }
+    var three = rows.length >= 3 ? rows.slice(0, 3) : null;
+    var rest = three ? rows.slice(3) : rows;
+    var mine = top.mine && top.mine[state.top];
+    var listed = rows.some(function (r) { return r.me; });
     var note = state.top === 'week' ? h('p', { class: 'foot', text: 'Считаются комментарии и реакции. Неделя начинается в понедельник по Москве.' }) : null;
-    return [body, note];
+    return [three ? podium(three) : null,
+      rest.length ? h('ul', { class: 'list' }, withDividers(rest.map(topRow))) : null,
+      mine && !listed ? youRow(mine, rows) : null, note];
   }
 
   function topCard(top) {
@@ -776,15 +919,16 @@
       vibrate(taps.length >= 5 ? 'heavy' : 'light');
       if (taps.length >= 5) { taps = []; bloodWave(); }
     });
+    // Full on «Активность»; a slim bar on the other tabs, so their own content is on the first screen.
     return h('section', {
-      class: 'banner press ripple', role: 'link', tabindex: '0', 'aria-label': 'Открыть канал T.N.K.C SQUAD',
+      class: 'banner press ripple' + (ownPage(state.tab) ? ' compact' : ''), role: 'link', tabindex: '0', 'aria-label': 'Открыть канал T.N.K.C SQUAD',
       onclick: function () { openLink(sq.channel); },
     },
-      h('div', { class: 'cover', 'aria-hidden': 'true' }),
+      h('div', { class: 'cover-box', 'aria-hidden': 'true' }, h('div', { class: 'cover' })),
       // Profile header: the logo overlaps the cover, the name sits under it.
       h('div', { class: 'banner-row' },
         ring,
-        h('span', { class: 'banner-cta' }, brand('telegram'), 'Канал', icon('chevron_right'))),
+        h('span', { class: 'banner-cta' }, brand('telegram'), h('span', { class: 'cta-text', text: 'Канал' }), icon('chevron_right'))),
       h('div', { class: 'banner-text' },
         h('b', null, 'T.N.K.C ', h('em', { text: 'SQUAD' })),
         h('span', { text: 'Токийский · Неудержимый · Круг · Свободы' })));
@@ -898,9 +1042,23 @@
   }
 
   // «Штаб Сквада»: positions and who holds them as a grid; a tap shows the duties.
+  // While every position is vacant, «Штаб» is one row; a tap unfolds the tiles.
   function teamCard(team) {
     if (!team || !team.length) return null;
     var busy = team.filter(function (t) { return t.people.length; }).length;
+    if (!busy && !state.teamOpen) {
+      var row = h('section', { class: 'card row-card team-fold press ripple', role: 'button', tabindex: '0', onclick: function () {
+        state.teamOpen = true;
+        haptic();
+        row.replaceWith(enter(teamCard(team), 0));
+      } },
+        h('div', { class: 'lead primary' }, icon('groups_fill')),
+        h('div', { class: 'body' }, h('b', { text: 'Штаб Сквада' }),
+          h('span', { text: team.length + ' ' + plural(team.length, 'должность ждёт', 'должности ждут', 'должностей ждут') + ' своих людей' }),
+          h('span', { class: 'team-strip', text: team.map(function (t) { return t.emoji; }).join(' ') })),
+        h('span', { class: 'row-go' }, icon('chevron_right', 'icon go')));
+      return row;
+    }
     var fill = h('i', { class: 'ind' });
     fill.style.width = 'calc(' + Math.max(2, Math.round((busy / team.length) * 100)) + '% - 3px)';
     return h('section', { class: 'card team' },
@@ -942,15 +1100,18 @@
       h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
   }
 
+  // A person in a sheet: the row opens their card, the @username goes straight to Telegram.
   function holderRow(p) {
     var url = p.username ? 'https://t.me/' + p.username : null;
-    return h('li', { class: 'item pos-holder' + (url ? ' ripple' : ''), role: url ? 'link' : null, tabindex: url ? '0' : null,
-      onclick: url ? function () { openLink(url); } : null },
+    var tap = p.ref ? function () { showPerson(p.ref); } : url ? function () { openLink(url); } : null;
+    var user = url ? h('span', { class: 'pos-user', text: '@' + p.username }) : h('span', { text: 'Без юзернейма' });
+    if (url && p.ref) {
+      user.addEventListener('click', function (e) { e.stopPropagation(); openLink(url); });
+    }
+    return h('li', { class: 'item pos-holder' + (tap ? ' ripple' : ''), role: tap ? 'button' : null, tabindex: tap ? '0' : null, onclick: tap },
       h('div', { class: 'lead', text: Array.from(p.name || '?')[0].toUpperCase() }),
-      h('div', { class: 'body' },
-        h('b', { text: p.name }),
-        url ? h('span', { class: 'pos-user', text: '@' + p.username }) : h('span', { text: 'Без юзернейма' })),
-      url ? icon('chevron_right', 'icon go') : null);
+      h('div', { class: 'body' }, h('b', { text: p.name }), user),
+      tap ? icon('chevron_right', 'icon go') : null);
   }
 
   // «Все обновления»: every change of Финя from the very start, newest first.
@@ -1038,7 +1199,9 @@
         h('div', { class: 'title-lead' }, h('span', { class: 'lead gold' }, icon('account_balance_fill')), h('h3', { text: 'Зал славы' })),
         h('span', { class: 'count-chip', text: held + ' из ' + shown.length })),
       h('div', { class: 'hall-grid' }, shown.map(function (r) {
-        return h('div', { class: 'hall-tile' + (r.who ? '' : ' empty') + (r.secret ? ' secret' : '') },
+        var open = r.refs && r.refs.length ? function () { showPerson(r.refs[0]); } : null;
+        return h(open ? 'button' : 'div', { class: 'hall-tile' + (r.who ? '' : ' empty') + (r.secret ? ' secret' : '') + (open ? ' ripple' : ''),
+          type: open ? 'button' : null, onclick: open },
           h('span', { class: 'hall-icon' }, icon(r.icon)),
           h('span', { class: 'hall-title', text: r.title }),
           h('b', { class: 'hall-who', text: r.who || 'Свободно' }),
@@ -1055,7 +1218,9 @@
 
   function calRow(e) {
     var d = msk(e.at);
-    return h('li', { class: 'cal-row ' + e.kind + (e.in === 0 ? ' today' : '') },
+    var open = e.refs && e.refs.length ? function () { showPerson(e.refs[0]); } : null;
+    return h('li', { class: 'cal-row ' + e.kind + (e.in === 0 ? ' today' : '') + (open ? ' ripple' : ''),
+      role: open ? 'button' : null, tabindex: open ? '0' : null, onclick: open },
       h('div', { class: 'cal-date' }, h('b', { text: String(d.getUTCDate()) }), h('span', { text: MONTHS_SHORT[d.getUTCMonth()] })),
       h('div', { class: 'body' },
         h('b', null, h('i', { class: 'cal-emoji', text: e.icon }), e.title),
@@ -1080,7 +1245,8 @@
 
   // «Летопись Сквада»: weddings, citizens, positions, rare badges and new records.
   function chronRow(e) {
-    return h('li', { class: 'chron-row ' + e.kind },
+    var open = e.refs && e.refs.length ? function () { showPerson(e.refs[0]); } : null;
+    return h('li', { class: 'chron-row ' + e.kind + (open ? ' tap-row' : ''), role: open ? 'button' : null, tabindex: open ? '0' : null, onclick: open },
       h('span', { class: 'chron-dot', text: e.icon }),
       h('div', { class: 'body' }, h('b', { text: e.text }), h('span', { text: dateLong(e.at) })));
   }
@@ -1464,16 +1630,55 @@
       } }, icon('tree_fill'), left > 0 ? 'Повесить игрушку · ещё ' + left : 'Твои игрушки на ёлке') : null);
   }
 
-  function squadBody(sq) {
+  // «Сквад» in four parts under one switch, so the tab is not five screens long.
+  var SQUAD_PARTS = [['main', 'Главное'], ['people', 'Люди'], ['story', 'История'], ['links', 'Ссылки']];
+
+  function squadPart(sq, part) {
     var c = state.data.club;
     var tree = state.data.season && state.data.season.tree;
-    // The tree goes first while it stands; the owner's preview waits lower down.
-    var treeFirst = tree && tree.open ? treeCard(tree) : null;
-    return [quickRow(sq), treeFirst, newsCard(sq), changesCard(), teamCard(sq.team), treeFirst ? null : treeCard(tree), calendarCard(sq.calendar),
-      hallCard(sq.hall), mapCard(sq.map), chronicleCard(sq.chronicle)].concat(c.polls.map(pollCard))
-      .concat([referralCard(c.referral), birthdayCard(c.birthday), shopFeature(sq)])
-      .concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }))
-      .concat([projectsSection()]).filter(Boolean);
+    var parts = {
+      // The tree goes first while it stands; the owner's preview waits lower down.
+      main: [tree && tree.open ? treeCard(tree) : null, newsCard(sq), calendarCard(sq.calendar)]
+        .concat(c.polls.map(pollCard), [tree && !tree.open ? treeCard(tree) : null, referralCard(c.referral), birthdayCard(c.birthday)]),
+      people: [teamCard(sq.team), hallCard(sq.hall), mapCard(sq.map)],
+      story: [chronicleCard(sq.chronicle), changesCard()],
+      links: [shopFeature(sq)].concat(LINK_GROUPS.map(function (g) { return linkSection(g, sq); }), [projectsSection()]),
+    };
+    return (parts[part] || parts.main).filter(Boolean);
+  }
+
+  function squadBody(sq) {
+    var box = h('div', { class: 'swap squad-part' }, squadPart(sq, state.squad));
+    var anchor = h('div', { class: 'seg-anchor' });
+    var seg = segmented(SQUAD_PARTS, state.squad, function (part) {
+      state.squad = part;
+      swap(box, function () {
+        // Back to the top of the part when the switch was used further down.
+        var y = anchor.getBoundingClientRect().top + window.scrollY - 8;
+        if (window.scrollY > y) window.scrollTo(0, y);
+        return squadPart(sq, part);
+      });
+    }, 'squad-seg');
+    return [quickRow(sq), h('div', null, anchor, seg, box)].filter(Boolean);
+  }
+
+  // MD3 segmented buttons: [[key, label]], the picked one checked.
+  function segmented(items, current, onPick, cls) {
+    var buttons = [];
+    return h('div', { class: 'seg' + (cls ? ' ' + cls : ''), role: 'tablist' }, items.map(function (t) {
+      var b = h('button', {
+        class: 'ripple', type: 'button', role: 'tab', 'aria-selected': String(current === t[0]),
+        onclick: function () {
+          if (current === t[0]) return;
+          current = t[0];
+          haptic();
+          buttons.forEach(function (x) { x.setAttribute('aria-selected', String(x === b)); });
+          onPick(t[0]);
+        },
+      }, h('span', { class: 'check' }, icon('check')), t[1]);
+      buttons.push(b);
+      return b;
+    }));
   }
 
   // ---- club: daily reward, quests, achievements, shop, polls, friends ---------
@@ -1709,14 +1914,25 @@
     else document.body.insertBefore(layer, document.body.firstChild);
   }
 
+  // How rare an achievement is in the Squad, by the share of members who have it.
+  function rarity(a) {
+    if (a.share == null) return null;
+    if (!a.held) return { cls: 'r-none', word: 'Пока ни у кого: стань первым', tag: '0%' };
+    var pct = String(a.share).replace('.', ',') + '%';
+    var tier = a.share <= 5 ? ['r-legend', 'легендарная'] : a.share <= 20 ? ['r-rare', 'редкая'] : ['r-common', 'обычная'];
+    return { cls: tier[0], word: 'Есть у ' + pct + ' Сквада · ' + tier[1], tag: pct };
+  }
+
   // What to do and how far along: the name is on the tile already.
   function achHint(a) {
+    var r = rarity(a);
     var pct = a.at ? 100 : Math.max(0, Math.min(100, Math.round(a.progress / a.goal * 100)));
     return h('div', { class: 'snack-ach' },
       h('span', { class: 'snack-ach-task', text: a.text }),
       h('div', { class: 'snack-ach-row' },
         h('span', { class: 'snack-ach-bar' }, h('i', { style: 'width: ' + pct + '%' })),
-        h('b', { text: a.at ? 'Готово' : a.secret ? 'Секрет' : gone(a) ? 'Ивент прошёл' : a.progress + ' / ' + a.goal })));
+        h('b', { text: a.at ? 'Готово' : a.secret ? 'Секрет' : gone(a) ? 'Ивент прошёл' : a.progress + ' / ' + a.goal })),
+      r ? h('span', { class: 'snack-ach-rare ' + r.cls, text: r.word }) : null);
   }
 
   // A limited badge that can no longer be opened.
@@ -1803,12 +2019,14 @@
       var shown = pick ? opened : achOpen ? list : list.slice(0, ACH_FOLDED);
       grid.replaceChildren.apply(grid, shown.map(function (a) {
         var place = pick ? pick.indexOf(a.code) : -1;
-        return h('button', { class: 'ach ripple' + (a.at ? ' on' : '') + (a.secret ? ' secret' : '') + (a.until ? ' limited' : '') + (gone(a) ? ' gone' : '') + (place >= 0 ? ' picked' : ''), type: 'button', onclick: function () {
+        var rare = rarity(a);
+        return h('button', { class: 'ach ripple' + (a.at ? ' on' : '') + (a.secret ? ' secret' : '') + (a.until ? ' limited' : '') + (gone(a) ? ' gone' : '') + (place >= 0 ? ' picked' : '') + (rare ? ' ' + rare.cls : ''), type: 'button', onclick: function () {
           if (pick) { toggle(a); return; }
           haptic();
           snackbar(achHint(a));
         } },
           place >= 0 ? h('i', { class: 'ach-pick', text: String(place + 1) }) : null,
+          rare && !pick ? h('i', { class: 'ach-rare', text: rare.tag }) : null,
           h('span', { class: 'ach-icon' }, icon(a.icon), a.at ? null : h('i', { class: 'ach-lock' }, icon('lock_fill'))),
           a.until && !gone(a) ? h('i', { class: 'ach-limit', text: 'до ' + pad(msk(a.until - 1).getUTCDate()) + '.' + pad(msk(a.until - 1).getUTCMonth() + 1) }) : null,
           h('b', { text: a.title }),
@@ -1875,22 +2093,95 @@
       btn);
   }
 
+  // «Примерочная»: a tap on a thing puts it on the preview; nothing is bought or worn
+  // until the button there. fit[slot]: the id tried on; fitLast: the last one tapped.
+  var fit = {};
+  var fitLast = null;
+
   function shopBody(shop, me) {
-    var title = me.style && me.style.title;
+    var byId = {};
+    var worn = {};
+    shop.items.forEach(function (i) {
+      byId[i.id] = i;
+      if (i.equipped) worn[i.slot] = i.id;
+    });
+    // Bought or worn since: the preview starts again from what is worn.
+    if (fitLast && (!byId[fitLast] || byId[fitLast].equipped)) { fit = {}; fitLast = null; }
+    function look(slot) { return Object.prototype.hasOwnProperty.call(fit, slot) ? fit[slot] : worn[slot] || null; }
+    var tiles = {};
+    var preview = h('section', { class: 'card fit' });
+    function mark() {
+      Object.keys(tiles).forEach(function (id) {
+        var it = byId[id];
+        tiles[id].classList.toggle('trying', look(it.slot) === id && worn[it.slot] !== id);
+      });
+    }
+    function reset() { fit = {}; fitLast = null; haptic(); drawFit(); mark(); }
+    function drawFit() {
+      var color = look('color');
+      var title = look('title');
+      var it = fitLast && byId[fitLast];
+      var action = null;
+      if (it) {
+        var btn = null;
+        if (!it.owned) {
+          btn = h('button', { class: 'btn-filled small ripple' + (shop.balance >= it.price ? '' : ' off'), type: 'button',
+            onclick: function () { buyItem(it, shop); } }, 'Купить · ' + it.price + ' XP');
+        } else if (!it.equipped) {
+          btn = h('button', { class: 'btn-filled small ripple', type: 'button', onclick: function () {
+            act({ action: 'wear', slot: it.slot, item: it.id }, btn, function () { vibrate('light'); snackbar('Надето'); });
+          } }, 'Надеть');
+        }
+        action = h('div', { class: 'fit-actions' },
+          h('span', { class: 'fit-what', text: it.equipped ? '«' + it.name + '» уже на тебе' : 'Примеряешь «' + it.name + '»' }),
+          h('button', { class: 'btn-text small ripple', type: 'button', onclick: reset }, 'Сбросить'),
+          btn);
+      }
+      // replaceChildren() would print a null as the text «null».
+      preview.replaceChildren.apply(preview, [
+        h('div', { class: 'fit-me' }, avatar(me, look('frame')),
+          h('div', { class: 'body' },
+            h('b', { class: 'shop-name' }, h('em', { class: 'nm' + (color ? ' nick ' + color : ''), text: me.name })),
+            title && byId[title] ? h('span', { class: 'title-chip', text: byId[title].name })
+              : h('span', { class: 'fit-hint', text: it ? 'Так тебя увидит Сквад' : 'Нажми на вещь ниже' })),
+          shopSample({ slot: 'chart', id: look('chart') || '' }, me)),
+        action].filter(Boolean));
+    }
+    function tryOn(it) {
+      haptic();
+      // A second tap on what is on the preview takes it off again.
+      if (fitLast === it.id && look(it.slot) === it.id && !it.equipped) {
+        delete fit[it.slot];
+        fitLast = null;
+      } else {
+        fit[it.slot] = it.id;
+        fitLast = it.id;
+      }
+      drawFit();
+      mark();
+    }
+    drawFit();
     var head = h('section', { class: 'card shop-head' },
-      h('div', { class: 'shop-me' }, avatar(me),
-        h('div', { class: 'body' },
-          h('b', { class: 'shop-name' }, h('em', { class: 'nm' + nickClass(me.style), text: me.name })),
-          title ? h('span', { class: 'title-chip', text: title }) : h('span', { text: 'Так тебя видит Сквад' }))),
       h('div', { class: 'balance' },
         h('span', { text: shop.founder ? 'Основателю всё бесплатно' : 'Баланс' }),
         shop.founder ? null : h('b', null, String(shop.balance), h('small', { text: 'XP' }))),
-      h('p', { class: 'fine', text: 'Покупки тратят баланс, а не опыт: звание и место в топе не падают.' }));
-    return [head].concat(SLOTS.map(function (slot) {
+      h('p', { class: 'fine', text: 'Покупки тратят баланс, а не опыт: звание и место в топе не падают. Нажми на вещь, чтобы примерить её сверху.' }));
+    var groups = SLOTS.map(function (slot) {
       return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: slot[1] }),
-        h('div', { class: 'shop-grid' }, shop.items.filter(function (i) { return i.slot === slot[0]; })
-          .map(function (it) { return shopItem(it, shop, me); })));
-    }));
+        h('div', { class: 'shop-grid' }, shop.items.filter(function (i) { return i.slot === slot[0]; }).map(function (it) {
+          var tile = shopItem(it, shop, me);
+          tile.classList.add('ripple');
+          // The buttons inside buy and wear; the rest of the tile tries the thing on.
+          tile.addEventListener('click', function (e) {
+            if (e.target.closest && e.target.closest('button')) return;
+            tryOn(it);
+          });
+          tiles[it.id] = tile;
+          return tile;
+        })));
+    });
+    mark();
+    return [head, preview].concat(groups);
   }
 
   // ---- polls --------------------------------------------------------------------
@@ -2958,11 +3249,15 @@
   // Fade through to the new destination. The jump back to the top happens
   // while the old screen is invisible, so nothing scrolls on screen.
   function switchScreen() {
-    var fading = window.scrollY > 4 ? [bannerEl, page] : [page];
+    var compact = ownPage(state.tab);
+    var morph = bannerEl.classList.contains('compact') !== compact;
+    var fading = window.scrollY > 4 || morph ? [bannerEl, page] : [page];
     clearTimeout(page.swapTimer);
     [bannerEl, page].forEach(function (el) { el.classList.remove('fade-in'); });
     fading.forEach(function (el) { el.classList.add('fade-out'); });
     page.swapTimer = setTimeout(function () {
+      bannerEl.classList.toggle('compact', compact);
+      bannerEl.style.removeProperty('--sy');
       page.replaceChildren.apply(page, pageBody());
       window.scrollTo(0, 0);
       fading.forEach(function (el) {
@@ -3032,6 +3327,9 @@
     var tab = null;
     try { tab = new URLSearchParams(window.location.search).get('tab'); } catch (e) { /* old WebView */ }
     var known = TABS.some(function (t) { return t[0] === tab; }) || (tab === 'admin' && data.admin);
+    var part = null;
+    try { part = new URLSearchParams(window.location.search).get('part'); } catch (e) { /* old WebView */ }
+    if (SQUAD_PARTS.some(function (x) { return x[0] === part; })) state.squad = part;
     return known ? tab : state.tab;
   }
 
@@ -3042,6 +3340,17 @@
     var card = open === 'history' && state.tab === 'admin' && adminRoot ? adminRoot.querySelector('.history-card') : null;
     if (card) setTimeout(function () { card.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' }); }, 400);
   }
+
+  // The full cover drifts slower than the page and fades as it scrolls away: one
+  // variable on the banner per frame, the cover moves by transform and opacity only.
+  var parallaxFrame = 0;
+  window.addEventListener('scroll', function () {
+    if (reduceMotion || parallaxFrame || !bannerEl || bannerEl.classList.contains('compact')) return;
+    parallaxFrame = requestAnimationFrame(function () {
+      parallaxFrame = 0;
+      if (bannerEl) bannerEl.style.setProperty('--sy', String(Math.round(Math.min(Math.max(window.scrollY, 0), 260))));
+    });
+  }, { passive: true });
 
   document.addEventListener('pointerdown', ripple);
   document.addEventListener('pointerdown', press);

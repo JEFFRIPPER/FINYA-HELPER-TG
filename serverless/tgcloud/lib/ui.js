@@ -146,7 +146,7 @@ export function infoKeyboard() {
 export async function squadKeyboard(chat = null) {
   let all;
   if (isPrivate(chat)) {
-    all = button('Все ссылки Сквада', { web_app: { url: `${WEBAPP_URL}?tab=squad` }, icon_custom_emoji_id: SQUAD_ICON_ID });
+    all = button('Все ссылки Сквада', { web_app: { url: `${WEBAPP_URL}?tab=squad&part=links` }, icon_custom_emoji_id: SQUAD_ICON_ID });
   } else {
     const me = await getMe();
     all = button('Все ссылки Сквада', { url: `https://t.me/${me.username}?start=squad`, icon_custom_emoji_id: SQUAD_ICON_ID });

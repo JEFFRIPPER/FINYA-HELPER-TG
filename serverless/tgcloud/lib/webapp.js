@@ -1,17 +1,20 @@
-// Data for the Mini App "Профиль Фини" (webapp/). Other members are shown by
-// name and XP only: no IDs or usernames leave the bot.
+// Data for the Mini App "Профиль Фини" (webapp/). No Telegram IDs leave the bot:
+// a person in the lists carries a random ref (member_refs), and a tap on them asks
+// /api/member for their card by that ref.
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
 import { getSetting, trackUser } from './store.js';
-import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
+import { dayStart, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
 import * as xp from './xp.js';
 import * as chat from './chat.js';
 import * as club from './club.js';
-import { nameOf, usernameOf } from './members.js';
+import { nameOf, refsOf, userOfRef, usernameOf } from './members.js';
 import * as staff from './staff.js';
 import * as seasons from './seasons.js';
 import * as hall from './hall.js';
+import * as fire from './fire.js';
+import * as social from './social.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -38,7 +41,8 @@ async function styles(ids) {
 
 async function topView(weekly, userId) {
   const rows = await xp.leaderboard({ weekly, limit: 10 });
-  const looks = await styles(rows.map((r) => r.user_id));
+  const ids = rows.map((r) => r.user_id);
+  const [looks, refs] = await Promise.all([styles(ids), refsOf(ids)]);
   return rows.map((row, i) => ({
     place: i + 1,
     name: truncate(row.name, 35),
@@ -46,7 +50,23 @@ async function topView(weekly, userId) {
     rank: rankView(rankOf(row)),
     me: row.user_id === userId,
     style: looks.get(row.user_id) || null,
+    ref: refs.get(row.user_id) || null,
   }));
+}
+
+// The member's place in the weekly top, the same count as xp.leaderboard(); null
+// without XP this week. For the «Ты» row under the top when they are below it.
+async function weekPlace(userId) {
+  const ts = nowInt();
+  const from = weekStart(ts);
+  const mine = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
+    WHERE user_id = ${userId} AND earned_at >= ${from} AND earned_at <= ${ts} AND kind IN ('comment', 'reaction')`);
+  if (!(mine.s > 0)) return null;
+  const above = await db.get(sql`SELECT COUNT(*) AS c FROM (SELECT p.user_id, SUM(e.points) AS score
+    FROM profiles p JOIN events e ON e.user_id = p.user_id
+    WHERE e.earned_at >= ${from} AND e.earned_at <= ${ts} AND e.kind IN ('comment', 'reaction')
+    GROUP BY p.user_id HAVING score > ${mine.s} OR (score = ${mine.s} AND p.user_id < ${userId}))`);
+  return { place: above.c + 1, score: mine.s };
 }
 
 async function place(p) {
@@ -134,9 +154,11 @@ async function squad(ts) {
 async function teamView() {
   const out = [];
   for (const { position, people } of await staff.team()) {
+    const refs = await refsOf(people.map((r) => r.user_id));
     const holders = await Promise.all(people.map(async (r) => ({
       name: truncate(await nameOf(r.user_id), 40),
       username: await usernameOf(r.user_id),
+      ref: refs.get(r.user_id) || null,
     })));
     out.push({
       emoji: position.emoji, title: position.title, duties: position.duties, motto: position.motto,
@@ -166,7 +188,7 @@ export async function profileData(user) {
     };
   }
   // The rest only reads: all at once, so the Mini App opens faster.
-  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, squadNow, halloween, tree] = await Promise.all([
+  const [participants, social, placeNow, rivalNow, style, chartNow, historyNow, topAll, topWeek, weekNow, squadNow, halloween, tree] = await Promise.all([
     db.get(sql`SELECT COUNT(*) AS c FROM profiles WHERE xp > 0`),
     chat.profileExtras(user.id),
     place(p),
@@ -176,6 +198,7 @@ export async function profileData(user) {
     history(user.id),
     topView(false, user.id),
     topView(true, user.id),
+    weekPlace(user.id),
     squad(ts),
     seasons.halloweenView(user.id, ts),
     seasons.treeView(user.id, ts),
@@ -206,7 +229,8 @@ export async function profileData(user) {
     admin: founder,
     chart: chartNow,
     history: historyNow,
-    top: { all: topAll, week: topWeek },
+    // `mine`: the member's own place and score, for the «Ты» row when they are below the ten.
+    top: { all: topAll, week: topWeek, mine: { all: placeNow ? { place: placeNow, score: p.xp } : null, week: weekNow } },
     ranks: xp.RANKS.map((r) => ({ ...rankView(r), reached: automatic ? p.xp >= r[0] : r[1] === current[1] })),
     rules: {
       comment: xp.COMMENT_XP, reaction: xp.REACTION_XP, dailyReactions: xp.DAILY_REACTION_LIMIT,
@@ -218,5 +242,48 @@ export async function profileData(user) {
     // Seasonal events: null outside their dates.
     season: { halloween, tree },
     now: ts,
+  };
+}
+
+// A member's card for a tap on them in the Mini App (/api/member), by the ref from the
+// lists: rank, XP and place, the shop look, «Витрина», the pair and its flame,
+// reputation, positions, badges, the city from «+Город» and since when they are here.
+// → null for an unknown ref.
+export async function memberView(viewerId, ref) {
+  const userId = await userOfRef(ref);
+  if (!userId) return null;
+  const [row, name, username, extras, looks, showcase, badges, info, first, partner, spouses] = await Promise.all([
+    db.get(sql`SELECT user_id, xp, manual_rank FROM profiles WHERE user_id = ${userId}`),
+    nameOf(userId),
+    usernameOf(userId),
+    chat.profileExtras(userId),
+    styles([userId]),
+    club.showcaseOf(userId),
+    db.get(sql`SELECT COUNT(*) AS c FROM achievements WHERE user_id = ${userId}`),
+    db.get(sql`SELECT city FROM profile_info WHERE user_id = ${userId}`),
+    db.get(sql`SELECT MIN(first_seen) AS t FROM chat_members WHERE user_id = ${userId} AND first_seen > 0`),
+    fire.partnerOf(userId),
+    social.spousesOf(userId),
+  ]);
+  const p = row || { user_id: userId, xp: 0, manual_rank: null };
+  // The pair chip opens the partner's card; with several spouses the chip names them all, so it opens none.
+  const partnerRef = partner && spouses.length < 2 ? (await refsOf([partner])).get(partner) || null : null;
+  return {
+    ref,
+    me: userId === viewerId,
+    name: truncate(name, 60),
+    username,
+    rank: rankView(rankOf(p)),
+    founder: userId === OWNER_USER_ID,
+    xp: p.xp,
+    place: await place(p),
+    style: looks.get(userId) || null,
+    showcase,
+    rep: extras.rep,
+    positions: extras.positions,
+    pair: extras.marriage ? { ...extras.marriage, ref: partnerRef } : null,
+    achievements: { got: badges.c, total: club.ACHIEVEMENTS.length },
+    city: info && info.city ? truncate(info.city, 40) : null,
+    since: first && first.t ? first.t : null,
   };
 }

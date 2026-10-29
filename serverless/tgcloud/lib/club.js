@@ -181,6 +181,7 @@ async function achievementsView(userId, base) {
     unlocked.set(a.code, ts);
     fresh.push(a.code);
   }
+  const rare = await rarity();
   return {
     fresh,
     items: ACHIEVEMENTS.map((a) => ({
@@ -188,8 +189,26 @@ async function achievementsView(userId, base) {
       until: a.until || null,
       progress: Math.min(a.goal, stats[a.stat] || 0),
       at: unlocked.get(a.code) || null,
+      // How rare: how many have it and their share of the Squad, in percent.
+      held: rare.held.get(a.code) || 0,
+      share: rare.share(rare.held.get(a.code) || 0),
     })),
   };
+}
+
+// Holders of each achievement, and the share of the Squad: everyone with XP or a badge.
+async function rarity() {
+  const held = new Map((await db.all(sql`SELECT code, COUNT(*) AS c FROM achievements GROUP BY code`)).map((r) => [r.code, r.c]));
+  const row = await db.get(sql`SELECT COUNT(*) AS c FROM (SELECT user_id FROM profiles WHERE xp > 0
+    UNION SELECT user_id FROM achievements)`);
+  const all = row.c;
+  // One decimal below 10 %, whole percents above; never 0 % for someone who has it.
+  const share = (n) => {
+    if (!n || !all) return 0;
+    const pct = Math.min(100, (n / all) * 100);
+    return pct < 10 ? Math.max(0.1, Math.round(pct * 10) / 10) : Math.round(pct);
+  };
+  return { held, share };
 }
 
 // ---- «Витрина»: three favourite achievements --------------------------------------
