@@ -133,8 +133,9 @@ const CLUB_ACHIEVEMENTS = [
   { n: 5, code: 'streak_7', stat: 'streak', goal: 7, xp: 40, icon: 'local_fire_department_fill', title: 'Неделя в строю', text: 'Серия 7 активных дней' },
   { n: 6, code: 'streak_30', stat: 'streak', goal: 30, xp: 150, icon: 'local_fire_department_fill', title: 'Месяц огня', text: 'Серия 30 активных дней' },
   { n: 7, code: 'daily_7', stat: 'dailyRun', goal: 7, xp: 30, icon: 'redeem_fill', title: 'Верность', text: 'Награда 7 дней подряд' },
-  { n: 8, code: 'xp_1000', stat: 'xp', goal: 1000, xp: 50, icon: 'military_tech_fill', title: 'Вестник', text: 'Набери 1000 XP' },
-  { n: 9, code: 'xp_5000', stat: 'xp', goal: 5000, xp: 150, icon: 'diamond_fill', title: 'Архонт', text: 'Набери 5000 XP' },
+  // The goals follow ranks V and VIII (×3 since 2026-10-29); the codes stay, they are stored.
+  { n: 8, code: 'xp_1000', stat: 'xp', goal: 3000, xp: 50, icon: 'military_tech_fill', title: 'Вестник', text: 'Набери 3000 XP' },
+  { n: 9, code: 'xp_5000', stat: 'xp', goal: 15000, xp: 150, icon: 'diamond_fill', title: 'Архонт', text: 'Набери 15000 XP' },
   { n: 10, code: 'podium', stat: 'podium', goal: 1, xp: 50, icon: 'emoji_events_fill', title: 'Пьедестал', text: 'Попади в топ-3 недели' },
   { n: 11, code: 'recruiter', stat: 'referrals', goal: 1, xp: 20, icon: 'person_add_fill', title: 'Вербовщик', text: 'Приведи друга в канал' },
   { n: 12, code: 'legion', stat: 'referrals', goal: 5, xp: 75, icon: 'groups_fill', title: 'Легион', text: 'Приведи 5 друзей' },

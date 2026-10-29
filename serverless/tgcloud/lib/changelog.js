@@ -25,6 +25,14 @@ const inTarget = (t, params) => ({ chat_id: t.chat_id, ...(t.thread_id ? { messa
 // Newest first. `id` never changes once posted.
 export const CHANGES = [
   {
+    id: '2026-10-29-ach-xp-x3',
+    date: '29 октября 2026',
+    title: 'Ачивки «Вестник» и «Архонт» вслед за званиями',
+    items: [
+      '🏅 Ачивка «Вестник» теперь за 3000 XP, «Архонт» за 15000 XP, как звания V и VIII. Кто уже открыл их раньше, тот их сохранил.',
+    ],
+  },
+  {
     id: '2026-10-29-ranks-x3',
     date: '29 октября 2026',
     title: 'Звания стали втрое труднее',

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { db } from 'sdk';
 import { onMessage, onMessageReaction } from '../tgcloud/lib/bot.js';
 import * as xp from '../tgcloud/lib/xp.js';
+import { ACHIEVEMENTS } from '../tgcloud/lib/club.js';
 import { dayStart, weekStart } from '../tgcloud/lib/util.js';
 import { setup, channelRoot, checkErrors, groupMessage, privateMessage, user, DISCUSSION, OWNER } from './helpers.mjs';
 
@@ -92,6 +93,13 @@ test('rank math: thresholds, founder and manual ranks', () => {
   assert.equal(xp.rankFor(30000)[1], null);
   assert.equal(xp.rankFor(5, { founder: true })[0][1], 'X');
   assert.equal(xp.rankFor(5, { manualRank: 'VII' })[0][2], 'Маршал Свободы');
+});
+
+test('«Вестник» and «Архонт» ask for the XP of ranks V and VIII', () => {
+  const goal = (code) => ACHIEVEMENTS.find((a) => a.code === code).goal;
+  const from = (roman) => xp.RANKS.find((r) => r[1] === roman)[0];
+  assert.equal(goal('xp_1000'), from('V'));
+  assert.equal(goal('xp_5000'), from('VIII'));
 });
 
 test('Moscow day and Monday week boundaries', () => {
