@@ -40,7 +40,7 @@ test('squad screen: all links in the Mini App, shop and rules stay', async () =>
   await onCallbackQuery(callback(user(3), 'squad'));
   const list = buttons(api.called('editMessageText')[0].params);
   assert.equal(list.length, 4);
-  assert.equal(list[0].web_app.url, 'https://app8906365781.tgcloud.ai/?tab=squad');
+  assert.equal(list[0].web_app.url, 'https://app8906365781.tgcloud.ai/?tab=squad&part=links');
   // A group can't open a Mini App: the button leads to the bot instead.
   await onCallbackQuery(callback(user(3), 'squad', { chat: DISCUSSION }));
   const inGroup = buttons(api.called('editMessageText')[1].params);

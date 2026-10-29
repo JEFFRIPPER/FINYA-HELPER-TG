@@ -132,7 +132,8 @@ test('Карта: cities with people and @usernames; the unknown ones listed apa
   const { map } = data.squad;
   assert.equal(map.people, 4);
   assert.deepEqual(map.cities.map((c) => [c.name, c.count]), [['Москва', 2], ['Санкт-Петербург', 1]]);
-  assert.deepEqual(map.cities[0].people, [{ name: 'Аня', username: 'anya' }, { name: 'Боря', username: '' }]);
+  assert.deepEqual(map.cities[0].people.map(({ name, username }) => ({ name, username })), [{ name: 'Аня', username: 'anya' }, { name: 'Боря', username: '' }]);
+  assert.ok(map.cities[0].people.every((x) => /^[0-9a-f]{12}$/.test(x.ref)));
   assert.deepEqual([map.cities[1].lat, map.cities[1].lon], [59.94, 30.31]);
   assert.deepEqual(map.other.map((c) => [c.name, c.count]), [['Простоквашино', 1]]);
   // Not cached: a fresh «+Город» is on the map at once.

@@ -404,7 +404,8 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
     box-shadow var(--dur-medium) var(--ease-standard);
 }
 .seg button:first-child { border-radius: 20px 0 0 20px; }
-.seg button:last-child { border-radius: 0 20px 20px 0; border-left: 0; }
+.seg button:last-child { border-radius: 0 20px 20px 0; }
+.seg button + button { border-left: 0; }
 .seg button[aria-selected="true"] {
   background: linear-gradient(180deg, rgba(255, 45, 72, 0.32), rgba(209, 15, 42, 0.22));
   color: var(--on-container);
@@ -507,8 +508,15 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   margin-bottom: 12px;
   outline: none;
 }
-.banner .cover {
+.banner .cover-box {
   height: 118px;
+  overflow: hidden;
+  /* Parallax while «Активность» scrolls: --sy (0…260) comes from app.js. */
+  transform: translate3d(0, calc(var(--sy, 0) * 0.4px), 0);
+  opacity: calc(1 - var(--sy, 0) / 320);
+}
+.banner .cover {
+  height: 100%;
   background: url("img/squad-cover.jpg") 50% 42% / cover no-repeat;
   animation: kenburns 24s ease-in-out infinite alternate;
   transform-origin: 50% 45%;
@@ -2024,3 +2032,195 @@ em.nm { font-style: normal; }
 .change-date { display: inline-block; padding: 2px 10px; border-radius: 8px; font-size: 12px; line-height: 18px; color: var(--text-2); background: rgba(255, 255, 255, 0.06); }
 .change-title { display: block; margin: 8px 0 6px; font-size: 16px; line-height: 22px; }
 .change-items { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; }
+
+/* ---- compact banner on every tab but «Активность» ---------------------------------- */
+/* The cover turns into a dim backdrop of one slim row: logo, name, the channel. */
+.banner.compact { border-radius: 22px; }
+.banner.compact .cover-box { position: absolute; inset: 0; height: auto; opacity: 0.3; transform: none; }
+.banner.compact::after { top: 0; height: 100%; background: linear-gradient(90deg, var(--surface-solid) 18%, rgba(20, 5, 7, 0.55) 70%, rgba(20, 5, 7, 0.25)); }
+.banner.compact .banner-row { margin-top: 0; padding: 10px 12px; align-items: center; }
+.banner.compact .logo-ring { width: 46px; height: 46px; }
+.banner.compact .logo { border-width: 2px; }
+.banner.compact .banner-cta { margin-bottom: 0; padding: 0 6px 0 9px; }
+.banner.compact .cta-text { display: none; }
+.banner.compact .banner-text {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 70px;
+  right: 72px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+}
+.banner.compact .banner-text b { font-size: 19px; line-height: 24px; }
+.banner.compact .banner-text span { margin-top: 0; font-size: 11px; line-height: 14px; letter-spacing: 0.2px; }
+@media (max-width: 360px) { .banner.compact .banner-text b { font-size: 16px; line-height: 22px; } }
+
+/* ---- «Топ Сквада»: the podium and «Ты» ---------------------------------------------- */
+.podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; align-items: end; gap: 6px; margin: 14px 0 12px; }
+.pod {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: center;
+  cursor: pointer;
+}
+.pava { position: relative; display: grid; place-items: center; }
+.pod .avatar { width: 52px; height: 52px; font-size: 20px; animation: none; box-shadow: 0 0 0 2px var(--line-strong); }
+.pod .frame { width: 60px; height: 60px; }
+.pod .frame .avatar { width: 52px; height: 52px; }
+.pod1 .avatar { width: 64px; height: 64px; font-size: 24px; box-shadow: 0 0 0 2px var(--gold), 0 0 18px rgba(255, 207, 90, 0.4); }
+.pod2 .avatar { box-shadow: 0 0 0 2px #cfd3da, 0 0 12px rgba(220, 225, 235, 0.25); }
+.pod3 .avatar { box-shadow: 0 0 0 2px #d9935f, 0 0 12px rgba(217, 147, 95, 0.3); }
+.pod1 .frame { width: 74px; height: 74px; }
+.pod1 .frame .avatar { width: 64px; height: 64px; }
+.pod .frame .avatar { box-shadow: 0 0 0 2px var(--surface-solid); }
+.pod-crown { position: absolute; top: -17px; left: 50%; transform: translateX(-50%) rotate(-8deg); font-style: normal; font-size: 20px; line-height: 1; }
+.pod-name { display: block; max-width: 100%; margin-top: 8px; font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pod.me .pod-name { color: #fff; }
+.pod-sub { max-width: 100%; font-size: 11px; line-height: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pod-score { margin-top: 2px; font-size: 13px; line-height: 18px; font-weight: 700; color: var(--red); font-variant-numeric: tabular-nums; }
+.pod-step {
+  width: 100%;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-radius: 14px 14px 6px 6px;
+  display: flex;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 700;
+  transform-origin: 50% 100%;
+  animation: grow var(--dur-long) var(--ease-emph-decel) both;
+}
+.pod1 .pod-step { height: 76px; color: #fff1b8; background: linear-gradient(180deg, rgba(255, 207, 90, 0.5), rgba(185, 133, 26, 0.12)); box-shadow: inset 0 1px 0 rgba(255, 241, 184, 0.55), 0 0 22px rgba(255, 207, 90, 0.18); animation-delay: 160ms; }
+.pod2 .pod-step { height: 56px; color: #f2f4f8; background: linear-gradient(180deg, rgba(220, 225, 235, 0.38), rgba(141, 147, 157, 0.1)); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45); animation-delay: 60ms; }
+.pod3 .pod-step { height: 42px; color: #ffd9bd; background: linear-gradient(180deg, rgba(217, 147, 95, 0.42), rgba(140, 82, 40, 0.1)); box-shadow: inset 0 1px 0 rgba(255, 217, 189, 0.45); animation-delay: 260ms; }
+.you-row {
+  position: sticky;
+  bottom: calc(88px + env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 10px -6px 0;
+  padding: 8px 12px 8px 8px;
+  border-radius: 18px;
+  border: 1px solid var(--red);
+  background: linear-gradient(180deg, #3a0910, #22050a);
+  /* The first shadow fills the gap above the navbar, so the list doesn't peek under the row. */
+  box-shadow: 0 10px 0 2px var(--surface-solid), 0 12px 28px -10px rgba(0, 0, 0, 0.85), 0 0 18px var(--glow-soft);
+}
+.you-row .lead.place { color: #fff; background: rgba(255, 45, 72, 0.28); font-size: 15px; font-weight: 700; }
+.you-row .body b { font-weight: 700; color: #fff; }
+.you-row .body span { white-space: normal; }
+
+/* ---- «Примерочная» ------------------------------------------------------------------- */
+.card.fit {
+  position: sticky;
+  top: 8px;
+  z-index: 4;
+  padding: 12px 14px;
+  border-color: var(--line-strong);
+  background: linear-gradient(160deg, #2e060d, #170407);
+  box-shadow: 0 14px 30px -14px rgba(0, 0, 0, 0.9), 0 0 0 1px rgba(255, 45, 72, 0.08) inset;
+}
+.fit-me { display: flex; align-items: center; gap: 12px; }
+.fit-me .body { min-width: 0; }
+.fit-me .chart-sample { flex: none; height: 40px; padding: 5px 6px; }
+.fit-me .chart-sample i { width: 5px; }
+.fit-me .fit-hint { display: block; font-size: 13px; line-height: 18px; color: var(--text-2); }
+.fit-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+.fit-what { flex: 1 1 100%; min-width: 0; font-size: 13px; line-height: 18px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.shop-item.ripple { cursor: pointer; }
+.shop-item.trying { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset, 0 0 16px rgba(255, 207, 90, 0.25); }
+
+/* ---- «Сквад» in parts ------------------------------------------------------------------ */
+.seg.squad-seg {
+  position: sticky;
+  top: 8px;
+  z-index: 4;
+  margin: 12px 0 0;
+  border-radius: 20px;
+  background: var(--surface-solid);
+  box-shadow: 0 10px 24px -12px rgba(0, 0, 0, 0.9);
+}
+.squad-seg button { padding: 0 4px; font-size: 13px; letter-spacing: 0; }
+.squad-seg button[aria-selected="true"] .check { width: 16px; margin-right: 4px; }
+.squad-seg .icon { width: 16px; height: 16px; }
+@media (max-width: 360px) {
+  .squad-seg button { font-size: 12px; }
+  .squad-seg button[aria-selected="true"] .check { width: 0; margin-right: 0; }
+}
+.squad-part > .card:first-child, .squad-part > .group:first-child { margin-top: 12px; }
+.team-strip { margin-top: 4px; font-size: 16px; line-height: 22px; letter-spacing: 3px; white-space: normal !important; }
+button.hall-tile { width: 100%; text-align: left; cursor: pointer; }
+.chron-row.tap-row { cursor: pointer; border-radius: 14px; transition: background var(--dur-short) var(--ease-standard); }
+.chron-row.tap-row:active { background: rgba(255, 45, 72, 0.08); }
+
+/* ---- how rare an achievement is ---------------------------------------------------------- */
+.ach-rare {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  left: 4px;
+  padding: 0 4px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-2);
+  font-size: 9px;
+  line-height: 14px;
+  font-weight: 700;
+  font-style: normal;
+}
+.ach.r-rare .ach-rare { background: rgba(156, 92, 255, 0.3); color: #e0ccff; }
+.ach.r-legend .ach-rare { background: linear-gradient(90deg, #ffe08a, #ffb02e); color: #3d2600; }
+.ach.on.r-rare:not(.secret):not(.limited) { border-color: rgba(170, 110, 255, 0.55); box-shadow: 0 0 14px rgba(150, 90, 255, 0.25); }
+.ach.on.r-legend:not(.secret):not(.limited) {
+  border-color: rgba(255, 207, 90, 0.6);
+  background: linear-gradient(160deg, rgba(255, 190, 60, 0.14), rgba(255, 30, 60, 0.06));
+  box-shadow: 0 0 16px rgba(255, 190, 60, 0.28);
+}
+.ach.on.r-legend:not(.secret):not(.limited) .ach-icon { background: radial-gradient(circle at 35% 30%, #fff1b8, var(--gold) 55%, #b9851a); color: #3d2e00; box-shadow: 0 0 16px rgba(255, 207, 90, 0.45); }
+.snack-ach-rare { display: block; margin-top: 6px; font-size: 12px; line-height: 16px; font-weight: 500; color: var(--text-2); }
+.snack-ach-rare.r-rare { color: #e0ccff; }
+.snack-ach-rare.r-legend { color: var(--gold); }
+
+/* ---- a member's card ------------------------------------------------------------------------ */
+.person-head { display: flex; align-items: center; gap: 14px; }
+.person-head .body { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; }
+.pava.big .avatar { width: 72px; height: 72px; font-size: 28px; }
+.pava.big .frame { width: 80px; height: 80px; }
+.pava.big .frame .avatar { width: 70px; height: 70px; }
+.person-name { margin: 0; font-size: 22px; line-height: 28px; font-weight: 500; overflow-wrap: anywhere; }
+.person-head .title-chip { margin-top: 6px; }
+.person-user {
+  margin-top: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: rgba(255, 30, 60, 0.1);
+  color: var(--on-container);
+  font-size: 13px;
+  line-height: 20px;
+}
+.person-rank { display: flex; align-items: center; gap: 12px; margin-top: 16px; padding: 10px 14px 10px 10px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); }
+.person-medal { flex: none; height: 56px; }
+.person-rank ~ .chips { margin-top: 12px; }
+.love-chip.tap { cursor: pointer; }
+.sheet-body .job-chips, .sheet-body .showcase-row { margin-top: 10px; }
+.person-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(78px, 1fr)); gap: 8px; margin: 14px 0 12px; }
+.person-fact { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); }
+.person-fact .icon { width: 18px; height: 18px; fill: var(--red); }
+.person-fact b { font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.person-fact span { font-size: 11px; line-height: 14px; color: var(--text-2); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pod-step { animation: none; }
+}

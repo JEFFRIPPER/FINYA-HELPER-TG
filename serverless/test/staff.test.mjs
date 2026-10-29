@@ -65,7 +65,8 @@ test('only the owner appoints in reply; the news stays, the team and profile sho
   assert.deepEqual(data.me.positions.map((p) => p.title), ['Креативщик / Дизайнер', 'Ивент-менеджер', 'Модератор чата']);
   const event = data.squad.team.find((t) => t.title === 'Ивент-менеджер');
   assert.deepEqual(event.people, ['Аня']);
-  assert.deepEqual(event.holders, [{ name: 'Аня', username: 'user2' }]);
+  assert.deepEqual(event.holders.map(({ name, username }) => ({ name, username })), [{ name: 'Аня', username: 'user2' }]);
+  assert.match(event.holders[0].ref, /^[0-9a-f]{12}$/, 'a ref for the card, not the ID');
   assert.deepEqual(data.squad.team.find((t) => t.title === 'Контент-менеджер').holders, []);
 
   await say(OWNER, '-должность ивент-менеджер', replyTo(a));
@@ -85,6 +86,6 @@ test('the team shows the freshest @username, or none when the member has none', 
   await say(OWNER, '+должность Креативщик', replyTo(c));
   await say({ ...a, username: 'anya_now' }, 'привет');
   const data = await profileData(OWNER);
-  assert.deepEqual(data.squad.team.find((t) => t.title === 'Креативщик / Дизайнер').holders,
+  assert.deepEqual(data.squad.team.find((t) => t.title === 'Креативщик / Дизайнер').holders.map(({ name, username }) => ({ name, username })),
     [{ name: 'Аня', username: 'anya_now' }, { name: 'Вика', username: '' }]);
 });
