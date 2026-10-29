@@ -108,28 +108,47 @@ test('«Сравнить» in reply puts two members side by side', async () => 
   assert.match(text, /🏆/);
 });
 
-test('question of the day: a public poll at noon, once per chat, switchable; owner sends it now', async () => {
+test('question polls: every 3 hours from 9:00, none at night, once per slot, switchable; owner sends one now', async () => {
   const api = await setup();
   await setSetting('chat_captcha', false);
   await db.run('INSERT INTO squad_chats (chat_id, title, added_by, added_at) VALUES (?, ?, ?, 0)', [DISCUSSION.id, DISCUSSION.title, OWNER.id]);
   const base = nowInt();
-  const noon = base - ((base + 3 * 3600) % 86400) + 12 * 3600 + 1800;
-  await questions.tick(noon - 3600);
+  const midnight = base - ((base + 3 * 3600) % 86400);
+  const at = (h, m = 30) => midnight + h * 3600 + m * 60;
+  await questions.tick(at(3));
+  await questions.tick(at(6));
+  await questions.tick(at(8, 59));
   assert.equal(api.called('sendPoll').length, 0);
-  await questions.tick(noon);
-  await questions.tick(noon + 60);
+  await questions.tick(at(9, 5));
+  await questions.tick(at(11, 50));
   const polls = api.called('sendPoll');
   assert.equal(polls.length, 1);
   assert.equal(polls[0].params.chat_id, DISCUSSION.id);
   assert.equal(polls[0].params.is_anonymous, false);
-  assert.match(polls[0].params.question, /^❓ Вопрос дня: /);
+  assert.match(polls[0].params.question, /^❓ /);
   assert.ok(polls[0].params.options.length >= 2);
+  await questions.tick(at(12, 1));
+  await questions.tick(at(21));
+  await questions.tick(at(24));
+  assert.equal(api.called('sendPoll').length, 4);
+  await questions.tick(at(27));
+  assert.equal(api.called('sendPoll').length, 4);
 
   await say(OWNER, 'Финя, Вопрос Дня');
-  assert.equal(api.called('sendPoll').length, 2);
-  assert.notEqual(api.called('sendPoll')[1].params.question, polls[0].params.question);
+  assert.equal(api.called('sendPoll').length, 5);
+  assert.notEqual(api.called('sendPoll')[4].params.question, polls[0].params.question);
 
   await say(OWNER, 'Финя, Вопрос Дня Выкл');
-  await questions.tick(noon + 86400);
-  assert.equal(api.called('sendPoll').length, 2);
+  await questions.tick(at(36));
+  assert.equal(api.called('sendPoll').length, 5);
+});
+
+test('question polls: Telegram limits, no repeats', () => {
+  assert.ok(questions.QUESTIONS.length >= 90);
+  assert.equal(new Set(questions.QUESTIONS.map(([q]) => q)).size, questions.QUESTIONS.length);
+  for (const [q, options] of questions.QUESTIONS) {
+    assert.ok(q.length + 2 <= 300, q);
+    assert.ok(options.length >= 2 && options.length <= 10, q);
+    for (const o of options) assert.ok(o.length >= 1 && o.length <= 100, o);
+  }
 });
