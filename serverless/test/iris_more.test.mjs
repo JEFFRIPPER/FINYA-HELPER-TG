@@ -55,7 +55,7 @@ test('«+ник»: the nick shows in the profile, tops and RP', async () => {
   assert.match(api.called('sendPhoto').at(-1).params.caption, /Это пользователь Анна/);
 });
 
-test('«передать 100»: XP from the balance, the rank stays; the owner gives for free', async () => {
+test('«передать 100»: XP from balance to balance, ranks stay, 3000 a day per receiver; the owner gives XP', async () => {
   const api = await setup();
   await setSetting('chat_captcha', false);
   const a = user(2, { first_name: 'Аня' });
@@ -65,11 +65,13 @@ test('«передать 100»: XP from the balance, the rank stays; the owner g
   await say(a, 'передать 80', replyTo(b));
   assert.match(lastSent(api), /Не хватает XP на балансе: есть 50/);
   await say(a, 'передать 30', replyTo(b));
-  assert.match(lastSent(api), /🎁 <a href="tg:\/\/user\?id=2">Аня<\/a> ➜ <a href="tg:\/\/user\?id=3">Боря<\/a>: \+30 XP/);
+  assert.match(lastSent(api), /🎁 <a href="tg:\/\/user\?id=2">Аня<\/a> ➜ <a href="tg:\/\/user\?id=3">Боря<\/a>: \+30 XP на баланс/);
   assert.match(lastSent(api), /У тебя на балансе: 20 XP/);
   // +10 for the «Широкий жест» achievement: XP, not spent.
   assert.equal(await xpOf(2), 210);
-  assert.equal(await xpOf(3), 30);
+  // Received XP is balance only: no rank from passing XP around.
+  assert.equal(await xpOf(3), 0);
+  assert.equal(await games.balanceOf(3), 30);
   assert.equal(await games.balanceOf(2), 30);
   await say(a, 'передать 5', replyTo(a));
   assert.match(lastSent(api), /Себе переводить нельзя/);
@@ -77,15 +79,25 @@ test('«передать 100»: XP from the balance, the rank stays; the owner g
   assert.match(lastSent(api), /Ботам XP ни к чему/);
   // The owner's XP doesn't go anywhere.
   await say(OWNER, 'передать 1000', replyTo(b));
-  assert.equal(await xpOf(3), 1030);
+  assert.equal(await xpOf(3), 1000);
   assert.doesNotMatch(lastSent(api), /балансе/);
   await say(b, 'баланс');
-  assert.match(lastSent(api), /на балансе 1,030 XP из 1,030/);
+  assert.match(lastSent(api), /на балансе 1,030 XP, заработано всего 1,000/);
+  // One receiver gets at most 3000 XP a day by transfers; the owner's don't count.
+  const c = user(4, { first_name: 'Вика' });
+  await giveXp(4, 5000);
+  await say(c, 'передать 2990', replyTo(b));
+  assert.match(lastSent(api), /можно перевести ещё 2970 XP/);
+  await say(c, 'передать 2970', replyTo(b));
+  assert.equal(await games.balanceOf(3), 4000);
+  await say(c, 'передать 1', replyTo(b));
+  assert.match(lastSent(api), /уже получил сегодня 3000 XP/);
+  assert.equal(await xpOf(3), 1000);
   // The shop sees the same balance.
   await assert.rejects(games.stake(a, 35), /Не хватает XP на балансе: есть 30/);
 });
 
-test('casino: the stake goes, a win comes back as XP; limits and refunds', async () => {
+test('casino: the stake goes, a win comes back to the balance, not the rank; limits and refunds', async () => {
   let value = 64;
   let fail = false;
   const api = await setup({
@@ -101,8 +113,8 @@ test('casino: the stake goes, a win comes back as XP; limits and refunds', async
   assert.equal(api.called('sendDice').at(-1).params.emoji, '🎰');
   assert.match(lastSent(api), /ДЖЕКПОТ 7️⃣7️⃣7️⃣ · \+1,000 XP \(×20\)/);
   assert.equal(sent(api).at(-1).params.reply_parameters.message_id, 7000);
-  // +100 for the «Три семёрки» achievement.
-  assert.equal(await xpOf(2), 1400);
+  // +100 for the «Три семёрки» achievement; the win itself is balance only.
+  assert.equal(await xpOf(2), 400);
   assert.equal(await games.balanceOf(2), 1350);
   value = 2;
   await say(a, 'кости 100');

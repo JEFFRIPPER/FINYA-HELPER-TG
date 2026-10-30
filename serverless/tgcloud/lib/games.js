@@ -1,7 +1,9 @@
 // XP for others and for luck: «передать 100» ответом and the casino (🎰 / 🎲).
 // Both spend the balance (XP minus purchases minus earlier spending), like the
-// shop does: the rank keeps counting all XP earned. Whatever is won or received
-// comes as bonus XP (`xp.grant`), keyed by the spending row, so it lands once.
+// shop does. Whatever is won or received goes to the balance only, as a negative
+// xp_spend row (gift_in, casino_win): the rank and the tops count earned XP, so two
+// members can't pump each other's rank by passing XP back and forth. The owner's
+// gifts are rewards: they come as bonus XP (`xp.grant`) and count for the rank.
 import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID } from './config.js';
@@ -13,6 +15,8 @@ export class GameError extends Error {}
 export const GIFT_MIN = 1;
 export const GIFT_MAX = 5000;
 export const GIFTS_PER_DAY = 10;
+// XP one member may receive by transfers in a Moscow day (the owner's don't count).
+export const RECEIVE_PER_DAY = 3000;
 export const STAKE_MIN = 10;
 export const STAKE_MAX = 500;
 export const GAMES_PER_DAY = 20;
@@ -37,6 +41,19 @@ async function spend(userId, kind, amount, otherId, ts) {
   return r.rows && r.rows[0] ? r.rows[0].id : null;
 }
 
+// Puts XP on the balance without touching the rank.
+async function credit(userId, kind, amount, otherId, ts) {
+  await db.run(sql`INSERT OR IGNORE INTO profiles (user_id, name) VALUES (${userId}, ${String(userId)})`);
+  await db.run(sql`INSERT INTO xp_spend (user_id, kind, amount, other_id, at)
+    VALUES (${userId}, ${kind}, ${-amount}, ${otherId}, ${ts})`);
+}
+
+async function receivedToday(userId, ts) {
+  const row = await db.get(sql`SELECT COALESCE(-SUM(amount), 0) AS s FROM xp_spend
+    WHERE user_id = ${userId} AND kind = 'gift_in' AND at >= ${dayStart(ts)}`);
+  return row.s;
+}
+
 async function countToday(userId, kind, ts) {
   const row = await db.get(sql`SELECT COUNT(*) AS c FROM xp_spend
     WHERE user_id = ${userId} AND kind = ${kind} AND at >= ${dayStart(ts)}`);
@@ -59,10 +76,22 @@ export async function gift(from, to, value, ts = nowInt()) {
   if (!owner && (await countToday(from.id, 'gift', ts)) >= GIFTS_PER_DAY) {
     throw new GameError(`Не больше ${GIFTS_PER_DAY} переводов в день.`);
   }
+  if (!owner) {
+    const left = RECEIVE_PER_DAY - (await receivedToday(to.id, ts));
+    if (amount > left) {
+      throw new GameError(left > 0
+        ? `Сегодня этому участнику можно перевести ещё ${left} XP: не больше ${RECEIVE_PER_DAY} XP в день на одного.`
+        : `Этот участник уже получил сегодня ${RECEIVE_PER_DAY} XP переводами. Завтра можно снова.`);
+    }
+  }
   const id = await spend(from.id, 'gift', owner ? 0 : amount, to.id, ts);
   if (id == null) throw new GameError(`Не хватает XP на балансе: есть ${await balanceOf(from.id)}.`);
+  if (!owner) {
+    await credit(to.id, 'gift_in', amount, from.id, ts);
+    return { amount, toBalance: true, total: null, promoted: false, newRank: null };
+  }
   const got = await xp.grant(to.user || to.id, 'gift', id, amount, ts);
-  return { amount, total: got ? got.total : null, promoted: got ? got.promoted : false, newRank: got ? got.newRank : null };
+  return { amount, toBalance: false, total: got ? got.total : null, promoted: got ? got.promoted : false, newRank: got ? got.newRank : null };
 }
 
 // 🎰: Telegram's value 1–64 is three reels in base 4, 0 = BAR, 1 = grapes,
@@ -102,12 +131,8 @@ export async function stake(user, value, ts = nowInt()) {
 export async function settle(user, bet, emoji, value, ts = nowInt()) {
   const p = payout(emoji, value);
   const won = Math.floor(bet.amount * p.times);
-  let total = null;
-  if (won > 0) {
-    const got = await xp.grant(user, 'casino', bet.id, won, ts);
-    total = got ? got.total : null;
-  }
-  return { ...p, won, balance: await balanceOf(user.id), total };
+  if (won > 0) await credit(user.id, 'casino_win', won, bet.id, ts);
+  return { ...p, won, balance: await balanceOf(user.id) };
 }
 
 // The stake comes back when Telegram did not throw the dice.

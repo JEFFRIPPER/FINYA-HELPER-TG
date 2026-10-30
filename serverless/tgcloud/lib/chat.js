@@ -1086,8 +1086,8 @@ async function nickText(who, self) {
 async function balanceText(self) {
   const p = await db.get(sql`SELECT xp FROM profiles WHERE user_id = ${self.id}`);
   const b = await games.balanceOf(self.id);
-  return `💰 ${escapeHtml(truncate(self.name, 40))}, на балансе ${fmtThousands(b)} XP из ${fmtThousands(p ? p.xp : 0)}.\n` +
-    'Баланс тратится в лавке, на переводы и в казино. Звание считает весь заработанный XP.';
+  return `💰 ${escapeHtml(truncate(self.name, 40))}, на балансе ${fmtThousands(b)} XP, заработано всего ${fmtThousands(p ? p.xp : 0)}.\n` +
+    'Баланс тратится в лавке, на переводы и в казино. Переводы и выигрыши идут только на баланс, звание растёт от заработанного XP.';
 }
 
 async function idText(message, self, target) {
@@ -1171,7 +1171,7 @@ async function summon(message, self, text) {
 async function giftCommand(message, self, target, amount) {
   try {
     const r = await games.gift(message.from, target, amount);
-    let text = `🎁 ${mention(self.id, self.name)} ➜ ${mention(target.id, target.name)}: +${fmtThousands(r.amount)} XP`;
+    let text = `🎁 ${mention(self.id, self.name)} ➜ ${mention(target.id, target.name)}: +${fmtThousands(r.amount)} XP${r.toBalance ? ' на баланс' : ''}`;
     if (r.promoted && r.newRank) text += `\n🎖 Новое звание: ${r.newRank[1]} · ${escapeHtml(r.newRank[2])}!`;
     if (message.from.id !== OWNER_USER_ID) text += `\n💰 У тебя на балансе: ${fmtThousands(await games.balanceOf(self.id))} XP`;
     await say(message, text);
@@ -1526,7 +1526,7 @@ const HELP = {
     ['🏆 Финя, Топ', 'Топ Сквада по XP'],
     ['🌾 Фарм', `Случайный XP раз в ${fmtWait(xp.FARM_COOLDOWN)}, иногда редкий — до ${xp.FARM_RARE_MAX}`],
     ['💰 Баланс', 'Сколько XP можно потратить: в лавке, на переводы и в казино'],
-    ['🎁 Передать 100 (ответом)', `Перевод XP со своего баланса, до ${games.GIFT_MAX} за раз и ${games.GIFTS_PER_DAY} раз в день`],
+    ['🎁 Передать 100 (ответом)', `Перевод XP с баланса на баланс, до ${games.GIFT_MAX} за раз и ${games.GIFTS_PER_DAY} раз в день, одному не больше ${games.RECEIVE_PER_DAY} в день. Звание от переводов не растёт`],
     ['🎰 Казино 50 · 🎲 Кости 50', `Ставка XP от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Правила: «Казино»`],
     ['🎃 Сладость Или Гадость', 'Хэллоуин, 24–31 октября: раз в день конфета с XP или гадость. 3 дня — лимитная ачивка года'],
     ['🎄 Ёлка', 'Ёлка Сквада, 1 декабря – 13 января: игрушки за XP вешаются в профиле Фини, вкладка «Сквад». 31 декабря Финя подводит итоги'],
@@ -1685,12 +1685,12 @@ const USAGE = [
   },
   {
     keys: ['передать', 'перевести', 'подарить'], title: '🎁 Передать',
-    about: () => `Перевод XP со своего баланса: от ${games.GIFT_MIN} до ${games.GIFT_MAX} за раз, ${games.GIFTS_PER_DAY} раз в день`,
+    about: () => `Перевод XP со своего баланса на баланс другого: от ${games.GIFT_MIN} до ${games.GIFT_MAX} за раз, ${games.GIFTS_PER_DAY} раз в день, одному человеку не больше ${games.RECEIVE_PER_DAY} XP в день. Звание от переводов не растёт`,
     how: [['Передать 100 (ответом)', 'Перевести 100 XP автору сообщения']],
   },
   {
     keys: ['казино', 'слоты', 'слот', 'кости', 'кубик', 'кубики'], title: '🎰 Казино · 🎲 Кости',
-    about: () => `Ставка XP с баланса от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день`,
+    about: () => `Ставка XP с баланса от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Выигрыш идёт на баланс, звание от него не растёт`,
     how: [['Казино 50', 'Слоты: 777 ×20, три в ряд ×7, две семёрки ×2'], ['Кости 50', 'Кубик: 6 ×2,5, 4–5 ×1,5'], ['Казино', 'Правила']],
   },
   {
