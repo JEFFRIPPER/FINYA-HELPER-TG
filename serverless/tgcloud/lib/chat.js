@@ -30,6 +30,7 @@ import * as seasons from './seasons.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
 import * as auto from './auto.js';
+import * as posts from './posts.js';
 import * as typo from './typo.js';
 import * as xp from './xp.js';
 
@@ -2927,6 +2928,7 @@ export async function tick(leftMs) {
   await questions.tick();
   await events.tick();
   await auto.tick();
+  await posts.tick();
 }
 
 // For the Mini App profile.

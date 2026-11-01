@@ -653,3 +653,25 @@ export const quizzes = table('quizzes', {
 }, (t) => ({
   open: index('quizzes_open').on(t.chat_id, t.done),
 }));
+
+// Channel posts in the discussion group: who commented first, whether the best
+// comment of the day after was chosen (posts.js).
+export const channel_posts = table('channel_posts', {
+  chat_id: integer('chat_id').notNull(),
+  root_id: integer('root_id').notNull(),
+  posted_at: integer('posted_at').notNull(),
+  first_by: integer('first_by'),
+  best_done: integer('best_done').notNull().default(0),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.root_id] }),
+  byTime: index('channel_posts_by_time').on(t.best_done, t.posted_at),
+}));
+
+// Who reacted to which comment, for «Лучший коммент поста».
+export const comment_reactions = table('comment_reactions', {
+  chat_id: integer('chat_id').notNull(),
+  message_id: integer('message_id').notNull(),
+  user_id: integer('user_id').notNull(),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.chat_id, t.message_id, t.user_id] }),
+}));
