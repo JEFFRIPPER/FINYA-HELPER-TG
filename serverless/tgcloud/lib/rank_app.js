@@ -2,7 +2,10 @@
 // rank_admin.js). Every change goes through xp.adjustXp / xp.setManualRank, so
 // it is checked, compare-and-set and written to admin_changes like in the bot.
 import { OWNER_USER_ID } from './config.js';
-import { truncate } from './util.js';
+import * as bio from './bio.js';
+import { tellUser } from './club.js';
+import * as staff from './staff.js';
+import { escapeHtml, truncate } from './util.js';
 import * as xp from './xp.js';
 
 const PAGE_SIZE = 30;
@@ -69,10 +72,16 @@ async function card(userId) {
   if (!p) throw new RankAppError('Участник не найден.', 'NOT_FOUND');
   const founder = p.user_id === OWNER_USER_ID;
   const history = await xp.adminHistory(userId, HISTORY_LIMIT);
+  const [jobs, awards] = await Promise.all([staff.positionsOf(userId), bio.awardsOf(userId)]);
+  const have = new Set(jobs.map((j) => j.code));
   return {
     ...row(p),
     today: p.today || 0,
     week: p.week || 0,
+    positions: staff.POSITIONS.map((j) => ({ code: j.code, emoji: j.emoji, title: j.title, on: have.has(j.code) })),
+    awards: awards.map((a) => ({ text: a.text, icon: bio.degreeIcon(a.degree) })),
+    awardMax: bio.AWARD_MAX,
+    degrees: bio.AWARD_DEGREES,
     auto: rankView(xp.rankFor(p.xp, { founder })[0]),
     history: history.map((e) => ({
       action: e.action,
@@ -98,6 +107,7 @@ function operationId(input) {
 }
 
 function translate(err) {
+  if (err instanceof staff.StaffError || err instanceof bio.BioError) return new RankAppError(err.message);
   if (!(err instanceof xp.XpError)) return err;
   if (err.kind === 'lookup') return new RankAppError('Участник не найден.', 'NOT_FOUND');
   if (err.kind === 'permission') return new RankAppError('Профиль основателя защищён: X · Основатель SQUAD не меняется.', 'FORBIDDEN');
@@ -130,6 +140,27 @@ export async function handle(user, input) {
         const roman = input.roman == null ? null : String(input.roman);
         if (roman != null && !xp.ROMANS.has(roman)) throw new RankAppError('Можно назначить только звания I–IX.');
         await xp.setManualRank(id, roman, opts());
+        return await card(id);
+      }
+      case 'position': {
+        const id = userId(input);
+        const job = staff.byCode(String(input.code || ''));
+        if (!job) throw new RankAppError('Нет такой должности.');
+        if (input.on) {
+          if (await staff.appoint(id, job, user.id)) {
+            await tellUser(id, `${job.emoji} Тебе выдана должность «${escapeHtml(job.title)}» в Скваде!\n\nОбязанности: ${escapeHtml(job.duties.join(', '))}.`);
+          }
+        } else {
+          await staff.dismiss(id, job);
+        }
+        return await card(id);
+      }
+      case 'award': {
+        const id = userId(input);
+        const degree = Number(input.degree) || 1;
+        if (!Number.isInteger(degree) || degree < 1 || degree > bio.AWARD_DEGREES.length) throw new RankAppError('Неверная степень награды.');
+        const text = await bio.giveAward(user.id, user.id, id, String(input.text || ''), degree);
+        await tellUser(id, `${bio.degreeIcon(degree)} Ты получаешь награду ${degree} степени:\n${escapeHtml(text)}\n\nОна видна в твоём профиле («Кто Я»).`);
         return await card(id);
       }
       default:

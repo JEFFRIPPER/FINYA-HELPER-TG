@@ -567,7 +567,9 @@
       h('div', { class: 'medal', 'aria-hidden': 'true' }, insignia(me.rank.roman)),
       h('div', { class: 'who' }, avatar(me),
         h('div', { class: 'who-text' }, h('p', { class: 'name' + nickClass(me.style), text: me.name }),
-          title ? h('span', { class: 'title-chip', text: title }) : null)),
+          title ? h('span', { class: 'title-chip', text: title }) : null,
+          state.data && state.data.club && state.data.club.birthday && state.data.club.birthday.today
+            ? h('span', { class: 'bday-chip', text: '👑 С днём рождения!' }) : null)),
       h('div', { class: 'chips' },
         h('span', { class: 'rank-chip' }, icon('military_tech_fill'), h('span', { text: me.rank.roman + ' · ' + me.rank.name })),
         streakChip(me.streak), marriageChip(me.marriage), repChip(me.rep)),
@@ -814,7 +816,7 @@
     return h('li', { class: 'item' + (r.me ? ' me' : '') + (open ? ' ripple' : ''), role: open ? 'button' : null, tabindex: open ? '0' : null, onclick: open },
       h('div', { class: 'lead place' + (r.place <= 3 ? ' p' + r.place : ''), text: String(r.place) }),
       h('div', { class: 'body' },
-        h('b', null, h('em', { class: 'nm' + nickClass(st), text: r.name }), r.me ? ' · ты' : ''),
+        h('b', null, r.bday ? '👑 ' : '', h('em', { class: 'nm' + nickClass(st), text: r.name }), r.me ? ' · ты' : ''),
         h('span', { text: (st && st.title ? st.title + ' · ' : '') + r.rank.roman + ' · ' + r.rank.name })),
       h('div', { class: 'trail', text: r.score + ' XP' }));
   }
@@ -831,7 +833,7 @@
       return h('button', { class: 'pod pod' + r.place + (r.me ? ' me' : ''), type: 'button',
         onclick: function () { if (r.ref) showPerson(r.ref); } },
         h('div', { class: 'pava' }, faceOf(r), r.place === 1 ? h('i', { class: 'pod-crown', text: '👑' }) : null),
-        h('b', { class: 'pod-name' }, h('em', { class: 'nm' + nickClass(st), text: r.name })),
+        h('b', { class: 'pod-name' }, r.bday ? '👑 ' : '', h('em', { class: 'nm' + nickClass(st), text: r.name })),
         h('span', { class: 'pod-sub', text: st && st.title ? st.title : r.rank.roman + ' · ' + r.rank.name }),
         h('span', { class: 'pod-score', text: r.score + ' XP' }),
         h('div', { class: 'pod-step' }, h('span', { text: String(r.place) })));
@@ -1120,21 +1122,35 @@
   }
 
   // «Все обновления»: every change of Финя from the very start, newest first.
-  var changes = { entries: null, loading: false };
+  // SEEN_KEY: the newest one this device has seen; newer ones are marked «Новое».
+  var changes = { entries: null, loading: false, seen: null };
+  var SEEN_KEY = 'finya.changes.seen';
 
   function changesCard() {
     var go = h('span', { class: 'row-go' }, icon('chevron_right', 'icon go'));
-    return h('section', { class: 'card row-card press ripple', role: 'button', tabindex: '0', onclick: function () { openChanges(go); } },
+    var top = state.data && state.data.changesTop;
+    var fresh = top && remember(SEEN_KEY) !== top ? h('span', { class: 'tag new-tag', text: 'Новое' }) : null;
+    return h('section', { class: 'card row-card press ripple', role: 'button', tabindex: '0', onclick: function () {
+      if (fresh) fresh.remove();
+      openChanges(go);
+    } },
       h('div', { class: 'lead primary' }, icon('rocket_launch_fill')),
-      h('div', { class: 'body' }, h('b', { text: 'Обновления Фини' }), h('span', { text: 'Всё новое с самого начала' })),
+      h('div', { class: 'body' }, h('b', null, 'Обновления Фини', fresh), h('span', { text: 'Всё новое с самого начала' })),
       go);
   }
 
-  function changeEntry(e) {
-    return h('article', { class: 'change' },
-      h('span', { class: 'change-date', text: e.date }),
+  function changeEntry(e, isNew) {
+    return h('article', { class: 'change' + (isNew ? ' fresh' : '') },
+      h('span', { class: 'change-date', text: isNew ? e.date + ' · новое' : e.date }),
       h('b', { class: 'change-title', text: e.title }),
       h('ul', { class: 'change-items' }, e.items.map(function (t) { return h('li', { text: t }); })));
+  }
+
+  // How many entries on top this device has not seen yet; none on the very first visit.
+  function freshCount() {
+    if (!changes.seen) return 0;
+    var i = changes.entries.findIndex(function (e) { return e.id === changes.seen; });
+    return i < 0 ? 0 : i;
   }
 
   function showChanges() {
@@ -1145,7 +1161,7 @@
     content.replaceChildren(
       h('h2', { class: 'goods-title', text: 'Все обновления' }),
       h('p', { class: 'fine', text: changes.entries.length + ' ' + plural(changes.entries.length, 'обновление', 'обновления', 'обновлений') + ', новые сверху' }),
-      h('div', { class: 'changes' }, changes.entries.map(changeEntry)),
+      h('div', { class: 'changes' }, changes.entries.map(function (e, i) { return changeEntry(e, i < freshCount()); })),
       h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
   }
 
@@ -1158,6 +1174,8 @@
     btn.replaceChildren(loader());
     api('changes', {}).then(function (data) {
       changes.entries = data.entries || [];
+      changes.seen = remember(SEEN_KEY);
+      if (changes.entries.length) remember(SEEN_KEY, changes.entries[0].id);
       showChanges();
     }, function (err) {
       vibrate('error');
@@ -1857,7 +1875,47 @@
     return h('section', { class: 'card' },
       h('div', { class: 'card-title' }, h('h3', { text: 'Квесты недели' }),
         h('span', { class: 'chip-time' }, icon('schedule_fill'), days === 1 ? 'последний день' : 'ещё ' + days + ' ' + plural(days, 'день', 'дня', 'дней'))),
-      h('ul', { class: 'list' }, withDividers(items)));
+      h('ul', { class: 'list' }, withDividers(items)),
+      choiceBlock(c.choice));
+  }
+
+  // «Квест на выбор»: three offered for this member, one is taken for the week.
+  function choiceBlock(ch) {
+    if (!ch) return null;
+    var head = h('div', { class: 'choice-head' }, icon('flag_fill'), h('b', { text: 'Квест на выбор' }),
+      h('span', { text: ch.picked ? 'выбран на эту неделю' : 'выбери один из трёх' }));
+    if (ch.picked) {
+      var q = ch.picked;
+      var done = q.progress >= q.goal;
+      var ind = h('i');
+      ind.style.transform = 'scaleX(' + (q.progress / q.goal) + ')';
+      var trail;
+      if (q.claimed) trail = h('div', { class: 'trail' }, icon('check_circle_fill'));
+      else if (done) {
+        trail = h('button', { class: 'btn-filled small ripple', onclick: function () {
+          act({ action: 'choice_quest' }, trail, rewarded('Квест выполнен'));
+        } }, '+' + q.xp + ' XP');
+      } else trail = h('div', { class: 'trail dim', text: '+' + q.xp + ' XP' });
+      return h('div', { class: 'choice' }, head, h('ul', { class: 'list' },
+        h('li', { class: 'item quest' + (q.claimed ? ' claimed' : '') },
+          h('div', { class: 'lead' + (done ? ' primary' : '') }, icon(q.icon)),
+          h('div', { class: 'body' }, h('b', { text: q.title }), h('span', { text: q.text }),
+            h('div', { class: 'qbar' }, ind), h('small', { text: q.progress + ' / ' + q.goal })),
+          trail)));
+    }
+    var rows = ch.options.map(function (o) {
+      var pick = h('button', { class: 'btn-tonal small ripple', type: 'button' }, '+' + o.xp + ' XP');
+      pick.addEventListener('click', function () {
+        confirmDialog('Взять «' + o.title + '»?', [o.text, 'Награда: +' + o.xp + ' XP', 'Поменять до конца недели не получится.'], function () {
+          return act({ action: 'pick_quest', id: o.id }, null, function () { vibrate('success'); snackbar('Квест выбран'); });
+        });
+      });
+      return h('li', { class: 'item quest' },
+        h('div', { class: 'lead' }, icon(o.icon)),
+        h('div', { class: 'body' }, h('b', { text: o.title }), h('span', { text: o.text })),
+        pick);
+    });
+    return h('div', { class: 'choice' }, head, h('ul', { class: 'list' }, withDividers(rows)));
   }
 
   // ---- Хэллоуин (24–31 October) -------------------------------------------------
@@ -2078,6 +2136,38 @@
     });
   }
 
+  // «Подарить»: the thing goes to another member, paid from my balance.
+  function giftItem(it, shop) {
+    if (!shop.founder && shop.balance < it.price) {
+      vibrate('error');
+      snackbar('Не хватает ' + (it.price - shop.balance) + ' XP на подарок');
+      return;
+    }
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    vibrate('light');
+    var to = h('input', { class: 'field-input', type: 'text', maxlength: '40', placeholder: '@username', autocomplete: 'off',
+      autocapitalize: 'off', spellcheck: 'false' });
+    var send = h('button', { class: 'btn-filled wide ripple', type: 'button' }, icon('redeem_fill'), 'Подарить · ' + (shop.founder ? 'бесплатно' : it.price + ' XP'));
+    send.addEventListener('click', function () {
+      if (!to.value.trim()) { vibrate('error'); snackbar('Напиши @username того, кому даришь'); return; }
+      act({ action: 'gift', item: it.id, to: to.value.trim() }, send, function (data) {
+        vibrate('success');
+        var g = data && data.result && data.result.gift;
+        snackbar(g ? '🎁 «' + g.item + '» теперь у ' + g.name : 'Подарок отправлен');
+        close();
+      });
+    });
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: 'Подарить «' + it.name + '»' }),
+      goodsField('Кому', to),
+      h('p', { class: 'fine', text: shop.founder ? 'Основателю подарки бесплатны.'
+        : it.price + ' XP спишется с твоего баланса, звание и XP не изменятся. Финя напишет получателю в личку.' }),
+      send,
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
+  }
+
   function shopItem(it, shop, me) {
     var btn;
     if (it.equipped) {
@@ -2140,6 +2230,8 @@
         action = h('div', { class: 'fit-actions' },
           h('span', { class: 'fit-what', text: it.equipped ? '«' + it.name + '» уже на тебе' : 'Примеряешь «' + it.name + '»' }),
           h('button', { class: 'btn-text small ripple', type: 'button', onclick: reset }, 'Сбросить'),
+          h('button', { class: 'btn-tonal small ripple', type: 'button', onclick: function () { giftItem(it, shop); } },
+            icon('redeem_fill'), 'Подарить'),
           btn);
       }
       // replaceChildren() would print a null as the text «null».
@@ -2170,7 +2262,7 @@
       h('div', { class: 'balance' },
         h('span', { text: shop.founder ? 'Основателю всё бесплатно' : 'Баланс' }),
         shop.founder ? null : h('b', null, String(shop.balance), h('small', { text: 'XP' }))),
-      h('p', { class: 'fine', text: 'Покупки тратят баланс, а не опыт: звание и место в топе не падают. Нажми на вещь, чтобы примерить её сверху.' }));
+      h('p', { class: 'fine', text: 'Покупки тратят баланс, а не опыт: звание и место в топе не падают. Нажми на вещь, чтобы примерить её сверху или подарить другу.' }));
     var groups = SLOTS.map(function (slot) {
       return h('section', { class: 'group' }, h('h3', { class: 'group-title', text: slot[1] }),
         h('div', { class: 'shop-grid' }, shop.items.filter(function (i) { return i.slot === slot[0]; }).map(function (it) {
@@ -3091,6 +3183,8 @@
           h('button', { class: 'xp-btn minus ripple', onclick: function () { custom(-1); } }, icon('remove')),
           h('button', { class: 'xp-btn ripple', onclick: function () { custom(1); } }, icon('add'))));
     }
+    if (c.positions) parts.push(h('h3', { class: 'group-title', text: 'Должность' }), jobChipsAdmin(c, content, close));
+    if (c.awards) parts.push(h('h3', { class: 'group-title', text: 'Награды' }), awardAdmin(c, content, close));
     parts.push(h('h3', { class: 'group-title', text: 'История изменений' }),
       c.history.length
         ? h('ul', { class: 'list' }, withDividers(c.history.map(function (e) {
@@ -3100,6 +3194,45 @@
         : h('p', { class: 'empty', text: 'Ручных изменений пока не было.' }),
       h('button', { class: 'btn-tonal close-sheet ripple', onclick: close }, 'Закрыть'));
     content.replaceChildren.apply(content, parts);
+  }
+
+  // Positions of the Squad team: a tap gives or takes one.
+  function jobChipsAdmin(c, content, close) {
+    return h('div', { class: 'job-grid' }, c.positions.map(function (j) {
+      return h('button', { class: 'rank-opt job-opt ripple' + (j.on ? ' on' : ''), type: 'button', onclick: function () {
+        confirmDialog(j.on ? 'Снять должность?' : 'Выдать должность?', [c.name, j.emoji + ' ' + j.title,
+          j.on ? 'Права в Telegram сними вручную, если выдавал.' : 'Финя напишет ему в личку. Права в Telegram выдаются вручную.'], function () {
+          return apply(content, close, { action: 'position', id: c.id, code: j.code, on: !j.on }, c.rank.roman);
+        });
+      } }, h('b', { text: j.emoji }), h('span', { text: j.title }));
+    }));
+  }
+
+  // Awards: what they have, and a new one with its degree.
+  function awardAdmin(c, content, close) {
+    var degree = 1;
+    var text = h('input', { class: 'field-input', type: 'text', maxlength: String(c.awardMax || 60), placeholder: 'Например, Лучший мемодел недели' });
+    var degs = h('div', { class: 'award-degs' });
+    function drawDegs() {
+      degs.replaceChildren.apply(degs, c.degrees.map(function (icn, i) {
+        return h('button', { class: 'deg ripple' + (degree === i + 1 ? ' on' : ''), type: 'button', 'aria-label': 'Степень ' + (i + 1),
+          onclick: function () { degree = i + 1; haptic(); drawDegs(); } }, icn);
+      }));
+    }
+    drawDegs();
+    var give = h('button', { class: 'btn-filled wide ripple', type: 'button' }, icon('workspace_premium_fill'), 'Вручить награду');
+    give.addEventListener('click', function () {
+      var t = text.value.trim();
+      if (!t) { vibrate('error'); snackbar('Напиши название награды'); return; }
+      confirmDialog('Вручить награду?', [c.name, c.degrees[degree - 1] + ' ' + t, degree + ' степень · видна в «Кто Я»'], function () {
+        return apply(content, close, { action: 'award', id: c.id, text: t, degree: degree }, c.rank.roman);
+      });
+    });
+    return h('div', { class: 'award-admin' },
+      c.awards.length
+        ? h('ul', { class: 'award-list' }, c.awards.slice(0, 10).map(function (a) { return h('li', null, h('span', { text: a.icon }), h('b', { text: a.text })); }))
+        : h('p', { class: 'fine', text: 'Наград пока нет.' }),
+      h('div', { class: 'field' }, text), degs, give);
   }
 
   function rankName(roman) {
@@ -3200,12 +3333,45 @@
     try { tg.BackButton.offClick(onBack); tg.BackButton.hide(); } catch (e) { /* older Telegram */ }
   }
 
+  // A sheet scrolled to its top follows the finger down; far enough (or a quick flick) closes it.
+  function swipeToClose(sheet, close) {
+    var startY = null;
+    var startAt = 0;
+    var dy = 0;
+    sheet.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1 || sheet.scrollTop > 0) { startY = null; return; }
+      startY = e.touches[0].clientY;
+      startAt = Date.now();
+      dy = 0;
+    }, { passive: true });
+    sheet.addEventListener('touchmove', function (e) {
+      if (startY == null) return;
+      dy = e.touches[0].clientY - startY;
+      if (dy <= 0 || sheet.scrollTop > 0) { dy = 0; sheet.style.transform = ''; return; }
+      // Ours, not the page's scroll or Telegram's.
+      if (e.cancelable) e.preventDefault();
+      sheet.style.transform = 'translateY(' + dy + 'px)';
+    }, { passive: false });
+    function end() {
+      if (startY == null) return;
+      var fast = dy > 40 && Date.now() - startAt < 250;
+      startY = null;
+      if (dy > Math.min(120, sheet.offsetHeight / 4) || fast) {
+        sheet.style.transform = '';
+        close();
+      } else {
+        sheet.style.transform = '';
+      }
+      dy = 0;
+    }
+    sheet.addEventListener('touchend', end);
+    sheet.addEventListener('touchcancel', end);
+  }
+
   // Bottom sheet around `content`. → its close(), or null when one is already
   // open (a double tap on a row must not stack two sheets).
   function openSheet(content) {
     if (document.querySelector('.sheet:not(.leave)')) return null;
-    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, h('div', { class: 'handle' }), content);
-    var scrim = h('div', { class: 'scrim' });
     var closed = false;
     function close() {
       if (closed) return;
@@ -3215,7 +3381,14 @@
       sheet.classList.add('leave');
       setTimeout(function () { scrim.remove(); sheet.remove(); }, reduceMotion ? 0 : 250);
     }
+    // The handle and «✕» stay on top while the sheet scrolls: no need to reach «Закрыть» below.
+    var top = h('div', { class: 'sheet-top' }, h('div', { class: 'handle' }),
+      h('button', { class: 'sheet-x ripple', type: 'button', 'aria-label': 'Закрыть', onclick: close }, icon('close')));
+    var sheet = h('div', { class: 'sheet', role: 'dialog', 'aria-modal': 'true' }, top, content);
+    var scrim = h('div', { class: 'scrim' });
     scrim.addEventListener('click', close);
+    sheet.addEventListener('animationend', function () { if (!closed) sheet.classList.add('shown'); });
+    swipeToClose(sheet, close);
     document.body.appendChild(scrim);
     document.body.appendChild(sheet);
     pushBack(close);

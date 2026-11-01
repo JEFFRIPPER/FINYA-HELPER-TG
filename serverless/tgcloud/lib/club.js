@@ -3,13 +3,16 @@
 // Bonus XP goes through xp.grant(), once per reward key.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
-import { OWNER_USER_ID, SQUAD_CHANNEL_ID, SQUAD_LINKS } from './config.js';
+import { OWNER_USER_ID, SQUAD_CHANNEL_ID, SQUAD_LINKS, WEBAPP_URL } from './config.js';
 import { withPremium } from './emoji.js';
 import { CHAT_ACHIEVEMENTS, chatStats, unlock } from './feats.js';
 import { nameOf } from './members.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
 import { boldHtml, escapeHtml, fullName, MSK_OFFSET, nowInt, plural, truncate, weekStart } from './util.js';
+import * as family from './family.js';
+import * as social from './social.js';
+import * as staff from './staff.js';
 import { resolveXpChat } from './xpchat.js';
 import * as xp from './xp.js';
 
@@ -118,6 +121,99 @@ export async function claimQuest(user, id) {
   const progress = await questProgress(user.id, ts);
   if (progress[quest.kind] < quest.goal) throw new ClubError('Квест ещё не выполнен.');
   const result = await xp.grant(user, 'quest', questKey(week, quest), quest.xp, ts);
+  if (!result) throw new ClubError('Награда за этот квест уже получена.');
+  return result;
+}
+
+// ---- quest of choice ---------------------------------------------------------
+
+// One more quest a week: three are offered, the member picks one. Who never played the
+// casino or never commented doesn't get those. `seen`: has the member done this ever.
+export const CHOICE_QUESTS = [
+  { id: 'farm', goal: 15, xp: 40, icon: 'bolt_fill', title: 'Фермер', text: 'Сделай «Фарм» 15 раз за неделю' },
+  { id: 'quiz', goal: 3, xp: 40, icon: 'quiz_fill', title: 'Знаток', text: 'Отгадай 3 загадки в чате' },
+  { id: 'polls', goal: 5, xp: 30, icon: 'how_to_vote_fill', title: 'Голос народа', text: 'Проголосуй в 5 опросах' },
+  { id: 'msgs', goal: 150, xp: 40, icon: 'mood_fill', title: 'Душа компании', text: 'Напиши 150 сообщений в чатах Сквада', seen: 'msgs' },
+  { id: 'casino', goal: 10, xp: 30, icon: 'diamond_fill', title: 'Азарт', text: 'Сыграй в казино 10 раз', seen: 'casino' },
+  { id: 'comments', goal: 25, xp: 50, icon: 'chat_bubble_fill', title: 'Комментатор', text: 'Оставь 25 комментариев под постами', seen: 'comments' },
+  { id: 'reactions', goal: 40, xp: 30, icon: 'favorite_fill', title: 'Сердце Сквада', text: 'Поставь 40 реакций в обсуждениях', seen: 'reactions' },
+];
+const CHOICE_BY_ID = new Map(CHOICE_QUESTS.map((q) => [q.id, q]));
+const choiceKey = (week) => week * 10 + 9; // the quest ids above stop at 5
+const pickKey = (week, userId) => `quest_pick:${week}:${userId}`;
+
+async function everDid(userId) {
+  const row = await db.get(sql`SELECT
+      EXISTS(SELECT 1 FROM chat_activity WHERE user_id = ${userId}) AS msgs,
+      EXISTS(SELECT 1 FROM xp_spend WHERE user_id = ${userId} AND kind = 'casino') AS casino,
+      EXISTS(SELECT 1 FROM events WHERE user_id = ${userId} AND kind = 'comment' AND points > 0) AS comments,
+      EXISTS(SELECT 1 FROM events WHERE user_id = ${userId} AND kind = 'reaction' AND points > 0) AS reactions`);
+  return row || {};
+}
+
+// The three offered this week: the same all week, different for each member.
+export async function choiceOptions(userId, week) {
+  const did = await everDid(userId);
+  const pool = CHOICE_QUESTS.filter((q) => !q.seen || did[q.seen]);
+  let seed = ((Math.abs(userId) % 100003) * 31 + week * 17) % 2147483646 + 1;
+  const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  const list = pool.slice();
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list.slice(0, 3);
+}
+
+async function choiceProgress(userId, quest, ts) {
+  const start = weekStart(ts);
+  let row;
+  if (quest.id === 'msgs') {
+    row = await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS n FROM chat_activity
+      WHERE user_id = ${userId} AND day >= ${mskDay(start)} AND day <= ${mskDay(ts)}`);
+  } else if (quest.id === 'casino') {
+    row = await db.get(sql`SELECT COUNT(*) AS n FROM xp_spend WHERE user_id = ${userId} AND kind = 'casino' AND at >= ${start}`);
+  } else {
+    const kinds = { farm: ['farm'], quiz: ['quiz'], polls: ['poll', 'qpoll'], comments: ['comment'], reactions: ['reaction'] }[quest.id];
+    row = await db.get(sql`SELECT COUNT(*) AS n FROM events WHERE user_id = ${userId} AND earned_at >= ${start}
+      AND points > 0 AND kind IN (SELECT value FROM json_each(${JSON.stringify(kinds)}))`);
+  }
+  return row ? row.n : 0;
+}
+
+async function pickedQuest(userId, week) {
+  const id = await getSetting(pickKey(week, userId));
+  return id ? CHOICE_BY_ID.get(id) || null : null;
+}
+
+async function choiceView(userId, ts) {
+  const week = weekNo(ts);
+  const picked = await pickedQuest(userId, week);
+  const view = (q) => ({ id: q.id, icon: q.icon, title: q.title, text: q.text, goal: q.goal, xp: q.xp });
+  if (!picked) return { picked: null, options: (await choiceOptions(userId, week)).map(view) };
+  const claimed = Boolean(await db.get(sql`SELECT 1 AS x FROM events
+    WHERE user_id = ${userId} AND kind = 'quest' AND message_id = ${choiceKey(week)}`));
+  return {
+    picked: { ...view(picked), progress: Math.min(picked.goal, await choiceProgress(userId, picked, ts)), claimed },
+    options: [],
+  };
+}
+
+export async function pickQuest(user, id) {
+  const week = weekNo(nowInt());
+  if (await pickedQuest(user.id, week)) throw new ClubError('Квест на выбор на этой неделе уже выбран.');
+  const offered = await choiceOptions(user.id, week);
+  if (!offered.some((q) => q.id === id)) throw new ClubError('Этого квеста нет среди предложенных.');
+  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${pickKey(week, user.id)}, ${JSON.stringify(id)})`);
+}
+
+export async function claimChoice(user) {
+  const ts = nowInt();
+  const week = weekNo(ts);
+  const quest = await pickedQuest(user.id, week);
+  if (!quest) throw new ClubError('Сначала выбери квест.');
+  if ((await choiceProgress(user.id, quest, ts)) < quest.goal) throw new ClubError('Квест ещё не выполнен.');
+  const result = await xp.grant(user, 'quest', choiceKey(week), quest.xp, ts);
   if (!result) throw new ClubError('Награда за этот квест уже получена.');
   return result;
 }
@@ -354,6 +450,54 @@ export async function buy(user, itemId) {
   await equip(user.id, item.slot, item.id);
 }
 
+// A member by @username: their profile first, then any chat Финя has seen them in.
+async function idByUsername(raw) {
+  const name = String(raw || '').trim().replace(/^@/, '').replace(/^https?:\/\/t\.me\//i, '');
+  if (!/^[A-Za-z0-9_]{4,32}$/.test(name)) return null;
+  const row = await db.get(sql`SELECT user_id FROM profiles WHERE LOWER(username) = LOWER(${name}) LIMIT 1`)
+    || await db.get(sql`SELECT user_id FROM chat_members WHERE LOWER(username) = LOWER(${name})
+      ORDER BY last_active DESC LIMIT 1`);
+  return row ? row.user_id : null;
+}
+
+const SLOT_NAMES = { frame: 'рамка', color: 'цвет ника', title: 'титул', chart: 'тема графика' };
+
+// «Подарить» in the shop: the giver pays from the balance, the thing is the other one's.
+export async function giftItem(user, itemId, to) {
+  const item = SHOP_BY_ID.get(itemId);
+  if (!item) throw new ClubError('Такой вещи нет в лавке.');
+  const target = await idByUsername(to);
+  if (!target) throw new ClubError('Не нашла такого участника. Проверь @username: он должен хоть раз писать в чатах Сквада.');
+  if (target === user.id) throw new ClubError('Себе подарить нельзя: просто купи эту вещь.');
+  if (target === OWNER_USER_ID || (await ownsItem(target, item.id))) {
+    throw new ClubError(`У этого участника уже есть «${item.name}». Выбери другую вещь.`);
+  }
+  const ts = nowInt();
+  let spendId = null;
+  if (user.id !== OWNER_USER_ID) {
+    const r = await db.run(sql`INSERT INTO xp_spend (user_id, kind, amount, other_id, at)
+      SELECT ${user.id}, 'shop_gift', ${item.price}, ${target}, ${ts}
+      WHERE COALESCE((SELECT xp FROM profiles WHERE user_id = ${user.id}), 0)
+        - COALESCE((SELECT SUM(price) FROM purchases WHERE user_id = ${user.id}), 0)
+        - COALESCE((SELECT SUM(amount) FROM xp_spend WHERE user_id = ${user.id}), 0) >= ${item.price}
+      RETURNING id`);
+    spendId = r.rows && r.rows[0] ? r.rows[0].id : null;
+    if (!spendId) throw new ClubError('Не хватает XP на балансе.');
+  }
+  // Price 0: the receiver's balance stays as it was.
+  const got = await db.run(sql`INSERT OR IGNORE INTO purchases (user_id, item, price, bought_at)
+    VALUES (${target}, ${item.id}, 0, ${ts})`);
+  if (got.rowsAffected !== 1) {
+    if (spendId) await db.run(sql`DELETE FROM xp_spend WHERE id = ${spendId}`);
+    throw new ClubError(`У этого участника уже есть «${item.name}». Выбери другую вещь.`);
+  }
+  await tellUser(target,
+    `🎁 ${escapeHtml(truncate(fullName(user), 40))} дарит тебе «${escapeHtml(item.name)}» (${SLOT_NAMES[item.slot]}) из Лавки!\n\n` +
+    'Надеть можно в профиле Фини, вкладка «Лавка».',
+    await profileButton('🎁 Открыть Лавку'));
+  return { name: await nameOf(target), item: item.name };
+}
+
 export async function wear(user, slot, itemId) {
   if (!SLOTS.includes(slot)) throw new ClubError('Неизвестный слот.');
   if (itemId == null) {
@@ -474,6 +618,15 @@ function isBirthday(b, date) {
   return b.month === 2 && b.day === 29 && !isLeap(date.year) && date.month === 2 && date.day === 28;
 }
 
+// Who has a birthday today and lets the Squad know: 👑 in the top and the profile.
+export async function birthdayIds(ts = nowInt()) {
+  const date = mskDate(ts);
+  const leapDay = date.month === 2 && date.day === 28 && !isLeap(date.year) ? 1 : 0;
+  const rows = await db.all(sql`SELECT user_id, day, month FROM birthdays WHERE announce = 1
+    AND ((month = ${date.month} AND day = ${date.day}) OR (${leapDay} = 1 AND month = 2 AND day = 29))`);
+  return new Set(rows.filter((r) => isBirthday(r, date)).map((r) => r.user_id));
+}
+
 async function birthdayView(user, ts) {
   const b = await db.get(sql`SELECT * FROM birthdays WHERE user_id = ${user.id}`);
   if (!b) return { day: null, month: null, announce: true, editableAt: null, today: false };
@@ -547,7 +700,7 @@ async function referrerFor(inviteLink) {
   return known ? id : null;
 }
 
-async function tellUser(userId, text, replyMarkup) {
+export async function tellUser(userId, text, replyMarkup) {
   const known = await getUser(userId);
   if (!known || known.blocked) return;
   try {
@@ -609,11 +762,56 @@ async function claimSlot(key, gap) {
   return r.rowsAffected === 1;
 }
 
+// ---- newcomer guide ----------------------------------------------------------
+
+export const GUIDE_TEXT = '🧭 Гид новичка\n\n' +
+  'Коротко, с чего начать в Скваде:\n\n' +
+  '👤 Напиши в чате «Кто Я»: твой профиль, звание и XP.\n' +
+  '📖 Напиши «Команды»: все команды Фини с подсказками.\n' +
+  '🌾 «Фарм» раз в час даёт XP, а за комментарии и реакции под постами Финя тоже начисляет XP.\n' +
+  '🎁 В профиле Фини (кнопка ниже) награда дня, квесты, ачивки, Лавка и топ Сквада.\n\n' +
+  'Любую команду можно спросить так: «Фарм помощь».';
+
+export function guideKeyboard() {
+  return keyboard([
+    [button('👤 Открыть профиль Фини', { web_app: { url: WEBAPP_URL } })],
+    [button('🏠 Главное меню', { callback_data: 'home' })],
+  ]);
+}
+
+// Sends the guide to someone who already started the bot, once per person.
+async function sendGuide(user) {
+  const known = await getUser(user.id);
+  if (!known || known.blocked) return false;
+  const r = await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${`guide_sent:${user.id}`}, ${String(nowInt())})`);
+  if (r.rowsAffected !== 1) return true;
+  try {
+    await api.sendMessage({ chat_id: user.id, text: boldHtml(GUIDE_TEXT), parse_mode: 'HTML', reply_markup: guideKeyboard() });
+  } catch {
+    console.info(`Could not send the guide to ${user.id}`);
+  }
+  return true;
+}
+
+async function welcomeButtons(withGuide) {
+  try {
+    const me = await getMe();
+    const rows = [[button('👤 Профиль и награды', { url: `https://t.me/${me.username}?start=profile` })]];
+    if (withGuide) rows.push([button('🧭 Гид новичка', { url: `https://t.me/${me.username}?start=guide` })]);
+    return keyboard(rows);
+  } catch {
+    return undefined;
+  }
+}
+
 // A service message with new_chat_members in the discussion group.
 export async function welcome(message) {
   const people = (message.new_chat_members || []).filter((u) => u && !u.is_bot);
   if (!people.length || !(await getSetting('club_welcome'))) return;
   const chatId = message.chat.id;
+  // Who already started the bot gets the guide in private; the rest get a button for it.
+  let strangers = 0;
+  for (const u of people.slice(0, 5)) if (!(await sendGuide(u))) strangers++;
   // Per chat: a greeting in one group must not silence or delete one in another.
   if (!(await claimSlot(`welcome_at:${chatId}`, WELCOME_GAP))) return;
   const names = people.slice(0, 5).map((u) => `<b>${escapeHtml(truncate(fullName(u), 40))}</b>`).join(', ');
@@ -624,7 +822,7 @@ export async function welcome(message) {
   const sent = await withPremium({
     chat_id: message.chat.id, text: boldHtml(text), parse_mode: 'HTML',
     link_preview_options: { is_disabled: true },
-    reply_markup: await profileButton('👤 Профиль и награды'),
+    reply_markup: await welcomeButtons(strangers > 0),
   }, (p) => api.sendMessage(p));
   // Only the newest greeting stays, so a wave of joins doesn't flood the chat.
   const previous = await getSetting(`welcome_last:${chatId}`);
@@ -748,6 +946,54 @@ async function weeklyTick(ts) {
   }
 }
 
+// ---- «Штаб» weekly report to the owner ----------------------------------------------
+
+// Messages in the chats, comments under posts and active days of each team member last week.
+export async function staffReport(start) {
+  const end = start + 7 * DAY;
+  const people = await db.all(sql`SELECT DISTINCT user_id FROM positions ORDER BY user_id`);
+  if (!people.length) return null;
+  const days = [mskDay(start), mskDay(end)];
+  const out = [];
+  for (const { user_id: id } of people) {
+    const a = await db.get(sql`SELECT COALESCE(SUM(msgs), 0) AS msgs, COUNT(DISTINCT day) AS days FROM chat_activity
+      WHERE user_id = ${id} AND day >= ${days[0]} AND day < ${days[1]} AND msgs > 0`);
+    const c = await db.get(sql`SELECT COUNT(*) AS n, COUNT(DISTINCT (earned_at + ${MSK_OFFSET}) / ${DAY}) AS d FROM events
+      WHERE user_id = ${id} AND kind = 'comment' AND points > 0 AND earned_at >= ${start} AND earned_at < ${end}`);
+    out.push({
+      user_id: id, name: await nameOf(id), jobs: (await staff.positionsOf(id)).map((p) => p.emoji).join(''),
+      msgs: a.msgs, comments: c.n, days: Math.max(a.days, c.d),
+    });
+  }
+  out.sort((x, y) => y.msgs + y.comments * 3 - (x.msgs + x.comments * 3) || x.user_id - y.user_id);
+  return { start, end, people: out };
+}
+
+export function staffReportText(r) {
+  const lines = r.people.map((p, i) => {
+    const quiet = !p.msgs && !p.comments;
+    return `${quiet ? '💤' : `${i + 1}.`} ${p.jobs} ${escapeHtml(truncate(p.name, 30))} — ` +
+      (quiet ? 'не было активности' : `${p.msgs} ${plural(p.msgs, 'сообщение', 'сообщения', 'сообщений')}, ` +
+        `${p.comments} ${plural(p.comments, 'комментарий', 'комментария', 'комментариев')}, ` +
+        `${p.days} ${plural(p.days, 'день', 'дня', 'дней')} из 7`);
+  });
+  const quiet = r.people.filter((p) => !p.msgs && !p.comments).length;
+  return `📋 Штаб за неделю ${shortDate(r.start)}–${shortDate(r.end - DAY)}\n\n${lines.join('\n')}` +
+    (quiet ? `\n\n💤 Без активности: ${quiet}. Может, стоит с ними поговорить.` : '\n\nВся команда была в деле 💪');
+}
+
+// Monday after 12:00 MSK, once a week: the report goes to the owner in private.
+async function staffTick(ts) {
+  if (ts - weekStart(ts) < 12 * 3600) return;
+  const week = weekNo(ts);
+  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES ('staff_report_week', ${String(week - 1)})`);
+  const won = await db.run(sql`UPDATE settings SET value = ${String(week)}
+    WHERE key = 'staff_report_week' AND CAST(value AS INTEGER) < ${week}`);
+  if (won.rowsAffected !== 1) return;
+  const r = await staffReport(weekStart(ts) - 7 * DAY);
+  if (r) await tellUser(OWNER_USER_ID, staffReportText(r));
+}
+
 // ---- birthday greetings --------------------------------------------------------
 
 // From 10:00 MSK, once a day: gifts and one greeting in the discussion group.
@@ -792,10 +1038,41 @@ async function birthdayTick(ts) {
   }
 }
 
+// The pair, spouses, parents, children and siblings of a member: who gets the reminder.
+async function closeOnes(userId) {
+  const ids = new Set();
+  for (const r of await social.spousesOf(userId)) ids.add(r.partner_id);
+  const dating = await social.partnerOf(userId);
+  if (dating) ids.add(dating.partner_id);
+  for (const r of await family.parentsOf(userId)) ids.add(r.parent_id);
+  for (const r of await family.childrenOf(userId)) ids.add(r.child_id);
+  for (const id of await family.siblingsOf(userId)) ids.add(id);
+  ids.delete(userId);
+  return [...ids].slice(0, 15);
+}
+
+// From 10:00 MSK, once a day: who has a birthday tomorrow, told to their pair and family.
+async function birthdayEveTick(ts) {
+  const date = mskDate(ts);
+  if (date.hour < 10) return;
+  const day = mskDay(ts);
+  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES ('birthday_eve_day', ${String(day - 1)})`);
+  const won = await db.run(sql`UPDATE settings SET value = ${String(day)}
+    WHERE key = 'birthday_eve_day' AND CAST(value AS INTEGER) < ${day}`);
+  if (won.rowsAffected !== 1) return;
+  const tomorrow = ts + DAY;
+  for (const id of await birthdayIds(tomorrow)) {
+    const name = escapeHtml(truncate(await nameOf(id), 40));
+    for (const to of await closeOnes(id)) {
+      await tellUser(to, `🎂 Завтра день рождения у ${name}!\n\nНе забудь поздравить 🎉`);
+    }
+  }
+}
+
 // Runs from pump(); each part guards itself, so it posts at most once.
 export async function tick() {
   const ts = nowInt();
-  for (const [name, fn] of [['club.weekly', weeklyTick], ['club.birthdays', birthdayTick]]) {
+  for (const [name, fn] of [['club.weekly', weeklyTick], ['club.birthdays', birthdayTick], ['club.birthday_eve', birthdayEveTick], ['club.staff', staffTick]]) {
     try {
       await fn(ts);
     } catch (err) {
@@ -816,6 +1093,7 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
   const data = {
     daily: { rewards: DAILY_REWARDS, step: daily.step, claimed: daily.claimed, run: daily.run },
     quests: await questsView(user.id, ts),
+    choice: await choiceView(user.id, ts),
     weekEnds: weekStart(ts) + 7 * DAY,
     achievements: achievements.items,
     fresh: achievements.fresh,

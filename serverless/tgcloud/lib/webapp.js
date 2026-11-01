@@ -15,6 +15,7 @@ import * as seasons from './seasons.js';
 import * as hall from './hall.js';
 import * as fire from './fire.js';
 import * as social from './social.js';
+import { CHANGES } from './changelog.js';
 
 const HISTORY_LIMIT = 30;
 const CHART_DAYS = 7;
@@ -42,7 +43,7 @@ async function styles(ids) {
 async function topView(weekly, userId) {
   const rows = await xp.leaderboard({ weekly, limit: 10 });
   const ids = rows.map((r) => r.user_id);
-  const [looks, refs] = await Promise.all([styles(ids), refsOf(ids)]);
+  const [looks, refs, bdays] = await Promise.all([styles(ids), refsOf(ids), club.birthdayIds()]);
   return rows.map((row, i) => ({
     place: i + 1,
     name: truncate(row.name, 35),
@@ -51,6 +52,7 @@ async function topView(weekly, userId) {
     me: row.user_id === userId,
     style: looks.get(row.user_id) || null,
     ref: refs.get(row.user_id) || null,
+    bday: bdays.has(row.user_id),
   }));
 }
 
@@ -229,6 +231,8 @@ export async function profileData(user) {
       farm: xp.FARM_MAX, farmRare: xp.FARM_RARE_MAX, farmHours: xp.FARM_COOLDOWN / 3600,
     },
     squad: squadNow,
+    // The newest update: «Обновления Фини» shows «Новое» until this one was seen.
+    changesTop: CHANGES.length ? CHANGES[0].id : null,
     club: clubView,
     // Seasonal events: null outside their dates.
     season: { halloween, tree },

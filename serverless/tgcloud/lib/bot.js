@@ -168,6 +168,11 @@ async function start(message, s, args = []) {
     await tidyPrivate(message, s, await replyBold(message, chat.HISTORY_TEXT, await chat.historyKeyboard(message.chat)));
     return;
   }
+  // «🧭 Гид новичка» under the greeting leads here: t.me/<bot>?start=guide.
+  if (args[0] === 'guide' && message.chat.type === 'private') {
+    await tidyPrivate(message, s, await replyBold(message, club.GUIDE_TEXT, club.guideKeyboard()));
+    return;
+  }
   // "Все ссылки Сквада" in a group leads here: t.me/<bot>?start=squad.
   if (args[0] === 'squad' && message.chat.type === 'private') {
     await tidyPrivate(message, s, await replyBold(message, SQUAD_TEXT, await squadKeyboard(message.chat)));

@@ -224,6 +224,7 @@ async function profileCard(chat, who, self) {
   ]);
 
   const head = [`👤 Это пользователь ${escapeHtml(truncate(who.name, 60))}${style && style.title ? ` · «${escapeHtml(style.title)}»` : ''}`];
+  if ((await club.birthdayIds(ts)).has(who.id)) head.push('👑 Сегодня день рождения! 🎂');
   if (role) head.push(role);
   if (home) {
     head.push(group && home.chat_id === chat.id
@@ -1673,9 +1674,9 @@ const USAGE = [
     how: [['Штаб', 'Вся команда'], ['Должность', 'Твоя должность'], ['Должность (ответом)', 'Должность участника'], ['Должность Креативщик', 'Обязанности и кто её занимает']],
   },
   {
-    keys: ['+должность', '-должность'], title: '👑 +Должность',
+    keys: ['+должность', '-должность', 'отчёт штаба', 'отчет штаба'], title: '👑 +Должность',
     about: () => `Только владелец. До ${staff.PER_USER} должностей на человека. Права в Telegram выдаются отдельно, вручную`,
-    how: [['+Должность Креативщик (ответом)', 'Назначить'], ['-Должность Креативщик (ответом)', 'Снять одну'], ['-Должность (ответом)', 'Снять все'], ['Штаб', `Названия: ${staff.POSITIONS.map((p) => p.title).join(', ')}`]],
+    how: [['+Должность Креативщик (ответом)', 'Назначить'], ['-Должность Креативщик (ответом)', 'Снять одну'], ['-Должность (ответом)', 'Снять все'], ['Отчёт Штаба', 'Кто из Штаба сколько был активен за 7 дней. Сам приходит в личку по понедельникам'], ['Штаб', `Названия: ${staff.POSITIONS.map((p) => p.title).join(', ')}`]],
   },
   {
     keys: ['топ', 'топ xp', 'топ хп', 'топ сквада'], title: '🏆 Финя, Топ',
@@ -2029,6 +2030,11 @@ async function ownerCommand(message, rest) {
         await say(message, '❌ Не получилось отправить навигатор в этот чат.', { temp: true });
       }
     }
+    return true;
+  }
+  if (/^отч[её]т штаба$/u.test(bare(rest))) {
+    const r = await club.staffReport(nowInt() - 7 * 86400);
+    await say(message, r ? club.staffReportText(r) : '📋 В Штабе пока никого. Назначь: «+Должность Креативщик» ответом.', { temp: true });
     return true;
   }
   if (/^загадка$/u.test(bare(rest)) && isGroupChat(message.chat)) {
