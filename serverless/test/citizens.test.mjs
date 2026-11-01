@@ -71,7 +71,7 @@ test('the start date of a pair: free, once a month, the days count from it', asy
   await say(a, 'начало отношений 01.01.2999');
   assert.match(last(api), /ещё не наступила/);
   await say(a, 'Начало отношений 01.05.2024');
-  assert.match(last(api), /Отношения с Боря теперь считаются с 01\.05\.2024: \d+ дн/);
+  assert.match(last(api), /Отношения с Боря теперь считаются с 01\.05\.2024: \d+ (?:день|дн)/);
   const row = await db.get('SELECT since FROM dating WHERE user_id = 3');
   assert.equal(row.since, Date.UTC(2024, 4, 1) / 1000 - 3 * 3600);
   // The partner is the same pair: the month counts for both.
@@ -84,5 +84,5 @@ test('the start date of a pair: free, once a month, the days count from it', asy
   await say(b, 'начало брака 10.10.2025');
   assert.match(last(api), /Брак с Аня теперь считается с 10\.10\.2025/);
   await say(a, 'мой брак');
-  assert.match(last(api), /Твоя пара: Боря · в браке уже \d+ дн/);
+  assert.match(last(api), /Твоя пара: Боря · в браке уже \d+ (?:день|дн)/);
 });

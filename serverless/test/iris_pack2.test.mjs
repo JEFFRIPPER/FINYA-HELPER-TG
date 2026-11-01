@@ -112,6 +112,7 @@ test('«ачивки»: how many are open and the last ones', async () => {
 test('daily summary: the day’s top-3 at 23:55 МСК, once, and the №1 counts', async () => {
   const api = await setup();
   await setSetting('chat_captcha', false);
+  await setSetting('chat_daily', true);
   // 21.10.2026 23:56 МСК.
   const now = Date.UTC(2026, 9, 21, 20, 56, 0);
   Date.now = () => now;

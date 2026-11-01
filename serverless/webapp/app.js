@@ -90,7 +90,7 @@
   var HISTORY = {
     comment: ['chat_bubble_fill', 'Комментарий', 'primary'],
     reaction: ['favorite_fill', 'Реакция', ''],
-    owner_xp: ['shield_person_fill', 'Изменение XP владельцем', 'muted'],
+    owner_xp: ['shield_person_fill', 'XP от владельца', 'muted'],
     owner_rank: ['shield_person_fill', 'Звание от владельца', 'muted'],
     daily: ['redeem_fill', 'Награда дня', 'gold'],
     quest: ['flag_fill', 'Квест недели', 'primary'],

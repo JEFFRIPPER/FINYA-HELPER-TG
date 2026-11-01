@@ -3,7 +3,8 @@ import { afterEach, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { db, fetchMock } from 'sdk';
 import { onMessage } from '../tgcloud/lib/bot.js';
-import { countdownTarget, parseHoroscope, signByName, zodiac } from '../tgcloud/lib/extras.js';
+import * as extras from '../tgcloud/lib/extras.js';
+import { countdownTarget, countdownText, parseHoroscope, signByName, zodiac } from '../tgcloud/lib/extras.js';
 import * as questions from '../tgcloud/lib/questions.js';
 import { GENERATED } from '../tgcloud/lib/question_gen.js';
 import { setSetting } from '../tgcloud/lib/store.js';
@@ -63,6 +64,29 @@ test('horoscope: parsed from horo.mail.ru, cached for the day, honest when the s
   assert.deepEqual(fetchMock.calls.map((c) => c.url), ['https://horo.mail.ru/prediction/pisces/today/', 'https://horo.mail.ru/prediction/leo/today/']);
 });
 
+test('horoscope prefetch: from 6:00 one missing sign per pump, then «Гороскоп» needs no site', async () => {
+  const api = await setup();
+  await setSetting('horoscope_prefetch', true);
+  fetchMock.handler = async (url) => ({ text: page(/prediction\/(\w+)\//.exec(url)[1]) });
+  const t = nowInt();
+  const day = t - ((t + 3 * 3600) % 86400);
+  const plenty = () => 20000;
+  assert.equal(await extras.prefetchHoroscope(plenty, day + 5 * 3600), false);
+  assert.equal(await extras.prefetchHoroscope(() => 5000, day + 7 * 3600), false);
+  let n = 0;
+  while (await extras.prefetchHoroscope(plenty, day + 7 * 3600)) n += 1;
+  assert.equal(n, 12);
+  assert.equal(fetchMock.calls.length, 12);
+  fetchMock.handler = async () => { throw new Error('site down'); };
+  await onMessage(privateMessage(user(2), 'Гороскоп Рыбы'));
+  assert.match(last(api), /♓ Рыбы · гороскоп на/);
+  // The site is down: no new tries for a while.
+  await setSetting('horoscope_cache', null);
+  assert.equal(await extras.prefetchHoroscope(plenty, day + 8 * 3600), true);
+  assert.equal(await extras.prefetchHoroscope(plenty, day + 8 * 3600 + 60), false);
+  await db.run('DELETE FROM error_log');
+});
+
 test('the zodiac sign follows the birthday: «Кто Я», «Мой Знак» and the own horoscope', async () => {
   const api = await setup();
   fetchMock.handler = async (url) => ({ text: page(/prediction\/(\w+)\//.exec(url)[1]) });
@@ -88,7 +112,11 @@ test('«Финя, До Нового Года» counts down; dates and unknown ta
   assert.equal(countdownTarget('16.12', ts).title, '16 декабря');
   const a = user(2, { first_name: 'Аня' });
   await say(a, 'Финя, до нового года');
-  assert.match(last(api), /⏳ До Нового года: \d+ (?:день|дня|дней) \d+ час/);
+  assert.match(last(api), /⏳ До Нового года: \d+ (?:день|дня|дней|час|часа|часов|минута|минуты|минут)/);
+  // The last day shows minutes; the last hour has no «0 часов».
+  assert.equal(countdownText({ title: 'Нового года', at: ts + 2 * 3600 + 125 }, ts), '⏳ До Нового года: 2 часа 3 минуты');
+  assert.equal(countdownText({ title: 'Нового года', at: ts + 120 }, ts), '⏳ До Нового года: 2 минуты');
+  assert.equal(countdownText({ title: 'Нового года', at: ts + 3 * 86400 + 3600 }, ts), '⏳ До Нового года: 3 дня 1 час');
   await say(a, 'Финя, сколько до 8 марта?');
   assert.match(last(api), /⏳ До 8 Марта/);
 });

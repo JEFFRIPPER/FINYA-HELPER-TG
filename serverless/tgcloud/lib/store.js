@@ -26,6 +26,8 @@ const DEFAULTS = {
   chat_question: true,
   // Quizzes, «Персонажи дня», topics for a quiet chat and «Завтра в Скваде» (events.js).
   chat_events: true,
+  // pump() loads today's horoscopes ahead of «Гороскоп» (extras.prefetchHoroscope).
+  horoscope_prefetch: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
   chat_moderation: false,
 };

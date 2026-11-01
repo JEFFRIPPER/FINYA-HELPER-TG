@@ -31,9 +31,21 @@ jobs:
       - run: npm test
       - run: mkdir -p .tgcloud
       - name: Sync with the cloud
-        run: npx tgcloud fetch
+        # The cloud sometimes drops a call: up to 3 tries, 15 s and 30 s apart.
+        run: |
+          for i in 1 2 3; do
+            npx tgcloud fetch && exit 0
+            [ "$i" = 3 ] || { echo "Попытка $i не удалась, повторяю"; sleep $((i * 15)); }
+          done
+          exit 1
       - name: Deploy modules
-        run: npx tgcloud push
+        # The cloud sometimes drops a call: up to 3 tries, 15 s and 30 s apart.
+        run: |
+          for i in 1 2 3; do
+            npx tgcloud push && exit 0
+            [ "$i" = 3 ] || { echo "Попытка $i не удалась, повторяю"; sleep $((i * 15)); }
+          done
+          exit 1
       # --safe skips warning changes such as dropping a .deprecated() table;
       # --yes (drop_deprecated) applies them too.
       - name: Apply database schema
@@ -41,4 +53,10 @@ jobs:
       # Re-points the webhook at the platform every time: a leftover polling bot
       # (the old Python Финя) drops it with deleteWebhook when it starts.
       - name: Sync webhook
-        run: npx tgcloud webhook sync
+        # The cloud sometimes drops a call: up to 3 tries, 15 s and 30 s apart.
+        run: |
+          for i in 1 2 3; do
+            npx tgcloud webhook sync && exit 0
+            [ "$i" = 3 ] || { echo "Попытка $i не удалась, повторяю"; sleep $((i * 15)); }
+          done
+          exit 1
