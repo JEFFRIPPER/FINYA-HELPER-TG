@@ -8,6 +8,7 @@ import { button, getMe, keyboard, menuButton } from './tg.js';
 import { getSetting, isSubscribed } from './store.js';
 import { escapeHtml, fmtThousands, fullName, truncate } from './util.js';
 import * as xp from './xp.js';
+import { birthdayIds } from './club.js';
 
 export function partnerKeyboard(partner) {
   return keyboard([
@@ -253,10 +254,13 @@ export async function xpTopText(weekly = false, userId = null) {
   let text = '🏆 Топ Сквада · ' + (weekly ? 'текущая неделя (МСК), комментарии и реакции' : 'за всё время');
   if (!rows.length) return text + '\n\nПока никто не заработал XP. Начни с комментария под постом.';
   text += '\n';
+  const bdays = await birthdayIds();
   rows.forEach((row, i) => {
     const [current] = xp.rankFor(row.xp, { founder: row.user_id === OWNER_USER_ID, manualRank: row.manual_rank });
-    text += `\n${TOP_MEDALS[i] || `${i + 1}.`} ${escapeHtml(truncate(row.name, 35))} — ${fmtThousands(row.score)} XP · ${current[1]} ${current[2]}`;
+    const crown = bdays.has(row.user_id) ? '👑 ' : '';
+    text += `\n${TOP_MEDALS[i] || `${i + 1}.`} ${crown}${escapeHtml(truncate(row.name, 35))} — ${fmtThousands(row.score)} XP · ${current[1]} ${current[2]}`;
   });
+  if (rows.some((r) => bdays.has(r.user_id))) text += '\n\n👑 — сегодня день рождения';
   if (userId) {
     const mine = await xp.placeOf(userId, { weekly });
     text += mine

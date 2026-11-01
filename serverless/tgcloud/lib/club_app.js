@@ -23,6 +23,7 @@ export async function handle(user, input) {
   let result = null;
   let trick = null;
   let toy = null;
+  let gift = null;
   switch (action) {
     case 'daily':
       result = await club.claimDaily(user);
@@ -30,8 +31,17 @@ export async function handle(user, input) {
     case 'quest':
       result = await club.claimQuest(user, int(input.id));
       break;
+    case 'pick_quest':
+      await club.pickQuest(user, String(input.id || ''));
+      break;
+    case 'choice_quest':
+      result = await club.claimChoice(user);
+      break;
     case 'buy':
       await club.buy(user, String(input.item || ''));
+      break;
+    case 'gift':
+      gift = await club.giftItem(user, String(input.item || ''), String(input.to || ''));
       break;
     case 'wear':
       await club.wear(user, String(input.slot || ''), input.item == null ? null : String(input.item));
@@ -63,6 +73,7 @@ export async function handle(user, input) {
   data.result = result ? { points: result.points, promoted: result.promoted } : null;
   if (trick) data.result = { points: trick.points, promoted: Boolean(result && result.promoted), text: trick.text, again: trick.again };
   if (toy) data.result = { points: 0, promoted: false, toy: toy.toy.name };
+  if (gift) data.result = { points: 0, promoted: false, gift };
   return data;
 }
 
