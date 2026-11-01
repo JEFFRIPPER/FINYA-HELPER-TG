@@ -38,6 +38,19 @@ const mskMidnight = (ts) => Math.floor((ts + MSK_OFFSET) / DAY) * DAY - MSK_OFFS
 // The words after «напомни» → { due, text }, or null when it isn't a reminder.
 export function parse(words, ts = nowInt()) {
   const t = String(words || '').trim();
+  // «каждый день в 9 …», «каждое утро …» (9:00), «каждую пятницу в 20:00 …»: the first
+  // time as usual, then again every day or week.
+  const rep = /^кажд(?:ый|ую|ое)\s+(день|утро|вечер|понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье)(?:\s+([\s\S]*))?$/iu.exec(t);
+  if (rep) {
+    const what = rep[1].toLowerCase();
+    const rest = rep[2] || '';
+    const weekly = Boolean(WEEKDAYS[what]);
+    const tm = WHEN.exec(rest);
+    const timed = Boolean(tm && !tm[1] && !tm[2] && (tm[3] != null || tm[5] != null));
+    const time = timed ? '' : `${what === 'утро' ? 'в 9:00' : what === 'вечер' ? 'в 20:00' : 'в 10:00'} `;
+    const once = parse(`${weekly ? `в ${what} ` : ''}${time}${rest}`.trim(), ts);
+    return once ? { ...once, every: weekly ? 7 * DAY : DAY } : null;
+  }
   let m = /^через\s+(полчаса|час|(\d{1,3})\s*([а-яё]+))(?:\s+([\s\S]*))?$/iu.exec(t);
   if (m) {
     let seconds;
@@ -88,14 +101,15 @@ export async function add(message, user, name, parsed, ts = nowInt()) {
   const have = await db.get(sql`SELECT COUNT(*) AS c FROM reminders WHERE user_id = ${user.id}`);
   if (have.c >= PER_USER) throw new ReminderError(`У тебя уже ${PER_USER} напоминаний. Удали лишнее: «-Напоминание N».`);
   const topic = message.is_topic_message ? message.message_thread_id : null;
-  await db.run(sql`INSERT INTO reminders (user_id, name, chat_id, thread_id, message_id, text, due_at, created_at)
-    VALUES (${user.id}, ${truncate(name, 60)}, ${message.chat.id}, ${topic}, ${message.message_id}, ${text}, ${parsed.due}, ${ts})`);
-  return { due: parsed.due, text };
+  await db.run(sql`INSERT INTO reminders (user_id, name, chat_id, thread_id, message_id, text, due_at, created_at, every)
+    VALUES (${user.id}, ${truncate(name, 60)}, ${message.chat.id}, ${topic}, ${message.message_id}, ${text}, ${parsed.due}, ${ts},
+      ${parsed.every || null})`);
+  return { due: parsed.due, text, every: parsed.every || null };
 }
 
 // Soonest first; that order also numbers them for «-напоминание N».
 export async function listOf(userId) {
-  return db.all(sql`SELECT id, chat_id, text, due_at FROM reminders WHERE user_id = ${userId} ORDER BY due_at, id`);
+  return db.all(sql`SELECT id, chat_id, text, due_at, every FROM reminders WHERE user_id = ${userId} ORDER BY due_at, id`);
 }
 
 export async function remove(userId, n) {
@@ -106,13 +120,19 @@ export async function remove(userId, n) {
 }
 
 export const whenText = (due) => fmtMsk(due).replace(/^(\d\d\.\d\d)\.\d{4}/, '$1');
+export const everyText = (every) => (every === DAY ? '🔁 каждый день' : every === 7 * DAY ? '🔁 каждую неделю' : '');
 
-// From pump(): due reminders, claimed by deleting them, so none goes out twice.
+// From pump(): due reminders, claimed by deleting them (a repeating one by moving it to
+// its next time), so none goes out twice.
 export async function tick(leftMs, ts = nowInt()) {
   const due = await db.all(sql`SELECT * FROM reminders WHERE due_at <= ${ts} ORDER BY due_at LIMIT 10`);
   for (const r of due) {
     if (leftMs() < 3000) return;
-    const claimed = await db.run(sql`DELETE FROM reminders WHERE id = ${r.id}`);
+    let next = r.due_at;
+    if (r.every > 0) while (next <= ts) next += r.every;
+    const claimed = r.every > 0
+      ? await db.run(sql`UPDATE reminders SET due_at = ${next} WHERE id = ${r.id} AND due_at = ${r.due_at}`)
+      : await db.run(sql`DELETE FROM reminders WHERE id = ${r.id}`);
     if (claimed.rowsAffected !== 1) continue;
     const body = r.text ? `\n<blockquote>${escapeHtml(r.text)}</blockquote>` : '';
     const params = {

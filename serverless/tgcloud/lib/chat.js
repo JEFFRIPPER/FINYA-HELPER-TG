@@ -1188,7 +1188,8 @@ async function giftCommand(message, self, target, amount) {
 
 const CASINO_RULES = '🎰 Казино на XP с баланса\n\n' +
   `«Казино 50» — слоты: 777 ×20, три в ряд ×7, две семёрки ×2.\n«Кости 50» — кубик: 6 ×2,5, 4–5 ×1,5.\n\n` +
-  `Ставка от ${games.STAKE_MIN} до ${games.STAKE_MAX} XP, до ${games.GAMES_PER_DAY} игр в день. Баланс: «Баланс».`;
+  `Ставка от ${games.STAKE_MIN} до ${games.STAKE_MAX} XP, до ${games.GAMES_PER_DAY} игр в день. Баланс: «Баланс».\n\n` +
+  `🏦 Банк джекпота: ${Math.round(games.BANK_SHARE * 100)}% каждой проигранной ставки копится в банк, 7️⃣7️⃣7️⃣ забирает его целиком.`;
 
 async function casino(message, self, emoji, amount) {
   let bet;
@@ -1220,7 +1221,8 @@ async function casino(message, self, emoji, amount) {
     ? `+${fmtThousands(r.won)} XP (×${String(r.times).replace('.', ',')})`
     : `−${fmtThousands(bet.amount)} XP`;
   const left = r.gamesLeft ? `🎟 Игр сегодня осталось: ${r.gamesLeft}` : '🎟 Это была последняя игра на сегодня';
-  await say(message, `${emoji} ${name}: ${r.line} · ${result}\n💰 Баланс: ${fmtThousands(r.balance)} XP\n${left}`,
+  const bank = r.jackpot ? `🏦 БАНК ДЖЕКПОТА ТВОЙ: +${fmtThousands(r.jackpot)} XP!` : `🏦 Банк джекпота: ${fmtThousands(r.bank)} XP, его заберёт 7️⃣7️⃣7️⃣`;
+  await say(message, `${emoji} ${name}: ${r.line} · ${result}\n${bank}\n💰 Баланс: ${fmtThousands(r.balance)} XP\n${left}`,
     { replyTo: dice.message_id, temp: true });
   if (isGroupChat(message.chat)) await deleteLater(message.chat.id, [dice.message_id]);
 }
@@ -1231,13 +1233,14 @@ async function remindCommand(message, self, words, addressed) {
   const parsed = reminders.parse(words);
   if (!parsed) {
     if (!addressed) return false;
-    await say(message, '⏰ Не поняла, когда. Так: «Финя, напомни через 2ч позвонить», «…в 7 вечера …», «…завтра в 10:00 …», «…в пятницу …».', { temp: true });
+    await say(message, '⏰ Не поняла, когда. Так: «Финя, напомни через 2ч позвонить», «…в 7 вечера …», «…завтра в 10:00 …», «…в пятницу …», «…каждый день в 9 …».', { temp: true });
     return true;
   }
   try {
     const r = await reminders.add(message, message.from, self.name, parsed);
     await feats.bump(message.from.id, 'reminders');
-    await say(message, `⏰ Напомню ${reminders.whenText(r.due)} (МСК)${r.text ? `:\n<blockquote>${escapeHtml(r.text)}</blockquote>` : '.'}`, { temp: true });
+    const again = r.every ? `, дальше ${reminders.everyText(r.every).replace('🔁 ', '')}` : '';
+    await say(message, `⏰ Напомню ${reminders.whenText(r.due)} (МСК)${again}${r.text ? `:\n<blockquote>${escapeHtml(r.text)}</blockquote>` : '.'}`, { temp: true });
   } catch (err) {
     if (!(err instanceof reminders.ReminderError)) throw err;
     await say(message, `⏰ ${err.message}`, { temp: true });
@@ -1249,7 +1252,7 @@ async function remindersText(self) {
   const list = await reminders.listOf(self.id);
   if (!list.length) return '⏰ Напоминаний нет. Поставить: «Финя, напомни через 2ч позвонить».';
   return '⏰ Твои напоминания (МСК)\n\n' +
-    list.map((r, i) => `${i + 1}. ${reminders.whenText(r.due_at)}${r.text ? ` — ${escapeHtml(truncate(r.text, 60))}` : ''}`).join('\n') +
+    list.map((r, i) => `${i + 1}. ${reminders.whenText(r.due_at)}${r.every ? ` ${reminders.everyText(r.every)}` : ''}${r.text ? ` — ${escapeHtml(truncate(r.text, 60))}` : ''}`).join('\n') +
     '\n\nУдалить: «-Напоминание N».';
 }
 
@@ -1565,7 +1568,7 @@ const HELP = {
     ['👑 Прощание Вкл/Выкл', 'Финя прощается с теми, кто сам вышел из чата'],
     ['👑 Навигатор · Навигатор Выкл', 'Закреп с кнопками: канал, чаты, магазин, проекты. Финя сама держит его свежим'],
     ['👑 Вопрос Дня · Вопрос Дня Вкл/Выкл', 'Безумный опрос каждые 3 часа с 9:00 до 00:00 МСК в каждом чате Сквада, через 3 часа итог и +5 XP каждому, кто ответил. «Вопрос Дня» в чате — отправить сейчас'],
-    ['👑 Ивенты Вкл/Выкл · Загадка', `Финя сама ведёт ивенты: загадки с +${events.QUIZ_XP} XP первому в 10:30, 13:30, 16:30, 19:30 и 22:30, «Персонажи дня», тема, если в чате 2 часа тихо, и «Завтра в Скваде» в 18:00. «Загадка» в чате — загадать сейчас`],
+    ['👑 Ивенты Вкл/Выкл · Загадка', `Финя сама ведёт ивенты: загадки с +${events.QUIZ_XP} XP первому в 10:30, 13:30, 16:30, 19:30 и 22:30, «Персонажи дня», тема, если в чате 2 часа тихо, и «Завтра в Скваде» в 18:00. «Загадка» в чате — загадать сейчас. По выходным в 19:30 «Битва загадок»: ${events.BATTLE_ROUNDS} подряд, победителю +${events.BATTLE_XP} XP`],
     ['✨ Эмодзи (в личке)', 'Премиум-эмодзи Фини'],
     ['📥 Обновить Инфо', 'Подтянуть старую историю чата из экспорта Telegram Desktop: через Mini App или файлом в личку (до 20 МБ)'],
   ]],
@@ -1697,7 +1700,7 @@ const USAGE = [
   {
     keys: ['казино', 'слоты', 'слот', 'кости', 'кубик', 'кубики'], title: '🎰 Казино · 🎲 Кости',
     about: () => `Ставка XP с баланса от ${games.STAKE_MIN} до ${games.STAKE_MAX}, до ${games.GAMES_PER_DAY} игр в день. Выигрыш идёт на баланс, звание от него не растёт`,
-    how: [['Казино 50', 'Слоты: 777 ×20, три в ряд ×7, две семёрки ×2'], ['Кости 50', 'Кубик: 6 ×2,5, 4–5 ×1,5'], ['Казино', 'Правила']],
+    how: [['Казино 50', 'Слоты: 777 ×20 и весь банк джекпота, три в ряд ×7, две семёрки ×2'], ['Кости 50', 'Кубик: 6 ×2,5, 4–5 ×1,5'], ['Казино', 'Правила и сколько в банке']],
   },
   {
     keys: Object.keys(STAT_WORDS), title: '📊 Стата',
@@ -1707,7 +1710,7 @@ const USAGE = [
   {
     keys: ['напомни', 'напоминания', 'мои напоминания', '-напоминание', 'удалить напоминание'], title: '⏰ Напоминания',
     about: () => `Финя напомнит в чате, до ${reminders.PER_USER} напоминаний, не дальше чем на 30 дней`,
-    how: [['Финя, Напомни Через 2ч Позвонить', 'Через минуты, часы или дни: «через 30 мин», «через 3 дня»'], ['Финя, Напомни В 18:30 Стрим', 'В это время по Москве: можно «в 18», «в 7 вечера», «18:30»'], ['Финя, Напомни Завтра В 10:00 Текст', 'Завтра, послезавтра или в день недели: «в пятницу в 20:00», «послезавтра» (в 10:00)'], ['Напоминания', 'Список с номерами'], ['-Напоминание 2', 'Удалить по номеру']],
+    how: [['Финя, Напомни Через 2ч Позвонить', 'Через минуты, часы или дни: «через 30 мин», «через 3 дня»'], ['Финя, Напомни В 18:30 Стрим', 'В это время по Москве: можно «в 18», «в 7 вечера», «18:30»'], ['Финя, Напомни Завтра В 10:00 Текст', 'Завтра, послезавтра или в день недели: «в пятницу в 20:00», «послезавтра» (в 10:00)'], ['Финя, Напомни Каждый День В 9 Текст', 'Повтор: «каждый день», «каждое утро», «каждую пятницу в 20:00». Удаляется так же, «-Напоминание N»'], ['Напоминания', 'Список с номерами'], ['-Напоминание 2', 'Удалить по номеру']],
   },
   {
     keys: ['ид', 'айди', 'id', 'мой ид', 'мой id'], title: '🆔 Ид',
@@ -1793,9 +1796,9 @@ const USAGE = [
     how: [['+РП Погладить = 🤚 гладит', 'Команда, знак «=», эмодзи и глагол'], ['-РП Погладить', 'Удалить своё действие']],
   },
   {
-    keys: ['антифлуд', 'капча', 'модерация', 'итоги дня', 'прощание', 'вопрос дня', 'ивенты'], title: '👑 Защита и итоги',
+    keys: ['антифлуд', 'капча', 'модерация', 'итоги дня', 'прощание', 'вопрос дня', 'ивенты', 'загадка', 'битва', 'битва загадок'], title: '👑 Защита и итоги',
     about: 'Только владелец. То же переключается в «Панели» Mini App',
-    how: [['Финя, Антифлуд Вкл · Выкл', 'Мут за флуд'], ['Финя, Капча Вкл · Выкл', 'Кнопка «Я не бот» для новичков'], ['Финя, Модерация Вкл · Выкл', 'Мут, бан и варны словами'], ['Финя, Итоги Дня Вкл · Выкл', 'Топ-3 дня в 23:55 МСК'], ['Финя, Прощание Вкл · Выкл', 'Пара слов тем, кто сам вышел из чата'], ['Финя, Вопрос Дня Вкл · Выкл', 'Опрос каждые 3 часа с 9:00 до 00:00 МСК'], ['Финя, Вопрос Дня', 'Отправить опрос в этот чат сейчас'], ['Финя, Ивенты Вкл · Выкл', 'Загадки, персонажи дня, темы в тишине и анонсы на завтра']],
+    how: [['Финя, Антифлуд Вкл · Выкл', 'Мут за флуд'], ['Финя, Капча Вкл · Выкл', 'Кнопка «Я не бот» для новичков'], ['Финя, Модерация Вкл · Выкл', 'Мут, бан и варны словами'], ['Финя, Итоги Дня Вкл · Выкл', 'Топ-3 дня в 23:55 МСК'], ['Финя, Прощание Вкл · Выкл', 'Пара слов тем, кто сам вышел из чата'], ['Финя, Вопрос Дня Вкл · Выкл', 'Опрос каждые 3 часа с 9:00 до 00:00 МСК'], ['Финя, Вопрос Дня', 'Отправить опрос в этот чат сейчас'], ['Финя, Ивенты Вкл · Выкл', 'Загадки, персонажи дня, темы в тишине и анонсы на завтра'], ['Финя, Загадка', 'Загадать сейчас в этом чате'], ['Финя, Битва Загадок', `${events.BATTLE_ROUNDS} загадок подряд со счётом, победителю +${events.BATTLE_XP} XP. Сама идёт по субботам и воскресеньям в 19:30`]],
   },
   {
     keys: ['эмодзи', 'эмоджи', 'премиум эмодзи'], title: '✨ Эмодзи',
@@ -2032,6 +2035,12 @@ async function ownerCommand(message, rest) {
     const open = await db.get(sql`SELECT 1 AS n FROM quizzes WHERE chat_id = ${message.chat.id} AND done = 0`);
     if (open) await say(message, '🧩 Загадка уже идёт, сначала её разгадайте.', { temp: true });
     else await events.postQuiz(message.chat.id);
+    return true;
+  }
+  if (/^битва(?: загадок)?$/u.test(bare(rest)) && isGroupChat(message.chat)) {
+    const open = await db.get(sql`SELECT 1 AS n FROM quizzes WHERE chat_id = ${message.chat.id} AND done = 0`);
+    if (open || (await events.battleOn(message.chat.id))) await say(message, '⚔️ Загадка или битва уже идёт, дождитесь конца.', { temp: true });
+    else await events.startBattle(message.chat.id);
     return true;
   }
   if (/^вопрос дня$/u.test(bare(rest)) && isGroupChat(message.chat)) {
@@ -2312,7 +2321,7 @@ export async function handleText(message) {
     return true;
   }
   if (['казино', 'слоты', 'кости'].includes(cmd)) {
-    await say(message, CASINO_RULES, { temp: true });
+    await say(message, `${CASINO_RULES}\nСейчас в банке: ${fmtThousands(await games.bankOf())} XP.`, { temp: true });
     return true;
   }
   const bet = /^(казино|слоты|слот|кости|кубик|кубики)\s+(\d{1,7})(?:\s*(?:xp|хп))?$/u.exec(cmd);

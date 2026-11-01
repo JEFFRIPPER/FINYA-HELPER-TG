@@ -9,7 +9,7 @@ import { CHAT_ACHIEVEMENTS, chatStats, unlock } from './feats.js';
 import { nameOf } from './members.js';
 import { getSetting, getUser, logError, setSetting } from './store.js';
 import { button, getMe, keyboard } from './tg.js';
-import { boldHtml, escapeHtml, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
+import { boldHtml, escapeHtml, fullName, MSK_OFFSET, nowInt, plural, truncate, weekStart } from './util.js';
 import { resolveXpChat } from './xpchat.js';
 import * as xp from './xp.js';
 
@@ -660,7 +660,46 @@ async function weekSummary(start) {
       SUM(CASE WHEN kind = 'reaction' AND points > 0 THEN 1 ELSE 0 END) AS reactions,
       COUNT(DISTINCT CASE WHEN points > 0 AND kind IN ('comment', 'reaction') THEN user_id END) AS active
     FROM events WHERE earned_at >= ${start} AND earned_at < ${end}`);
-  return { start, end, top, comments: stats.comments || 0, reactions: stats.reactions || 0, active: stats.active || 0 };
+  return { start, end, top, comments: stats.comments || 0, reactions: stats.reactions || 0, active: stats.active || 0,
+    nominees: await nominees(start, end) };
+}
+
+// Week nominations besides the top: [title, what is counted]. The index is part of
+// the bonus key, so never reorder; add new ones at the end.
+export const NOMINATIONS = [
+  ['🧠 Лучший отгадчик', ['загадка', 'загадки', 'загадок']],
+  ['🌾 Король фарма', 'XP фармом'],
+  ['🎰 Везунчик казино', 'XP выигрыша'],
+  ['💬 Душа чата', ['сообщение', 'сообщения', 'сообщений']],
+];
+export const NOMINEE_XP = 25;
+
+// The leader of each nomination for the week [start, end), when there is one.
+async function nominees(start, end) {
+  const days = [Math.floor((start + MSK_OFFSET) / DAY), Math.floor((end + MSK_OFFSET) / DAY)];
+  const queries = [
+    sql`SELECT user_id, COUNT(*) AS n FROM events WHERE kind = 'quiz' AND points > 0 AND earned_at >= ${start} AND earned_at < ${end}
+      GROUP BY user_id ORDER BY n DESC, MIN(earned_at) LIMIT 1`,
+    sql`SELECT user_id, SUM(points) AS n FROM events WHERE kind = 'farm' AND earned_at >= ${start} AND earned_at < ${end}
+      GROUP BY user_id ORDER BY n DESC, user_id LIMIT 1`,
+    sql`SELECT user_id, -SUM(amount) AS n FROM xp_spend WHERE kind IN ('casino_win', 'casino_bank') AND at >= ${start} AND at < ${end}
+      GROUP BY user_id ORDER BY n DESC, user_id LIMIT 1`,
+    sql`SELECT user_id, SUM(msgs) AS n FROM chat_activity WHERE day >= ${days[0]} AND day < ${days[1]}
+      GROUP BY user_id ORDER BY n DESC, user_id LIMIT 1`,
+  ];
+  const out = [];
+  for (let i = 0; i < queries.length; i++) {
+    const row = await db.get(queries[i]);
+    if (row && row.n > 0) out.push({ index: i, user_id: row.user_id, name: await nameOf(row.user_id), n: row.n });
+  }
+  return out;
+}
+
+function nominationsText(list) {
+  if (!list.length) return '';
+  const unit = (r) => { const u = NOMINATIONS[r.index][1]; return Array.isArray(u) ? plural(r.n, ...u) : u; };
+  const lines = list.map((r) => `${NOMINATIONS[r.index][0]}: <b>${escapeHtml(truncate(r.name, 35))}</b> — ${r.n} ${unit(r)}`);
+  return `<b>🎖 Номинации недели</b> · каждому +${NOMINEE_XP} XP\n${lines.join('\n')}\n\n`;
 }
 
 export function summaryText(s) {
@@ -670,6 +709,7 @@ export function summaryText(s) {
     lines.join('\n') + '\n\n' +
     `💬 Комментариев: <b>${s.comments}</b>\n❤️ Реакций: <b>${s.reactions}</b>\n` +
     `👥 Активных участников: <b>${s.active}</b>\n\n` +
+    nominationsText(s.nominees || []) +
     'Новая неделя уже началась. Звание, квесты и награды — в профиле у Фини 🔥';
 }
 
@@ -695,6 +735,7 @@ async function weeklyTick(ts) {
     for (let i = 0; i < s.top.length; i++) {
       await xp.grant(s.top[i].user_id, 'weekly', week - 1, WEEKLY_BONUS[i], ts);
     }
+    for (const r of s.nominees) await xp.grant(r.user_id, 'nominee', (week - 1) * 10 + r.index, NOMINEE_XP, ts);
     await api.sendMessage({
       chat_id: SQUAD_CHANNEL_ID, text: boldHtml(summaryText(s)), parse_mode: 'HTML',
       reply_markup: await profileButton('👤 Мой профиль у Фини'),

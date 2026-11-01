@@ -20,6 +20,9 @@ export const RECEIVE_PER_DAY = 3000;
 export const STAKE_MIN = 10;
 export const STAKE_MAX = 500;
 export const GAMES_PER_DAY = 20;
+// Of every lost stake this part goes to the jackpot bank; 7️⃣7️⃣7️⃣ takes the whole bank.
+export const BANK_SHARE = 0.1;
+const BANK_KEY = 'casino_bank';
 
 // What the member can spend now.
 export async function balanceOf(userId) {
@@ -127,12 +130,35 @@ export async function stake(user, value, ts = nowInt()) {
   return { id, amount };
 }
 
-// After the dice: the win, if any. → { times, line, won, balance, gamesLeft }
+export async function bankOf() {
+  const row = await db.get(sql`SELECT value FROM settings WHERE key = ${BANK_KEY}`);
+  return row ? Math.max(0, parseInt(row.value, 10) || 0) : 0;
+}
+
+async function addToBank(amount) {
+  if (!(amount > 0)) return;
+  await db.run(sql`INSERT OR IGNORE INTO settings (key, value) VALUES (${BANK_KEY}, '0')`);
+  await db.run(sql`UPDATE settings SET value = CAST(CAST(value AS INTEGER) + ${amount} AS TEXT) WHERE key = ${BANK_KEY}`);
+}
+
+// Empties the bank for one winner: two jackpots at once can't both take it. → the amount.
+async function takeBank() {
+  const amount = await bankOf();
+  if (!amount) return 0;
+  const r = await db.run(sql`UPDATE settings SET value = '0' WHERE key = ${BANK_KEY} AND CAST(value AS INTEGER) = ${amount}`);
+  return r.rowsAffected === 1 ? amount : 0;
+}
+
+// After the dice: the win, if any, and the jackpot bank.
+// → { times, line, won, jackpot, bank, balance, gamesLeft }
 export async function settle(user, bet, emoji, value, ts = nowInt()) {
   const p = payout(emoji, value);
   const won = Math.floor(bet.amount * p.times);
   if (won > 0) await credit(user.id, 'casino_win', won, bet.id, ts);
-  return { ...p, won, balance: await balanceOf(user.id), gamesLeft: Math.max(0, GAMES_PER_DAY - (await countToday(user.id, 'casino', ts))) };
+  if (!won) await addToBank(Math.floor(bet.amount * BANK_SHARE));
+  const jackpot = emoji === '🎰' && p.times === 20 ? await takeBank() : 0;
+  if (jackpot) await credit(user.id, 'casino_bank', jackpot, bet.id, ts);
+  return { ...p, won, jackpot, bank: await bankOf(), balance: await balanceOf(user.id), gamesLeft: Math.max(0, GAMES_PER_DAY - (await countToday(user.id, 'casino', ts))) };
 }
 
 // The stake comes back when Telegram did not throw the dice.

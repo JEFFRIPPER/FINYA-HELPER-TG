@@ -106,6 +106,9 @@
     season: ['pumpkin_fill', 'Хэллоуин: сладость', 'gold'],
     qpoll: ['how_to_vote_fill', 'Голос в опросе Фини', ''],
     quiz: ['quiz_fill', 'Угадал загадку первым', 'gold'],
+    battle: ['swords_fill', 'Победа в Битве загадок', 'gold'],
+    qmajor: ['how_to_vote_fill', 'Угадал большинство в опросе', 'gold'],
+    nominee: ['emoji_events_fill', 'Номинация недели', 'gold'],
   };
   var TABS = [
     ['activity', 'Активность', 'monitoring'],
@@ -2394,7 +2397,7 @@
       h('div', { class: 'admin-title' }, h('div', { class: 'lead primary' }, icon('celebration_fill')),
         h('div', { class: 'body' }, h('b', { text: 'Клуб Сквада' }), h('span', { text: 'Опросы, итоги недели, поздравления и защита чатов' }))),
       h('div', { class: 'switches' },
-        setting('weekly', 'Итоги недели в канал', 'Понедельник, 12:00 МСК: топ-3 с бонусом XP'),
+        setting('weekly', 'Итоги недели в канал', 'Понедельник, 12:00 МСК: топ-3 и номинации с бонусом XP'),
         setting('welcome', 'Приветствие новичков', 'В обсуждениях, когда кто-то вступает'),
         setting('birthdays', 'Поздравления с днём рождения', 'В обсуждениях, в 10:00 МСК'),
         setting('captcha', 'Капча для новичков', 'Кнопка «Я не бот», иначе кик через 5 минут'),

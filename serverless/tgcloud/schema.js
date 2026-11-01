@@ -512,6 +512,8 @@ export const reminders = table('reminders', {
   text: text('text').notNull(),
   due_at: integer('due_at').notNull(),
   created_at: integer('created_at').notNull(),
+  // Seconds between repeats («каждый день», «каждую пятницу»); null for a one-off.
+  every: integer('every'),
 }, (t) => ({
   byDue: index('reminders_by_due').on(t.due_at),
   byUser: index('reminders_by_user').on(t.user_id, t.due_at),
