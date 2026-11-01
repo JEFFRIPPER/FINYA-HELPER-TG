@@ -29,6 +29,7 @@ import * as reminders from './reminders.js';
 import * as seasons from './seasons.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
+import * as typo from './typo.js';
 import * as xp from './xp.js';
 
 const { mention } = moder;
@@ -1821,6 +1822,29 @@ function usageEntry(query, addressed) {
   return best;
 }
 
+// Commands as people write them, for «Может, ты имел в виду …?». Owner-only ones only for the owner.
+const ownerOnly = (entry) => (typeof entry.about === 'function' ? entry.about() : entry.about).startsWith('Только владелец');
+const typoKeys = (owner) => USAGE.filter((e) => owner || !ownerOnly(e)).flatMap((e) => e.keys);
+
+// «+др» → «+ДР» as the title writes it, otherwise every word capitalised: «Кто Я».
+function commandName(key) {
+  for (const entry of USAGE) {
+    if (!entry.keys.includes(key)) continue;
+    const part = entry.title.replace(/^\S+\s/u, '').split(' · ').find((p) => norm(p) === key);
+    if (part) return part;
+  }
+  return key.split(' ').map((w) => w.replace(/^([+-]?)(\S)/u, (m, sign, c) => sign + c.toUpperCase())).join(' ');
+}
+
+// A mistyped command → the nearest real one. → true when answered.
+async function suggestCommand(message, cmd, owner, strict) {
+  const key = typo.closest(cmd, typoKeys(owner), { strict });
+  if (!key) return false;
+  const name = escapeHtml(commandName(key));
+  await say(message, `🤔 Может, ты имел в виду «${name}»? Как пользоваться: «${name} Помощь».`, { temp: true });
+  return true;
+}
+
 function usageText(entry) {
   const about = typeof entry.about === 'function' ? entry.about() : entry.about;
   return `❓ ${entry.title}\n<blockquote>${escapeHtml(about)}</blockquote>\n\nКак писать:\n` +
@@ -2377,6 +2401,8 @@ export async function handleText(message) {
       await say(message, 'Это работает в чате Сквада: напиши там.');
       return true;
     }
+    // A typo in private: the nearest command.
+    if (await suggestCommand(message, cmd, owner, false)) return true;
     return addressed ? fun(message, rest) : false;
   }
 
@@ -2491,6 +2517,9 @@ export async function handleText(message) {
       return true;
     }
   }
+  // «Финя, профль»: the nearest command. Without «Финя,» only a clear typo of a longer
+  // command, so ordinary words stay messages.
+  if (await suggestCommand(message, cmd, owner, !addressed)) return true;
   if (addressed) return fun(message, rest);
   return false;
 }
