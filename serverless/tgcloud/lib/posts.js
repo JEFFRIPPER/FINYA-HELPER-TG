@@ -1,5 +1,5 @@
 // Posts of the channel in the discussion group: «🥇 Первый!» for the first comment,
-// and a day later the comment with the most reactions is pinned with a bonus.
+// and a day later Finya answers the comment with the most reactions, with a bonus.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { logError } from './store.js';
@@ -59,7 +59,7 @@ export async function onReaction(event) {
   }
 }
 
-// A day after a post: its comment with the most reactions (2 at least) is pinned.
+// A day after a post: Finya replies to its comment with the most reactions (2 at least).
 export async function tick(ts = nowInt()) {
   const due = await db.all(sql`SELECT chat_id, root_id FROM channel_posts
     WHERE best_done = 0 AND posted_at <= ${ts - DAY} ORDER BY posted_at LIMIT 5`);
@@ -75,11 +75,6 @@ export async function tick(ts = nowInt()) {
       if (!best || best.n < BEST_MIN_REACTIONS) continue;
       const got = await xp.grant(best.author_id, 'best_comment', p.root_id, BEST_XP, ts);
       if (!got) continue;
-      try {
-        await api.pinChatMessage({ chat_id: p.chat_id, message_id: best.message_id, disable_notification: true });
-      } catch {
-        // No right to pin: the bonus and the note still go out.
-      }
       const name = escapeHtml(truncate(await nameOf(best.author_id), 40));
       await reply(p.chat_id, best.message_id, `⭐ Лучший комментарий поста: ${name}, ${best.n} ${plural(best.n, 'реакция', 'реакции', 'реакций')}. +${BEST_XP} XP`);
     } catch (err) {
