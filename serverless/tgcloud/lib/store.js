@@ -26,6 +26,12 @@ const DEFAULTS = {
   chat_question: true,
   // Quizzes, «Персонажи дня», topics for a quiet chat and «Завтра в Скваде» (events.js).
   chat_events: true,
+  // auto.js: holiday greetings and bonus, answers to frequent questions, the «Штаб» watch.
+  chat_holidays: true,
+  chat_faq: true,
+  auto_staff: true,
+  // «Давно тебя не видно»: messages members in private, so off until the owner turns it on.
+  auto_comeback: false,
   // pump() loads today's horoscopes ahead of «Гороскоп» (extras.prefetchHoroscope).
   horoscope_prefetch: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».

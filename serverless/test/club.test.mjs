@@ -40,7 +40,7 @@ test('daily reward: once a day, a 7-day cycle that restarts after a missed day',
   await setup();
   const alice = user(1, { first_name: 'Alice' });
   let data = await call(alice, { action: 'daily' });
-  assert.deepEqual(data.result, { points: 5, promoted: false });
+  assert.deepEqual(data.result, { points: 5, promoted: false, chest: null });
   assert.equal(data.club.daily.claimed, true);
   assert.equal(data.me.xp, 5);
   await assert.rejects(call(alice, { action: 'daily' }), clubError);
@@ -55,7 +55,9 @@ test('daily reward: once a day, a 7-day cycle that restarts after a missed day',
   }
   assert.equal((await profile(alice)).club.daily.step, 6);
   data = await call(alice, { action: 'daily' });
-  assert.equal(data.result.points, club.DAILY_REWARDS[6]);
+  // The 7th day also opens a chest: more XP or a thing from the shop.
+  assert.ok(data.result.points >= club.DAILY_REWARDS[6]);
+  assert.ok(data.result.chest);
 
   // A gap breaks the chain.
   await setup();

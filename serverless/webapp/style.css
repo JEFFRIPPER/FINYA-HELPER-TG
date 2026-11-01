@@ -2263,3 +2263,8 @@ button.hall-tile { width: 100%; text-align: left; cursor: pointer; }
 .award-degs { display: flex; flex-wrap: wrap; gap: 4px; }
 .award-degs .deg { width: 36px; height: 36px; border-radius: 12px; border: 1px solid var(--line); background: transparent; font-size: 20px; cursor: pointer; }
 .award-degs .deg.on { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold) inset; background: rgba(255, 207, 90, 0.12); }
+
+/* ---- Автоответы ------------------------------------------------------------------------ */
+.faq-rows { display: flex; flex-direction: column; gap: 12px; }
+.faq-row { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 16px; }
+.faq-row .btn-text { align-self: flex-end; }

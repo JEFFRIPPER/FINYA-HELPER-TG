@@ -1,6 +1,7 @@
 // Actions of /api/club. Each one changes something, then returns the profile.
 import { OWNER_USER_ID } from './config.js';
 import { isMaintenance, setSetting } from './store.js';
+import * as auto from './auto.js';
 import * as club from './club.js';
 import * as seasons from './seasons.js';
 import { profileData } from './webapp.js';
@@ -9,6 +10,7 @@ const OWNER_SETTINGS = {
   weekly: 'club_weekly', welcome: 'club_welcome', birthdays: 'club_birthdays',
   antiflood: 'chat_antiflood', captcha: 'chat_captcha', daily: 'chat_daily',
   question: 'chat_question', events: 'chat_events',
+  holidays: 'chat_holidays', faq: 'chat_faq', staffWatch: 'auto_staff', comeback: 'auto_comeback',
 };
 
 function int(value) {
@@ -70,7 +72,7 @@ export async function handle(user, input) {
       await ownerAction(user, action, input);
   }
   const data = await profileData(user);
-  data.result = result ? { points: result.points, promoted: result.promoted } : null;
+  data.result = result ? { points: result.points, promoted: result.promoted, chest: result.chest || null } : null;
   if (trick) data.result = { points: trick.points, promoted: Boolean(result && result.promoted), text: trick.text, again: trick.again };
   if (toy) data.result = { points: 0, promoted: false, toy: toy.toy.name };
   if (gift) data.result = { points: 0, promoted: false, gift };
@@ -101,6 +103,12 @@ async function ownerAction(user, action, input) {
     const key = OWNER_SETTINGS[String(input.key || '')];
     if (!key) throw new club.ClubError('Неизвестная настройка.');
     await setSetting(key, Boolean(input.value));
+  } else if (action === 'faq_save') {
+    try {
+      await auto.saveFaq(input.list);
+    } catch (err) {
+      throw new club.ClubError(err.message);
+    }
   } else if (action === 'weekly_preview') {
     await club.weeklyPreview(user.id);
   } else {
