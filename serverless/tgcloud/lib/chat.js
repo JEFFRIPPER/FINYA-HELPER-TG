@@ -551,6 +551,10 @@ async function farm(message) {
     ? `💎 ${name}, редкий фарм! +${result.points} XP`
     : `🌾 ${name}, фарм удался: +${result.points} XP`;
   let text = `${head}\nВсего: ${fmtThousands(result.total)} XP · следующий через ${fmtWait(xp.FARM_COOLDOWN)}`;
+  // The founder has no next rank.
+  if (result.next && u.id !== OWNER_USER_ID) {
+    text += `\n⬆️ До «${escapeHtml(result.next[2])}» осталось ${fmtThousands(result.next[0] - result.total)} XP`;
+  }
   if (result.promoted) text += `\n\n🎖 Новое звание: ${result.newRank[1]} · ${escapeHtml(result.newRank[2])}!`;
   await say(message, text, { temp: true });
 }
@@ -1215,7 +1219,8 @@ async function casino(message, self, emoji, amount) {
   const result = r.won
     ? `+${fmtThousands(r.won)} XP (×${String(r.times).replace('.', ',')})`
     : `−${fmtThousands(bet.amount)} XP`;
-  await say(message, `${emoji} ${name}: ${r.line} · ${result}\n💰 Баланс: ${fmtThousands(r.balance)} XP`,
+  const left = r.gamesLeft ? `🎟 Игр сегодня осталось: ${r.gamesLeft}` : '🎟 Это была последняя игра на сегодня';
+  await say(message, `${emoji} ${name}: ${r.line} · ${result}\n💰 Баланс: ${fmtThousands(r.balance)} XP\n${left}`,
     { replyTo: dice.message_id, temp: true });
   if (isGroupChat(message.chat)) await deleteLater(message.chat.id, [dice.message_id]);
 }
@@ -1226,7 +1231,7 @@ async function remindCommand(message, self, words, addressed) {
   const parsed = reminders.parse(words);
   if (!parsed) {
     if (!addressed) return false;
-    await say(message, '⏰ Не поняла, когда. Так: «Финя, напомни через 2ч позвонить», «…в 18:30 …», «…завтра в 10:00 …».', { temp: true });
+    await say(message, '⏰ Не поняла, когда. Так: «Финя, напомни через 2ч позвонить», «…в 7 вечера …», «…завтра в 10:00 …», «…в пятницу …».', { temp: true });
     return true;
   }
   try {
@@ -1702,7 +1707,7 @@ const USAGE = [
   {
     keys: ['напомни', 'напоминания', 'мои напоминания', '-напоминание', 'удалить напоминание'], title: '⏰ Напоминания',
     about: () => `Финя напомнит в чате, до ${reminders.PER_USER} напоминаний, не дальше чем на 30 дней`,
-    how: [['Финя, Напомни Через 2ч Позвонить', 'Через минуты, часы или дни: «через 30 мин», «через 3 дня»'], ['Финя, Напомни В 18:30 Стрим', 'В это время по Москве'], ['Финя, Напомни Завтра В 10:00 Текст', 'Завтра'], ['Напоминания', 'Список с номерами'], ['-Напоминание 2', 'Удалить по номеру']],
+    how: [['Финя, Напомни Через 2ч Позвонить', 'Через минуты, часы или дни: «через 30 мин», «через 3 дня»'], ['Финя, Напомни В 18:30 Стрим', 'В это время по Москве: можно «в 18», «в 7 вечера», «18:30»'], ['Финя, Напомни Завтра В 10:00 Текст', 'Завтра, послезавтра или в день недели: «в пятницу в 20:00», «послезавтра» (в 10:00)'], ['Напоминания', 'Список с номерами'], ['-Напоминание 2', 'Удалить по номеру']],
   },
   {
     keys: ['ид', 'айди', 'id', 'мой ид', 'мой id'], title: '🆔 Ид',
@@ -2124,7 +2129,7 @@ export async function handleText(message) {
   if (await anketaInfoCommand(message, self, rest)) return true;
   // A bare «топ» is too often praise («топ!»), so it needs «Финя, топ».
   if ((addressed && cmd === 'топ') || ['топ xp', 'топ хп', 'топ сквада'].includes(cmd)) {
-    await say(message, await xpTopText(false), { temp: true });
+    await say(message, await xpTopText(false, self.id), { temp: true });
     return true;
   }
   if (cmd === 'фарм' || cmd === 'ферма') {
@@ -2358,7 +2363,7 @@ export async function handleText(message) {
         ? '🔮 Такого знака нет. Например: «Гороскоп Рыбы».'
         : '🔮 Сначала добавь день рождения: «+ДР 16.12». Или спроси про знак: «Гороскоп Овен».', { temp: true });
     } else {
-      await say(message, await extras.horoscopeText(sign), { temp: true });
+      await say(message, await extras.horoscopeText(sign), { markup: horoKeyboard(sign.key), temp: true });
       await feats.streakDaily(self.id, 'horo');
     }
     return true;
@@ -2773,6 +2778,26 @@ async function statsButton(query, period) {
 }
 
 // Anyone switches the help section; the owner's one opens only for the owner.
+// Other signs under a horoscope, three in a row: a tap shows that one in place.
+function horoKeyboard(current) {
+  const signs = extras.allSigns();
+  const rows = [];
+  for (let i = 0; i < signs.length; i += 3) {
+    rows.push(signs.slice(i, i + 3).map((s) => button(`${s.key === current ? '• ' : ''}${s.emoji} ${s.name}`, { callback_data: `horo:${s.key}` })));
+  }
+  return keyboard(rows);
+}
+
+async function horoButton(query, key) {
+  const sign = extras.signByKey(key);
+  if (!sign) {
+    await answer(query);
+    return;
+  }
+  await answer(query, `${sign.emoji} ${sign.name}`);
+  await edit(query, await extras.horoscopeText(sign), horoKeyboard(sign.key));
+}
+
 async function helpButton(query, section, ownerMenu) {
   if (section === 'owner' && query.from.id !== OWNER_USER_ID) {
     await answer(query, 'Этот раздел только для владельца 🙂', true);
@@ -2785,7 +2810,7 @@ async function helpButton(query, section, ownerMenu) {
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|date|part|kid|unkid|leave|cap|mod|stat|help|close):/.exec(data);
+  const m = /^(marry|div|date|part|kid|unkid|leave|cap|mod|stat|help|horo|close):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -2804,6 +2829,7 @@ export async function handleCallback(query) {
   else if ((p = /^mod:unmute:(\d+)$/.exec(data))) await moder.unmuteButton(query, Number(p[1]));
   else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);
   else if ((p = /^help:(\w+):([01])$/.exec(data))) await helpButton(query, p[1], p[2] === '1');
+  else if ((p = /^horo:([a-z]+)$/.exec(data))) await horoButton(query, p[1]);
   else await answer(query);
   return true;
 }

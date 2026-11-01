@@ -272,6 +272,10 @@ export function signByName(words) {
   return asSign(found);
 }
 
+export const signByKey = (key) => asSign(SIGNS.find(([k]) => k === key));
+// Every sign in zodiac order, for the buttons under a horoscope.
+export const allSigns = () => SIGNS.map((s) => asSign(s));
+
 export async function zodiacOf(userId) {
   const b = await db.get(sql`SELECT day, month FROM birthdays WHERE user_id = ${userId}`);
   return b ? zodiac(b.day, b.month) : null;

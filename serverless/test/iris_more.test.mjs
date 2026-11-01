@@ -112,6 +112,7 @@ test('casino: the stake goes, a win comes back to the balance, not the rank; lim
   await say(a, 'казино 50');
   assert.equal(api.called('sendDice').at(-1).params.emoji, '🎰');
   assert.match(lastSent(api), /ДЖЕКПОТ 7️⃣7️⃣7️⃣ · \+1,000 XP \(×20\)/);
+  assert.match(lastSent(api), /🎟 Игр сегодня осталось: 19/);
   assert.equal(sent(api).at(-1).params.reply_parameters.message_id, 7000);
   // +100 for the «Три семёрки» achievement; the win itself is balance only.
   assert.equal(await xpOf(2), 400);
@@ -163,6 +164,19 @@ test('reminders: «через», «в 18:30», «завтра»', () => {
   assert.equal(parse('завтра', ts).due, ts + 22 * 3600);
   assert.equal(parse('потом как-нибудь', ts), null);
   assert.equal(parse('в 25:00', ts), null);
+  // Without minutes, «утра/вечера», a day ahead, a weekday (Wed today).
+  assert.deepEqual(parse('в 18 стрим', ts), { due: ts + 6 * 3600, text: 'стрим' });
+  assert.equal(parse('18:30 стрим', ts).due, ts + 6.5 * 3600);
+  assert.deepEqual(parse('в 7 вечера позвонить', ts), { due: ts + 7 * 3600, text: 'позвонить' });
+  assert.equal(parse('завтра в 9 утра', ts).due, ts + 21 * 3600);
+  assert.deepEqual(parse('послезавтра купить торт', ts), { due: ts + 2 * DAY - 2 * 3600, text: 'купить торт' });
+  assert.deepEqual(parse('в пятницу в 20:00 турнир', ts), { due: ts + 2 * DAY + 8 * 3600, text: 'турнир' });
+  assert.equal(parse('во вторник', ts).due, ts + 6 * DAY - 2 * 3600);
+  // Wednesday on a Wednesday: today if still ahead, else next week.
+  assert.equal(parse('в среду в 15:00', ts).due, ts + 3 * 3600);
+  assert.equal(parse('в среду в 9:00', ts).due, ts + 7 * DAY - 3 * 3600);
+  assert.equal(parse('сегодня в 23:00 спать', ts).due, ts + 11 * 3600);
+  assert.equal(parse('сегодня', ts), null);
 });
 
 test('«Финя, напомни»: saved, listed and sent with a later update', async () => {

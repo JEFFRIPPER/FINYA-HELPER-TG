@@ -5,7 +5,7 @@ import { db } from 'sdk';
 import { sql } from 'sdk/db';
 import { OWNER_USER_ID, SQUAD_CHANNEL_URL, SQUAD_LINKS } from './config.js';
 import { getSetting, trackUser } from './store.js';
-import { dayStart, fullName, MSK_OFFSET, nowInt, truncate, weekStart } from './util.js';
+import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 import * as chat from './chat.js';
 import * as club from './club.js';
@@ -54,19 +54,10 @@ async function topView(weekly, userId) {
   }));
 }
 
-// The member's place in the weekly top, the same count as xp.leaderboard(); null
-// without XP this week. For the «Ты» row under the top when they are below it.
+// The member's place in the weekly top; null without XP this week. For the «Ты» row
+// under the top when they are below it.
 async function weekPlace(userId) {
-  const ts = nowInt();
-  const from = weekStart(ts);
-  const mine = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
-    WHERE user_id = ${userId} AND earned_at >= ${from} AND earned_at <= ${ts} AND kind IN ('comment', 'reaction')`);
-  if (!(mine.s > 0)) return null;
-  const above = await db.get(sql`SELECT COUNT(*) AS c FROM (SELECT p.user_id, SUM(e.points) AS score
-    FROM profiles p JOIN events e ON e.user_id = p.user_id
-    WHERE e.earned_at >= ${from} AND e.earned_at <= ${ts} AND e.kind IN ('comment', 'reaction')
-    GROUP BY p.user_id HAVING score > ${mine.s} OR (score = ${mine.s} AND p.user_id < ${userId}))`);
-  return { place: above.c + 1, score: mine.s };
+  return xp.placeOf(userId, { weekly: true });
 }
 
 async function place(p) {

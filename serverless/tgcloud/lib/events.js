@@ -1,6 +1,7 @@
 // Финя as the Squad's event manager, on her own in each Squad chat:
 // - a quiz (riddle, anagram or sum) at 10:30, 13:30 … 22:30: the first right answer
-//   in the chat takes QUIZ_XP; after QUIZ_TTL nobody did and the answer is shown;
+//   in the chat takes QUIZ_XP; after QUIZ_HINT_AFTER a hint, after QUIZ_TTL nobody did
+//   and the answer is shown;
 // - «Персонажи дня» once a day from 10:00: three titles for three active members;
 // - a topic to talk about when the chat is quiet for REVIVE_AFTER in the daytime;
 // - «Завтра в Скваде» from 18:00: birthdays, anniversaries and holidays of tomorrow.
@@ -9,7 +10,7 @@
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
 import { getSetting, logError } from './store.js';
-import { boldHtml, escapeHtml, MSK_OFFSET, nowInt, truncate } from './util.js';
+import { boldHtml, escapeHtml, MSK_OFFSET, nowInt, plural, truncate } from './util.js';
 import { squadChatIds } from './xpchat.js';
 import * as hall from './hall.js';
 import { mskDay, namesOf } from './members.js';
@@ -18,6 +19,8 @@ import * as xp from './xp.js';
 const HOUR = 3600;
 export const QUIZ_XP = 15;
 export const QUIZ_TTL = HOUR;
+// Nobody got it in half an hour: the first letter (or the last digit) helps.
+export const QUIZ_HINT_AFTER = HOUR / 2;
 export const REVIVE_AFTER = 2 * HOUR;
 const REVIVE_GAP = 4 * HOUR;
 const QUIZ_EVERY = 3 * HOUR;
@@ -295,6 +298,7 @@ export async function checkAnswer(message, ts = nowInt()) {
   const won = await db.run(sql`UPDATE quizzes SET done = 1, winner_id = ${message.from.id}
     WHERE id = ${quiz.id} AND done = 0`);
   if (won.rowsAffected !== 1) return false;
+  await db.run(sql`DELETE FROM settings WHERE key = ${`quiz_hint:${quiz.id}`}`);
   const gift = await xp.grant(message.from, 'quiz', quiz.id, QUIZ_XP, ts);
   const name = escapeHtml(truncate((await namesOf([message.from.id]))(message.from.id), 40));
   await send(message.chat.id, `🎉 ${name} отвечает первым! Ответ: «${escapeHtml(quiz.shown)}». ${gift ? `+${gift.points} XP` : ''}`.trim(), {
@@ -303,11 +307,36 @@ export async function checkAnswer(message, ts = nowInt()) {
   return true;
 }
 
+// «К…, 7 букв» for a word, the last digit for a number.
+export function hintText(shown) {
+  const answer = String(shown).trim();
+  if (/^\d+$/u.test(answer)) {
+    return `💡 Подсказка: ответ — число из ${answer.length} ${plural(answer.length, 'цифры', 'цифр', 'цифр')}, последняя — ${answer.at(-1)}.`;
+  }
+  const letters = Array.from(answer.replace(/[^\p{L}]/gu, '')).length;
+  return `💡 Подсказка: начинается на «${answer.charAt(0).toUpperCase()}», ${letters} ${plural(letters, 'буква', 'буквы', 'букв')}.`;
+}
+
+// Open quizzes half way through: one hint each.
+async function hintQuizzes(ts) {
+  const due = await db.all(sql`SELECT * FROM quizzes WHERE done = 0 AND posted_at <= ${ts - QUIZ_HINT_AFTER}
+    AND expires_at > ${ts} LIMIT 5`);
+  for (const q of due) {
+    if (!(await claim(`quiz_hint:${q.id}`, 1))) continue;
+    try {
+      await send(q.chat_id, `${hintText(q.shown)} Время ещё есть, +${QUIZ_XP} XP ждут!`);
+    } catch {
+      // No rights in that chat any more.
+    }
+  }
+}
+
 // Quizzes past their time: the answer is shown.
 async function expireQuizzes(ts) {
   const due = await db.all(sql`SELECT * FROM quizzes WHERE done = 0 AND expires_at <= ${ts} LIMIT 5`);
   for (const q of due) {
     const won = await db.run(sql`UPDATE quizzes SET done = 1 WHERE id = ${q.id} AND done = 0`);
+    await db.run(sql`DELETE FROM settings WHERE key = ${`quiz_hint:${q.id}`}`);
     if (won.rowsAffected !== 1) continue;
     try {
       await send(q.chat_id, `⌛ Время вышло, никто не угадал. Ответ: «${escapeHtml(q.shown)}».`);
@@ -400,6 +429,7 @@ async function announceTick(chatId, ts, text) {
 export async function tick(ts = nowInt()) {
   try {
     await expireQuizzes(ts);
+    await hintQuizzes(ts);
   } catch (err) {
     await logError('events.quiz', err);
   }

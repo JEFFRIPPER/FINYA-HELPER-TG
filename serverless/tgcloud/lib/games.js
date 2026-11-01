@@ -127,12 +127,12 @@ export async function stake(user, value, ts = nowInt()) {
   return { id, amount };
 }
 
-// After the dice: the win, if any. → { times, line, won, total }
+// After the dice: the win, if any. → { times, line, won, balance, gamesLeft }
 export async function settle(user, bet, emoji, value, ts = nowInt()) {
   const p = payout(emoji, value);
   const won = Math.floor(bet.amount * p.times);
   if (won > 0) await credit(user.id, 'casino_win', won, bet.id, ts);
-  return { ...p, won, balance: await balanceOf(user.id) };
+  return { ...p, won, balance: await balanceOf(user.id), gamesLeft: Math.max(0, GAMES_PER_DAY - (await countToday(user.id, 'casino', ts))) };
 }
 
 // The stake comes back when Telegram did not throw the dice.
