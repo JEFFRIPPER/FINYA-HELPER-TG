@@ -29,6 +29,7 @@ import * as reminders from './reminders.js';
 import * as seasons from './seasons.js';
 import * as social from './social.js';
 import * as staff from './staff.js';
+import * as auto from './auto.js';
 import * as typo from './typo.js';
 import * as xp from './xp.js';
 
@@ -2540,6 +2541,8 @@ export async function handleText(message) {
   // «Финя, профль»: the nearest command. Without «Финя,» only a clear typo of a longer
   // command, so ordinary words stay messages.
   if (await suggestCommand(message, cmd, owner, !addressed)) return true;
+  // «как получить XP?»: the answer from the owner's list; a plain question still earns XP.
+  if (group && (await auto.faqAnswer(message, rest))) return addressed;
   if (addressed) return fun(message, rest);
   return false;
 }
@@ -2563,6 +2566,7 @@ export async function onSquadMessage(message, { command = false } = {}) {
       // No right to write here is fine: the flame is counted anyway.
       if (!(err instanceof BotApiError)) await logError('chat.fire', err);
     }
+    if (!handled) await auto.onMessage(message);
     await checkAchievements(message, handled, tracked);
   }
   return { handled, checking };
@@ -2813,6 +2817,18 @@ async function horoButton(query, key) {
   await edit(query, await extras.horoscopeText(sign), horoKeyboard(sign.key));
 }
 
+// «Снять «…»» under the owner's note about a quiet team member.
+async function staffDropButton(query, userId, code) {
+  const job = staff.byCode(code);
+  if (query.from.id !== OWNER_USER_ID || !job) {
+    await answer(query, 'Только владелец.');
+    return;
+  }
+  const done = await staff.dismiss(userId, job);
+  await answer(query, done ? 'Снято' : 'Уже снято');
+  await edit(query, `✅ ${job.emoji} «${escapeHtml(job.title)}» снята с ${escapeHtml(truncate(await members.nameOf(userId), 40))}.`);
+}
+
 async function helpButton(query, section, ownerMenu) {
   if (section === 'owner' && query.from.id !== OWNER_USER_ID) {
     await answer(query, 'Этот раздел только для владельца 🙂', true);
@@ -2825,7 +2841,7 @@ async function helpButton(query, section, ownerMenu) {
 // → true when the button belongs to the chat features.
 export async function handleCallback(query) {
   const data = String(query.data || '');
-  const m = /^(marry|div|date|part|kid|unkid|leave|cap|mod|stat|help|horo|close):/.exec(data);
+  const m = /^(marry|div|date|part|kid|unkid|leave|cap|mod|stat|help|horo|close|staffdrop):/.exec(data);
   if (!m) return false;
   if (!query.message) {
     await answer(query);
@@ -2845,6 +2861,7 @@ export async function handleCallback(query) {
   else if ((p = /^stat:(day|week|month|all)$/.exec(data))) await statsButton(query, p[1]);
   else if ((p = /^help:(\w+):([01])$/.exec(data))) await helpButton(query, p[1], p[2] === '1');
   else if ((p = /^horo:([a-z]+)$/.exec(data))) await horoButton(query, p[1]);
+  else if ((p = /^staffdrop:(\d+):([a-z_]+)$/.exec(data))) await staffDropButton(query, Number(p[1]), p[2]);
   else await answer(query);
   return true;
 }
@@ -2909,6 +2926,7 @@ export async function tick(leftMs) {
   await treeSummaryPost();
   await questions.tick();
   await events.tick();
+  await auto.tick();
 }
 
 // For the Mini App profile.

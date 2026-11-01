@@ -60,7 +60,43 @@ export async function claimDaily(user) {
   if (st.claimed) throw new ClubError('Награда за сегодня уже у тебя. Возвращайся завтра.');
   const result = await xp.grant(user, 'daily', st.today, DAILY_REWARDS[st.step], ts);
   if (!result) throw new ClubError('Награда за сегодня уже у тебя. Возвращайся завтра.');
+  // The 7th day in a row also opens a chest.
+  if (st.step === DAILY_REWARDS.length - 1) {
+    const chest = await openChest(user, st.today, ts);
+    return { ...result, points: result.points + (chest.points || 0), promoted: result.promoted || chest.promoted, chest: chest.text };
+  }
   return result;
+}
+
+// What a chest can hold: [chance, kind]. XP goes on top of the 7th day's reward.
+export const CHEST = [[0.03, 'gold'], [0.12, 'big'], [0.25, 'item'], [0.6, 'xp']];
+
+function chestKind(random) {
+  let r = random();
+  for (const [chance, kind] of CHEST) {
+    if (r < chance) return kind;
+    r -= chance;
+  }
+  return 'xp';
+}
+
+export async function openChest(user, day, ts, random = Math.random) {
+  let kind = chestKind(random);
+  if (kind === 'item') {
+    const owned = new Set((await db.all(sql`SELECT item FROM purchases WHERE user_id = ${user.id}`)).map((r) => r.item));
+    const free = user.id === OWNER_USER_ID ? [] : SHOP.filter((i) => i.price <= 400 && !owned.has(i.id));
+    if (free.length) {
+      const item = free[Math.floor(random() * free.length)];
+      await db.run(sql`INSERT OR IGNORE INTO purchases (user_id, item, price, bought_at) VALUES (${user.id}, ${item.id}, 0, ${ts})`);
+      return { text: `🎁 Сундук: «${item.name}» из Лавки! Надень её во вкладке «Лавка».`, points: 0 };
+    }
+    kind = 'xp';
+  }
+  const pts = kind === 'gold' ? 500 : kind === 'big' ? 150 : 20 + Math.floor(random() * 61);
+  const got = await xp.grant(user, 'chest', day, pts, ts);
+  if (!got) return { text: null, points: 0 };
+  const text = kind === 'gold' ? `👑 Золотой сундук! +${pts} XP` : kind === 'big' ? `💎 Большой сундук: +${pts} XP` : `🧰 Сундук: +${pts} XP`;
+  return { text, points: pts, promoted: got.promoted };
 }
 
 // ---- weekly quests -----------------------------------------------------------
@@ -1114,6 +1150,10 @@ export async function clubData(user, { xpTotal, streakDays, founder }) {
       daily: Boolean(await getSetting('chat_daily')),
       question: Boolean(await getSetting('chat_question')),
       events: Boolean(await getSetting('chat_events')),
+      holidays: Boolean(await getSetting('chat_holidays')),
+      faq: Boolean(await getSetting('chat_faq')),
+      staffWatch: Boolean(await getSetting('auto_staff')),
+      comeback: Boolean(await getSetting('auto_comeback')),
     };
   }
   return data;

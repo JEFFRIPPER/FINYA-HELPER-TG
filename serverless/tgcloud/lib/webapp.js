@@ -8,6 +8,7 @@ import { getSetting, trackUser } from './store.js';
 import { dayStart, fullName, MSK_OFFSET, nowInt, truncate } from './util.js';
 import * as xp from './xp.js';
 import * as chat from './chat.js';
+import * as auto from './auto.js';
 import * as club from './club.js';
 import { nameOf, refsOf, userOfRef, usernameOf } from './members.js';
 import * as staff from './staff.js';
@@ -170,6 +171,7 @@ export async function profileData(user) {
   // Club first: achievements and birthday gifts may add XP shown below.
   const clubView = await club.clubData(user, { xpTotal: p.xp, streakDays: streakNow.days, founder });
   if (clubView.xp !== p.xp) p = await xp.profile(user);
+  if (clubView.admin) clubView.admin.faqList = await auto.faqList();
   const [current, following] = xp.rankFor(p.xp, { founder, manualRank: p.manual_rank });
   const automatic = !founder && !p.manual_rank;
   let progress = null;

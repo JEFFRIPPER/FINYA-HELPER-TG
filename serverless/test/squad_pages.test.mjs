@@ -95,6 +95,7 @@ test('Календарь: birthdays, pair anniversaries and holidays for 30 days
     '1 dating Дина + Ева · 100 дней вместе',
     '3 holiday Хэллоуин',
     '6 birthday Боря · День рождения',
+    '7 holiday День народного единства',
     '9 wedding Аня + Боря · 1 год в браке · ситцевая свадьба 🧵',
   ]);
   assert.equal(calendar[0].at, Date.UTC(2026, 9, 28) / 1000 - 3 * 3600);

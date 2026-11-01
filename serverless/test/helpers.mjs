@@ -32,6 +32,9 @@ export async function setup(overrides = {}) {
   await setSetting('horoscope_prefetch', false);
   // «Итоги дня» go out at 23:55 МСК: a test run then would see them in every chat.
   await setSetting('chat_daily', false);
+  // Holidays and the «Штаб» watch depend on the date: only their tests switch them on.
+  await setSetting('chat_holidays', false);
+  await setSetting('auto_staff', false);
   apiMock.reset();
   apiMock.handler = async (method, params) => {
     if (overrides[method]) return overrides[method](params);

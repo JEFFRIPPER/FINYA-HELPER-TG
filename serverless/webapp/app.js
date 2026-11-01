@@ -108,6 +108,9 @@
     quiz: ['quiz_fill', 'Угадал загадку первым', 'gold'],
     battle: ['swords_fill', 'Победа в Битве загадок', 'gold'],
     qmajor: ['how_to_vote_fill', 'Угадал большинство в опросе', 'gold'],
+    holiday: ['celebration_fill', 'Праздничный бонус', 'gold'],
+    comeback: ['celebration_fill', 'С возвращением в Сквад', 'gold'],
+    chest: ['redeem_fill', 'Сундук награды дня', 'gold'],
     nominee: ['emoji_events_fill', 'Номинация недели', 'gold'],
   };
   var TABS = [
@@ -1834,17 +1837,23 @@
       var now = i === d.step && !d.claimed;
       return h('div', { class: 'day' + (done ? ' done' : '') + (now ? ' now' : '') + (i === last ? ' big' : '') },
         h('span', { text: String(i + 1) }),
-        done ? icon('check') : h('b', { text: '+' + points }));
+        done ? icon('check') : h('b', { text: i === last ? '🧰' : '+' + points }));
     });
     var btn;
     if (d.claimed) {
       btn = h('button', { class: 'btn-tonal wide', disabled: true }, icon('schedule_fill'), 'Следующая награда завтра');
     } else {
       btn = h('button', { class: 'btn-filled wide ripple', onclick: function () {
-        act({ action: 'daily' }, btn, rewarded('Награда дня'));
-      } }, icon('redeem_fill'), 'Забрать +' + d.rewards[d.step] + ' XP');
+        act({ action: 'daily' }, btn, function (data) {
+          var chest = data && data.result && data.result.chest;
+          if (!chest) return rewarded('Награда дня')(data);
+          vibrate('success');
+          burst(data.result.points);
+          snackbar(chest);
+        });
+      } }, icon('redeem_fill'), d.step === last ? 'Забрать +' + d.rewards[d.step] + ' XP и сундук' : 'Забрать +' + d.rewards[d.step] + ' XP');
     }
-    var sub = d.run ? 'Серия: ' + d.run + ' ' + plural(d.run, 'день', 'дня', 'дней') + ' подряд' : '7-й день подряд: +' + d.rewards[d.rewards.length - 1] + ' XP';
+    var sub = d.run ? 'Серия: ' + d.run + ' ' + plural(d.run, 'день', 'дня', 'дней') + ' подряд' : '7-й день подряд: +' + d.rewards[d.rewards.length - 1] + ' XP и сундук';
     return h('section', { class: 'card daily' + (d.claimed ? '' : ' ready') },
       cardHead('redeem_fill', 'gold', 'Награда дня', sub),
       h('div', { class: 'days' }, cells), btn);
@@ -2496,10 +2505,50 @@
         setting('antiflood', 'Антифлуд в чатах', 'Мут на 10 минут за 8 сообщений за 10 секунд'),
         setting('daily', 'Итоги дня в чатах', '23:55 МСК: топ-3 дня по сообщениям'),
         setting('question', 'Опросы Фини', 'Каждые 3 часа с 9:00 до 00:00 МСК, через 3 часа итог и XP'),
-        setting('events', 'Ивенты Фини', 'Загадки, персонажи дня, темы в тишине, анонсы на завтра')),
+        setting('events', 'Ивенты Фини', 'Загадки, персонажи дня, темы в тишине, анонсы на завтра'),
+        setting('holidays', 'Праздники', 'Поздравление в 10:00 МСК и +20 XP за сообщение в праздник'),
+        setting('faq', 'Автоответы', 'Финя сама отвечает на частые вопросы в чатах'),
+        setting('staffWatch', 'Присмотр за Штабом', '14 дней тишины: напоминание, 21 день: тебе кнопка «Снять»'),
+        setting('comeback', 'Возврат пропавших', 'Кто молчит 7 дней, получает личку и +30 XP за возвращение')),
       h('div', { class: 'row-btns' },
         h('button', { class: 'btn-filled ripple', onclick: openPollSheet }, icon('add'), 'Новый опрос'), preview),
+      h('div', { class: 'row-btns' },
+        h('button', { class: 'btn-tonal ripple', onclick: function () { openFaqSheet(a.faqList || []); } }, icon('quiz_fill'), 'Список автоответов')),
       polls.length ? h('ul', { class: 'list' }, withDividers(polls)) : null);
+  }
+
+  // «Автоответы»: words that must be in a question and Финя's answer to it.
+  function openFaqSheet(list) {
+    var content = h('div', { class: 'sheet-body' });
+    var close = openSheet(content);
+    if (!close) return;
+    vibrate('light');
+    var rows = h('div', { class: 'faq-rows' });
+    function addRow(f) {
+      if (rows.children.length >= 30) return;
+      var keys = h('input', { class: 'field-input', type: 'text', maxlength: '80', placeholder: 'Слова через запятую: как, xp',
+        value: f ? (Array.isArray(f.keys) ? f.keys.join(', ') : f.keys) : '' });
+      var ans = h('textarea', { class: 'field-input', rows: '3', maxlength: '500', placeholder: 'Ответ Фини' });
+      ans.value = f ? f.answer : '';
+      var row = h('div', { class: 'faq-row' }, goodsField('Если в вопросе есть', keys), goodsField('Финя отвечает', ans),
+        h('button', { class: 'btn-text small ripple', type: 'button', onclick: function () { row.remove(); } }, icon('remove'), 'Убрать'));
+      rows.appendChild(row);
+    }
+    list.forEach(addRow);
+    var save = h('button', { class: 'btn-filled wide ripple', type: 'button' }, 'Сохранить');
+    save.addEventListener('click', function () {
+      var out = Array.prototype.map.call(rows.querySelectorAll('.faq-row'), function (r) {
+        return { keys: r.querySelector('input').value, answer: r.querySelector('textarea').value };
+      });
+      act({ action: 'faq_save', list: out }, save, function () { vibrate('success'); snackbar('Автоответы сохранены'); close(); });
+    });
+    content.replaceChildren(
+      h('h2', { class: 'goods-title', text: 'Автоответы' }),
+      h('p', { class: 'fine', text: 'Финя отвечает, когда в вопросе есть все слова (можно начало слова: «правил» найдёт «правила»). Один ответ в чате не чаще раза в 10 минут.' }),
+      rows,
+      h('button', { class: 'btn-text ripple', type: 'button', onclick: function () { addRow(null); } }, icon('add'), 'Добавить ответ'),
+      save,
+      h('button', { class: 'btn-tonal close-sheet ripple', type: 'button', onclick: close }, 'Закрыть'));
   }
 
   // ---- old chat history ---------------------------------------------------------
