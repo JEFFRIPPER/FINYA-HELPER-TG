@@ -111,6 +111,8 @@
     holiday: ['celebration_fill', 'Праздничный бонус', 'gold'],
     comeback: ['celebration_fill', 'С возвращением в Сквад', 'gold'],
     chest: ['redeem_fill', 'Сундук награды дня', 'gold'],
+    first_comment: ['chat_bubble_fill', 'Первый комментарий под постом', 'gold'],
+    best_comment: ['star_fill', 'Лучший комментарий поста', 'gold'],
     nominee: ['emoji_events_fill', 'Номинация недели', 'gold'],
   };
   var TABS = [

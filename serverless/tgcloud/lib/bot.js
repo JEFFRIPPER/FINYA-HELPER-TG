@@ -24,6 +24,7 @@ import * as blacklist from './blacklist.js';
 import * as chat from './chat.js';
 import * as changelog from './changelog.js';
 import * as club from './club.js';
+import * as posts from './posts.js';
 import * as emoji from './emoji.js';
 import * as extras from './extras.js';
 import * as historyFile from './history_file.js';
@@ -511,6 +512,11 @@ async function squadMessage(message, command) {
   } catch (err) {
     await logError('xp.comment', err);
   }
+  try {
+    await posts.onMessage(message, xpSourceChannelId());
+  } catch (err) {
+    await logError('posts.message', err);
+  }
 }
 
 export async function onMessageReaction(event) {
@@ -518,6 +524,11 @@ export async function onMessageReaction(event) {
   try {
     if (!event || !['group', 'supergroup'].includes(event.chat.type)) return;
     if (!(await xpChatMatches(event.chat.id))) return;
+    try {
+      await posts.onReaction(event);
+    } catch (err) {
+      await logError('posts.reaction', err);
+    }
     const award = await xp.reaction(event);
     if (award) await notifyPromotion(event.user, award);
   } finally {

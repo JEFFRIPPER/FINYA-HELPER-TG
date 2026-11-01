@@ -20,11 +20,12 @@ test('comment under a channel post earns 5 XP once, with cooldown', async () => 
   await onMessage(root);
   const alice = user(1);
   await onMessage(groupMessage(DISCUSSION, alice, 'Классный пост!', { reply_to_message: root }));
-  assert.equal(await xpOf(1), 5);
+  // 5 XP for the comment + 15 XP for being the first under the post.
+  assert.equal(await xpOf(1), 20);
   // Cooldown: a second comment within 60 s gives nothing.
   await onMessage(groupMessage(DISCUSSION, alice, 'Ещё комментарий', { reply_to_message: root }));
-  assert.equal(await xpOf(1), 5);
-  const events = await db.all('SELECT points FROM events WHERE user_id = 1 ORDER BY earned_at');
+  assert.equal(await xpOf(1), 20);
+  const events = await db.all("SELECT points FROM events WHERE user_id = 1 AND kind = 'comment' ORDER BY earned_at");
   assert.deepEqual(events.map((e) => e.points), [5, 0]);
 });
 
@@ -54,7 +55,8 @@ test('reaction: +1 to someone else\'s comment, not to own, not on emoji change',
   await onMessageReaction({ ...base, user: reactor, old_reaction: [{ type: 'emoji', emoji: '👍' }], new_reaction: [{ type: 'emoji', emoji: '🔥' }] });
   assert.equal(await xpOf(11), 1);
   await onMessageReaction({ ...base, user: author, old_reaction: [], new_reaction: [{ type: 'emoji', emoji: '👍' }] });
-  assert.equal(await xpOf(10), 5);
+  // 5 XP for the comment + 15 XP first-comment bonus; own reaction adds nothing.
+  assert.equal(await xpOf(10), 20);
 });
 
 test('daily limit caps XP at 100', async () => {
