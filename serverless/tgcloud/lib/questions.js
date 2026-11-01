@@ -16,6 +16,17 @@ export const QUESTION_EVERY = 3 * 3600;
 const QUIET_SLOTS = new Set([1, 2]);
 export const POLL_OPEN = 3 * 3600;
 export const VOTE_XP = 5;
+// «Угадай большинство»: a vote for the one winning option (no tie, 2+ votes for it) earns more.
+export const MAJORITY_XP = 10;
+
+// The winning option's index, or null on a tie or with under two votes for it.
+export function majorityOf(votes) {
+  const counts = new Map();
+  for (const v of votes) counts.set(v.option, (counts.get(v.option) || 0) + 1);
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length || ranked[0][1] < 2 || (ranked[1] && ranked[1][1] === ranked[0][1])) return null;
+  return ranked[0][0];
+}
 
 export const QUESTIONS = [
   ['Тебе дают миллион, но всю жизнь ты ходишь в костюме банана. Берёшь?', ['Беру, я и так банан 🍌', 'Только если костюм с подогревом', 'Нет, у меня гордость', 'За два миллиона подумаю']],
@@ -184,6 +195,13 @@ export function verdict(shares) {
   return '🌀 Сквад разбежался по всем вариантам. Ничего не понятно, но очень интересно.';
 }
 
+function majorityLine(votes) {
+  const win = majorityOf(votes);
+  if (win == null) return '';
+  const n = votes.filter((v) => v.option === win).length;
+  return `\n🎯 Угадали большинство: ${n} · каждому ещё +${MAJORITY_XP} XP`;
+}
+
 export function resultText(poll, votes) {
   const options = JSON.parse(poll.options);
   const head = `📊 Итог опроса: «${escapeHtml(poll.question)}»`;
@@ -199,7 +217,7 @@ export function resultText(poll, votes) {
 
 ${lines.join('\n')}
 
-👥 ${votes.length} ${word} · каждому +${VOTE_XP} XP
+👥 ${votes.length} ${word} · каждому +${VOTE_XP} XP${majorityLine(votes)}
 ${verdict(shares)}`;
 }
 
@@ -214,7 +232,11 @@ export async function closePolls(ts = nowInt()) {
     const won = await db.run(sql`UPDATE question_polls SET closed = 1 WHERE id = ${poll.id} AND closed = 0`);
     if (won.rowsAffected !== 1) continue;
     const votes = await db.all(sql`SELECT user_id, option FROM question_votes WHERE poll_id = ${poll.poll_id}`);
-    for (const v of votes) await xp.grant(v.user_id, 'qpoll', poll.id, VOTE_XP, ts);
+    const win = majorityOf(votes);
+    for (const v of votes) {
+      await xp.grant(v.user_id, 'qpoll', poll.id, VOTE_XP, ts);
+      if (v.option === win) await xp.grant(v.user_id, 'qmajor', poll.id, MAJORITY_XP, ts);
+    }
     try {
       await api.stopPoll({ chat_id: poll.chat_id, message_id: poll.message_id });
     } catch {

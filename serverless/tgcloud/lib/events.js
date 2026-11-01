@@ -9,7 +9,8 @@
 // asked_questions keeps every riddle, word, sum and topic ever posted: none repeats.
 import { api, db } from 'sdk';
 import { sql } from 'sdk/db';
-import { getSetting, logError } from './store.js';
+import { getSetting, logError, setSetting } from './store.js';
+import * as feats from './feats.js';
 import { boldHtml, escapeHtml, MSK_OFFSET, nowInt, plural, truncate } from './util.js';
 import { squadChatIds } from './xpchat.js';
 import * as hall from './hall.js';
@@ -19,8 +20,13 @@ import * as xp from './xp.js';
 const HOUR = 3600;
 export const QUIZ_XP = 15;
 export const QUIZ_TTL = HOUR;
-// Nobody got it in half an hour: the first letter (or the last digit) helps.
+// Nobody got it in half the time: the first letter (or the last digit) helps.
 export const QUIZ_HINT_AFTER = HOUR / 2;
+// «Битва загадок» on Saturdays and Sundays at 19:30: rounds in a row, the most right
+// answers take BATTLE_XP and the «Мозг Сквада» badge.
+export const BATTLE_ROUNDS = 5;
+export const BATTLE_TTL = 10 * 60;
+export const BATTLE_XP = 100;
 export const REVIVE_AFTER = 2 * HOUR;
 const REVIVE_GAP = 4 * HOUR;
 const QUIZ_EVERY = 3 * HOUR;
@@ -273,13 +279,68 @@ export async function nextQuiz(chatId, ts) {
   return null;
 }
 
-export async function postQuiz(chatId, ts = nowInt(), lead = '') {
+export async function postQuiz(chatId, ts = nowInt(), lead = '', ttl = QUIZ_TTL) {
   const quiz = await nextQuiz(chatId, ts);
   if (!quiz) return null;
-  await db.run(sql`INSERT INTO quizzes (chat_id, question, answers, shown, posted_at, expires_at)
-    VALUES (${chatId}, ${quiz.question}, ${JSON.stringify(quiz.answers)}, ${quiz.shown}, ${ts}, ${ts + QUIZ_TTL})`);
-  await send(chatId, `${lead}${escapeHtml(quiz.question)}\n\n🏆 Кто первым ответит в чат, получит +${QUIZ_XP} XP. На ответ ${QUIZ_TTL / 60} минут.`);
-  return quiz;
+  const r = await db.run(sql`INSERT INTO quizzes (chat_id, question, answers, shown, posted_at, expires_at)
+    VALUES (${chatId}, ${quiz.question}, ${JSON.stringify(quiz.answers)}, ${quiz.shown}, ${ts}, ${ts + ttl}) RETURNING id`);
+  await send(chatId, `${lead}${escapeHtml(quiz.question)}\n\n🏆 Кто первым ответит в чат, получит +${QUIZ_XP} XP. На ответ ${ttl / 60} минут.`);
+  return { ...quiz, id: r.rows && r.rows[0] ? r.rows[0].id : null };
+}
+
+// ---- «Битва загадок» ---------------------------------------------------------------
+
+const battleKey = (chatId) => `battle:${chatId}`;
+
+export async function battleOn(chatId) {
+  return Boolean(await getSetting(battleKey(chatId)));
+}
+
+export async function startBattle(chatId, ts = nowInt()) {
+  await setSetting(battleKey(chatId), { round: 0, scores: {}, quiz: null, started: ts });
+  await send(chatId, `⚔️ Битва загадок!\n\n${BATTLE_ROUNDS} загадок подряд, на каждую ${BATTLE_TTL / 60} минут. ` +
+    `За каждую +${QUIZ_XP} XP, а кто угадает больше всех, получит ещё +${BATTLE_XP} XP и ачивку «Мозг Сквада».`);
+  await nextRound(chatId, ts);
+}
+
+async function nextRound(chatId, ts) {
+  const b = await getSetting(battleKey(chatId));
+  if (!b) return;
+  const quiz = b.round < BATTLE_ROUNDS ? await postQuiz(chatId, ts, `⚔️ Раунд ${b.round + 1}/${BATTLE_ROUNDS}\n\n`, BATTLE_TTL) : null;
+  if (!quiz) {
+    await finishBattle(chatId, b, ts);
+    return;
+  }
+  await setSetting(battleKey(chatId), { ...b, round: b.round + 1, quiz: quiz.id });
+}
+
+// A battle quiz is over (won or timed out): count it, then the next round.
+async function battleAfter(chatId, quizId, winnerId, ts) {
+  const b = await getSetting(battleKey(chatId));
+  if (!b || b.quiz !== quizId) return;
+  if (winnerId) b.scores[winnerId] = (b.scores[winnerId] || 0) + 1;
+  await setSetting(battleKey(chatId), { ...b, quiz: null });
+  await nextRound(chatId, ts);
+}
+
+async function finishBattle(chatId, b, ts) {
+  await setSetting(battleKey(chatId), null);
+  const rows = Object.entries(b.scores).map(([id, n]) => [Number(id), n]).sort((x, y) => y[1] - x[1]);
+  if (!rows.length) {
+    await send(chatId, '⚔️ Битва загадок окончена: никто не угадал ни одной. В следующие выходные реванш!');
+    return;
+  }
+  const best = rows[0][1];
+  const name = await namesOf(rows.map(([id]) => id));
+  const medals = ['🥇', '🥈', '🥉'];
+  const table = rows.slice(0, 10).map(([id, n], i) => `${medals[i] || `${i + 1}.`} ${escapeHtml(truncate(name(id), 40))} — ${n}`).join('\n');
+  const winners = rows.filter(([, n]) => n === best).map(([id]) => id);
+  for (const id of winners) {
+    await xp.grant(id, 'battle', b.started, BATTLE_XP, ts);
+    await feats.bump(id, 'battle');
+  }
+  const champ = winners.map((id) => escapeHtml(truncate(name(id), 40))).join(', ');
+  await send(chatId, `⚔️ Битва загадок окончена!\n\n${table}\n\n🧠 ${winners.length > 1 ? 'Победители' : 'Победитель'}: ${champ} · +${BATTLE_XP} XP`);
 }
 
 // A group message: the first right answer to the open quiz of the chat. → true if it won.
@@ -304,6 +365,7 @@ export async function checkAnswer(message, ts = nowInt()) {
   await send(message.chat.id, `🎉 ${name} отвечает первым! Ответ: «${escapeHtml(quiz.shown)}». ${gift ? `+${gift.points} XP` : ''}`.trim(), {
     reply_parameters: { message_id: message.message_id, allow_sending_without_reply: true },
   });
+  await battleAfter(message.chat.id, quiz.id, message.from.id, ts);
   return true;
 }
 
@@ -317,9 +379,9 @@ export function hintText(shown) {
   return `💡 Подсказка: начинается на «${answer.charAt(0).toUpperCase()}», ${letters} ${plural(letters, 'буква', 'буквы', 'букв')}.`;
 }
 
-// Open quizzes half way through: one hint each.
+// Open quizzes half way through (half an hour, half of a battle round): one hint each.
 async function hintQuizzes(ts) {
-  const due = await db.all(sql`SELECT * FROM quizzes WHERE done = 0 AND posted_at <= ${ts - QUIZ_HINT_AFTER}
+  const due = await db.all(sql`SELECT * FROM quizzes WHERE done = 0 AND posted_at + MIN(${QUIZ_HINT_AFTER}, (expires_at - posted_at) / 2) <= ${ts}
     AND expires_at > ${ts} LIMIT 5`);
   for (const q of due) {
     if (!(await claim(`quiz_hint:${q.id}`, 1))) continue;
@@ -343,6 +405,7 @@ async function expireQuizzes(ts) {
     } catch {
       // No rights in that chat any more.
     }
+    await battleAfter(q.chat_id, q.id, null, ts);
   }
 }
 
@@ -356,7 +419,10 @@ async function quizTick(chatId, ts) {
   const open = await db.get(sql`SELECT 1 AS n FROM quizzes WHERE chat_id = ${chatId} AND done = 0`);
   if (open) return;
   if (!(await claim(`quiz_slot:${chatId}`, slot))) return;
-  await postQuiz(chatId, ts);
+  // Saturday and Sunday evening: the battle instead of one quiz.
+  const weekday = new Date((ts + MSK_OFFSET) * 1000).getUTCDay();
+  if (hour === 18 && (weekday === 0 || weekday === 6)) await startBattle(chatId, ts);
+  else await postQuiz(chatId, ts);
 }
 
 // ---- «Персонажи дня» ---------------------------------------------------------------

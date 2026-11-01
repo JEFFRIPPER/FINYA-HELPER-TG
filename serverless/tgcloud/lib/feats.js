@@ -1,4 +1,4 @@
-// Chat achievements: 67 more badges for what members do in the Squad chats
+// Chat achievements: 68 more badges for what members do in the Squad chats
 // (messages, active days, reputation, marriage, farm, casino…), one secret and
 // two limited. Checked after commands and every 10th message, announced right in
 // the chat; the Mini App shows them together with the club ones (club.js).
@@ -84,6 +84,7 @@ export const CHAT_ACHIEVEMENTS = [
   A(82, 'fire_30', 'fire', 30, 100, 'local_fire_department_fill', 'Вечный огонь', 'Огонёк пары 30 дней подряд'),
   // Limited: «Ёлка Сквада» 2026/27 (seasons.js). `until` is 14 January 2027, 00:00 МСК.
   { ...A(83, 'tree_2026', 'tree2026', 1, 50, 'tree_fill', 'Ёлка 2026', 'Повесь игрушку на Ёлку Сквада до 13 января 2027'), until: 1799874000 },
+  A(84, 'battle_1', 'battle', 1, 50, 'emoji_events_fill', 'Мозг Сквада', 'Выиграй «Битву загадок» на выходных'),
 ];
 
 // ---- the secret of darkness ------------------------------------------------------
@@ -223,6 +224,7 @@ export async function chatStats(userId, ts = nowInt()) {
     hw2026: counts.hw2026 || 0,
     fire: await one(sql`SELECT MAX(best) AS n FROM pair_fire WHERE a = ${userId} OR b = ${userId}`),
     tree2026: counts.tree2026 || 0,
+    battle: counts.battle || 0,
   };
 }
 
