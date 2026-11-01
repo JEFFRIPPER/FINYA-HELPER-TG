@@ -205,7 +205,10 @@ test('«Ивенты Вкл/Выкл» by the owner switches them all', async ()
   await say(OWNER, 'Финя, Ивенты Выкл');
   assert.equal(await getSetting('chat_events'), false);
   assert.match(texts(api).at(-1), /Ивенты Фини .* выключены/);
+  // Only what comes after «Выкл»: the pump after «Вкл» runs at the real hour.
+  await db.run('UPDATE quizzes SET done = 1');
+  const before = texts(api).length;
   await member(2, 'Аня', at(9, 50));
   await events.tick(at(10, 40));
-  assert.equal(texts(api).filter((t) => /\+15 XP/.test(t)).length, 0);
+  assert.equal(texts(api).slice(before).filter((t) => /\+15 XP/.test(t)).length, 0);
 });

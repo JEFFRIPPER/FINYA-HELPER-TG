@@ -44,8 +44,9 @@ test('profile endpoint: rank, progress, place, chart and history of the caller',
   assert.equal(data.chart[6].day, dayStart(ts));
   assert.equal(data.chart[6].xp, 6);
   assert.equal(data.chart[5].xp, 5);
-  // Denied attempts (0 points) are not history.
-  assert.deepEqual(data.history.map((h) => [h.kind, h.points]), [['reaction', 1], ['comment', 5], ['comment', 5]]);
+  // Denied attempts (0 points) are not history. Right at midnight the times tie: compare the set.
+  assert.deepEqual(data.history.map((h) => [h.kind, h.points]).sort(), [['comment', 5], ['comment', 5], ['reaction', 1]]);
+  assert.ok(data.history.every((h, i) => !i || data.history[i - 1].at >= h.at));
   assert.deepEqual(data.ranks.filter((r) => r.reached).map((r) => r.roman), ['I']);
 });
 
@@ -74,7 +75,9 @@ test('profile endpoint: founder, owner changes and a new member', async () => {
   assert.equal(alice.me.manualRank, true);
   assert.equal(alice.me.rank.roman, 'V');
   assert.equal(alice.me.progress, null);
-  assert.deepEqual(alice.history.slice(0, 2).map((h) => h.kind).sort(), ['owner_rank', 'owner_xp']);
+  const owners = alice.history.filter((h) => h.kind.startsWith('owner_'));
+  assert.deepEqual(owners.map((h) => h.kind).sort(), ['owner_rank', 'owner_xp']);
+  assert.ok(owners.every((h) => h.at === alice.history[0].at));
   assert.equal(alice.history.find((h) => h.kind === 'owner_xp').points, 30);
 
   const fresh = await call(user(50, { first_name: 'New' }));

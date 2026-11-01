@@ -85,8 +85,10 @@ test('«Вопрос дня»: a vote counts once a day, only in today’s poll'
   await vote(3, '5375043895626219524', []);
   assert.equal(await counter(2, 'qday'), 1);
   assert.equal(await counter(3, 'qday'), 0);
-  await feats.bumpDaily(2, 'qday', ts + DAY);
-  await feats.bumpDaily(2, 'qday', ts + DAY + 60);
+  // Tomorrow at noon: two minutes apart, never across midnight.
+  const noon = ts - ((ts + 3 * 3600) % DAY) + DAY + 12 * 3600;
+  await feats.bumpDaily(2, 'qday', noon);
+  await feats.bumpDaily(2, 'qday', noon + 60);
   assert.equal(await counter(2, 'qday'), 2);
 });
 

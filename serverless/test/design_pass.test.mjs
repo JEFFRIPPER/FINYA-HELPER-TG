@@ -108,7 +108,7 @@ test('the «Ты» row: the member\'s own place in the week and overall, also be
   for (let id = 2; id <= 13; id++) {
     await member(id, `M${id}`, 20000 - id * 1000);
     await db.run("INSERT INTO events (user_id, chat_id, message_id, kind, points, earned_at) VALUES (?, -100, ?, 'comment', ?, ?)",
-      [id, id, 100 - id, ts - 60]);
+      [id, id, 100 - id, ts]);
   }
   const last = await profileData(user(13));
   assert.equal(last.top.week.length, 10);

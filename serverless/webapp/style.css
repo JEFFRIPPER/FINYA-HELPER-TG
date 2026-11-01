@@ -295,6 +295,8 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
   color: var(--text-2);
 }
 .progress-label b { color: var(--text); font-weight: 500; }
+/* «осталось N XP» stays on one line on a narrow phone; the rank name wraps instead. */
+.progress-label > span:last-child { flex: none; white-space: nowrap; }
 .note { position: relative; margin-top: 12px; color: var(--on-container); opacity: 0.9; }
 
 /* ---- stats ----------------------------------------------------------------- */
@@ -1349,6 +1351,7 @@ span.rank-chip > span { display: block; min-width: 0; color: inherit; white-spac
 
 /* ---- owner's rank panel --------------------------------------------------------- */
 .admin-title { display: flex; align-items: center; gap: 14px; }
+.admin-title .body span { white-space: normal; }
 .dist { display: flex; gap: 6px; margin: 14px -16px 0; padding: 0 16px 2px; overflow-x: auto; scrollbar-width: none; }
 .dist::-webkit-scrollbar { display: none; }
 .dist-item {
@@ -2085,6 +2088,11 @@ em.nm { font-style: normal; }
 .pod-name { display: block; max-width: 100%; margin-top: 8px; font-size: 14px; line-height: 20px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pod.me .pod-name { color: #fff; }
 .pod-sub { max-width: 100%; font-size: 11px; line-height: 14px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Narrow phones: a long name or rank takes two lines instead of «Констан…». */
+@media (max-width: 400px) {
+  .pod-name, .pod-sub { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .pod-name { line-height: 18px; }
+}
 .pod-score { margin-top: 2px; font-size: 13px; line-height: 18px; font-weight: 700; color: var(--red); font-variant-numeric: tabular-nums; }
 .pod-step {
   width: 100%;

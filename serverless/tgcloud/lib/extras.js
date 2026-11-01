@@ -371,6 +371,24 @@ async function horoscope(key, ts) {
   return null;
 }
 
+// From pump(): one missing sign of today a time, so «Гороскоп» answers from the cache
+// and never waits on horo.mail.ru (a fetch can't be cut short here). Not before 6:00:
+// the site posts the new day's forecasts in the night.
+export const HOROSCOPE_PREFETCH_FROM = 6;
+export async function prefetchHoroscope(leftMs, ts = nowInt()) {
+  if (leftMs() < 15000 || !(await getSetting('horoscope_prefetch'))) return false;
+  if (Math.floor(((ts + MSK_OFFSET) % 86400) / 3600) < HOROSCOPE_PREFETCH_FROM) return false;
+  const failed = await getSetting('horoscope_failed_at');
+  if (failed && ts - failed < HOROSCOPE_RETRY) return false;
+  const cached = await getSetting('horoscope_cache');
+  const day = members.mskDay(ts);
+  const have = cached && cached.day === day && cached.signs ? cached.signs : {};
+  const sign = SIGNS.find(([key]) => !have[key]);
+  if (!sign) return false;
+  await horoscope(sign[0], ts);
+  return true;
+}
+
 export async function horoscopeText(sign, ts = nowInt()) {
   const text = await horoscope(sign.key, ts);
   if (!text) return `🔮 Гороскоп сейчас не загрузился с ${HOROSCOPE_SOURCE}. Попробуй чуть позже.`;
@@ -427,6 +445,11 @@ export function countdownText(target, ts = nowInt()) {
   const hours = Math.floor((left % DAY) / 3600);
   const parts = [];
   if (days) parts.push(`${days} ${plural(days, 'день', 'дня', 'дней')}`);
-  parts.push(`${hours} ${plural(hours, 'час', 'часа', 'часов')}`);
+  if (days || hours) parts.push(`${hours} ${plural(hours, 'час', 'часа', 'часов')}`);
+  // The last hour counts in minutes, not «0 часов».
+  if (!days) {
+    const minutes = Math.max(1, Math.ceil((left % 3600) / 60));
+    parts.push(`${minutes} ${plural(minutes, 'минута', 'минуты', 'минут')}`);
+  }
   return `⏳ До ${target.title}: ${parts.join(' ')}`;
 }

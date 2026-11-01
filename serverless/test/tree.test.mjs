@@ -88,6 +88,8 @@ test('outside the season: no toys, only the owner sees the tree ahead', async ()
 test('«Ёлка» in the chat, and the summary on New Year\'s Eve once per chat', async () => {
   const api = await setup();
   await setSetting('chat_captcha', false);
+  // The summary goes out with «Итоги дня», which setup() switches off.
+  await setSetting('chat_daily', true);
   at(msk(2026, 11, 20, 12));
   const a = await member(2, 'Аня', 1000);
   const b = await member(3, 'Боря', 1000);

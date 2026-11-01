@@ -287,6 +287,8 @@ export const chat_members = table('chat_members', {
   pk: primaryKey({ columns: [t.chat_id, t.user_id] }),
   byActive: index('chat_members_by_active').on(t.chat_id, t.status, t.last_active),
   byUsername: index('chat_members_by_username').on(t.username),
+  // Names, the profile and achievements look a member up across all chats.
+  byUser: index('chat_members_by_user').on(t.user_id, t.last_active),
 }));
 
 // Messages per member per Moscow day (day = days since 1970 in MSK).
@@ -297,6 +299,8 @@ export const chat_activity = table('chat_activity', {
   msgs: integer('msgs').notNull().default(0),
 }, (t) => ({
   pk: primaryKey({ columns: [t.chat_id, t.day, t.user_id] }),
+  // «Моя Анкета» and achievements sum a member's days over all chats.
+  byUser: index('chat_activity_by_user').on(t.user_id, t.day),
 }));
 
 export const reputation = table('reputation', {

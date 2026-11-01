@@ -29,6 +29,9 @@ export async function setup(overrides = {}) {
   await setSetting('changelog_posted', CHANGES[0].id);
   // Финя's own events depend on the hour: only the events tests switch them on.
   await setSetting('chat_events', false);
+  await setSetting('horoscope_prefetch', false);
+  // «Итоги дня» go out at 23:55 МСК: a test run then would see them in every chat.
+  await setSetting('chat_daily', false);
   apiMock.reset();
   apiMock.handler = async (method, params) => {
     if (overrides[method]) return overrides[method](params);
