@@ -38,7 +38,7 @@ test('a post older than a day gives no first-comment bonus', async () => {
   assert.equal(await bonus(4, 'first_comment'), 0);
 });
 
-test('a day later the most liked comment is pinned with +20 XP', async () => {
+test('a day later the most liked comment gets a reply with +20 XP', async () => {
   const mock = await setup();
   const root = channelRoot();
   await onMessage(root);
@@ -53,17 +53,18 @@ test('a day later the most liked comment is pinned with +20 XP', async () => {
   await react(b, 14, null); // taken back
   await react(b, 11); // own reaction does not count
   await posts.tick(root.date + DAY - 10);
-  assert.equal(mock.called('pinChatMessage').length, 0);
+  const best = () => mock.called('sendMessage').filter((c) => /Лучший комментарий/.test(c.params.text));
+  assert.equal(best().length, 0);
   await posts.tick(root.date + DAY + 10);
-  const pins = mock.called('pinChatMessage');
-  assert.equal(pins.length, 1);
-  assert.equal(pins[0].params.message_id, b.message_id);
+  assert.equal(best().length, 1);
+  assert.equal(best()[0].params.reply_parameters.message_id, b.message_id);
   assert.equal(await bonus(11, 'best_comment'), posts.BEST_XP);
   assert.equal(await bonus(10, 'best_comment'), 0);
-  assert.ok(mock.called('sendMessage').some((c) => /Лучший комментарий поста.*2 реакции/.test(c.params.text)));
+  assert.match(best()[0].params.text, /2 реакции/);
+  assert.equal(mock.called('pinChatMessage').length, 0);
   // Only once.
   await posts.tick(root.date + DAY + 100);
-  assert.equal(mock.called('pinChatMessage').length, 1);
+  assert.equal(best().length, 1);
 });
 
 test('no best comment with fewer than 2 reactions', async () => {
@@ -74,6 +75,6 @@ test('no best comment with fewer than 2 reactions', async () => {
   await onMessage(a);
   await react(a, 21);
   await posts.tick(root.date + DAY + 10);
-  assert.equal(mock.called('pinChatMessage').length, 0);
+  assert.ok(!mock.called('sendMessage').some((c) => /Лучший комментарий/.test(c.params.text)));
   assert.equal(await bonus(20, 'best_comment'), 0);
 });
