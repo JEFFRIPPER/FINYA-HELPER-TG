@@ -35,6 +35,7 @@ export async function setup(overrides = {}) {
   // Holidays and the «Штаб» watch depend on the date: only their tests switch them on.
   await setSetting('chat_holidays', false);
   await setSetting('auto_staff', false);
+  await setSetting('auto_comeback', false);
   apiMock.reset();
   apiMock.handler = async (method, params) => {
     if (overrides[method]) return overrides[method](params);

@@ -30,8 +30,8 @@ const DEFAULTS = {
   chat_holidays: true,
   chat_faq: true,
   auto_staff: true,
-  // «Давно тебя не видно»: messages members in private, so off until the owner turns it on.
-  auto_comeback: false,
+  // «Давно тебя не видно»: messages members in private; the owner turned it on 2026-11-01.
+  auto_comeback: true,
   // pump() loads today's horoscopes ahead of «Гороскоп» (extras.prefetchHoroscope).
   horoscope_prefetch: true,
   // «мут», «бан», «варн»… by text: off until the owner says «Финя, модерация вкл».
