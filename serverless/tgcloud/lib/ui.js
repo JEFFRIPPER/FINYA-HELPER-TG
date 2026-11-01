@@ -247,7 +247,8 @@ export async function xpProfileText(user) {
 
 const TOP_MEDALS = ['🥇', '🥈', '🥉'];
 
-export async function xpTopText(weekly = false) {
+// userId: the asker gets a «Ты» row with their own place under the list.
+export async function xpTopText(weekly = false, userId = null) {
   const rows = await xp.leaderboard({ weekly });
   let text = '🏆 Топ Сквада · ' + (weekly ? 'текущая неделя (МСК), комментарии и реакции' : 'за всё время');
   if (!rows.length) return text + '\n\nПока никто не заработал XP. Начни с комментария под постом.';
@@ -256,6 +257,12 @@ export async function xpTopText(weekly = false) {
     const [current] = xp.rankFor(row.xp, { founder: row.user_id === OWNER_USER_ID, manualRank: row.manual_rank });
     text += `\n${TOP_MEDALS[i] || `${i + 1}.`} ${escapeHtml(truncate(row.name, 35))} — ${fmtThousands(row.score)} XP · ${current[1]} ${current[2]}`;
   });
+  if (userId) {
+    const mine = await xp.placeOf(userId, { weekly });
+    text += mine
+      ? `\n\n👤 Ты: ${mine.place} место · ${fmtThousands(mine.score)} XP`
+      : `\n\n👤 Ты пока без XP${weekly ? ' на этой неделе' : ''}. Начни с комментария под постом.`;
+  }
   return text;
 }
 

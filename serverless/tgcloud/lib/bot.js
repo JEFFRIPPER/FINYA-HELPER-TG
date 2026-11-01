@@ -244,7 +244,7 @@ async function rankCommand(message, s) {
 async function topCommand(message, s, args) {
   if (message.chat.type === 'private') await trackUser(message.from);
   const weekly = Boolean(args.length && ['week', 'неделя'].includes(args[0].toLowerCase()));
-  const sent = await replyBold(message, await xpTopText(weekly), await xpMenu(message.chat, message.from.id));
+  const sent = await replyBold(message, await xpTopText(weekly, message.from.id), await xpMenu(message.chat, message.from.id));
   await tidyPrivate(message, s, sent);
   await cleanUpLater(message, sent);
 }
@@ -630,7 +630,7 @@ async function button_(query, s) {
   } else if (data === 'xp:profile') {
     [text, kb] = [await xpProfileText(user), await xpMenu(chat)];
   } else if (data === 'xp:top' || data === 'xp:week') {
-    [text, kb] = [await xpTopText(data === 'xp:week'), await xpMenu(chat)];
+    [text, kb] = [await xpTopText(data === 'xp:week', user.id), await xpMenu(chat)];
   } else if (data === 'xp:rules') {
     [text, kb] = [xpRulesText(), await xpMenu(chat)];
   } else if (data === 'status:subscribe' || data === 'status:unsubscribe') {

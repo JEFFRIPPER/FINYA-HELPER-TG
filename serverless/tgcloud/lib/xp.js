@@ -213,6 +213,28 @@ export async function leaderboard({ weekly = false, limit = 10 } = {}) {
     ORDER BY score DESC, p.user_id LIMIT ${limit}`);
 }
 
+// The member's own place in xp.leaderboard() (same order), null without XP there:
+// the «Ты» row under a top that ends above them.
+export async function placeOf(userId, { weekly = false } = {}) {
+  if (weekly) {
+    const ts = nowInt();
+    const from = weekStart(ts);
+    const mine = await db.get(sql`SELECT COALESCE(SUM(points), 0) AS s FROM events
+      WHERE user_id = ${userId} AND earned_at >= ${from} AND earned_at <= ${ts} AND kind IN ('comment', 'reaction')`);
+    if (!(mine.s > 0)) return null;
+    const above = await db.get(sql`SELECT COUNT(*) AS c FROM (SELECT p.user_id, SUM(e.points) AS score
+      FROM profiles p JOIN events e ON e.user_id = p.user_id
+      WHERE e.earned_at >= ${from} AND e.earned_at <= ${ts} AND e.kind IN ('comment', 'reaction')
+      GROUP BY p.user_id HAVING score > ${mine.s} OR (score = ${mine.s} AND p.user_id < ${userId}))`);
+    return { place: above.c + 1, score: mine.s };
+  }
+  const p = await db.get(sql`SELECT xp FROM profiles WHERE user_id = ${userId}`);
+  if (!p || !(p.xp > 0)) return null;
+  const above = await db.get(sql`SELECT COUNT(*) AS c FROM profiles
+    WHERE xp > ${p.xp} OR (xp = ${p.xp} AND user_id < ${userId})`);
+  return { place: above.c + 1, score: p.xp };
+}
+
 export async function messageRecord(chatId, messageId) {
   return db.get(sql`SELECT * FROM messages WHERE chat_id = ${chatId} AND message_id = ${messageId}`);
 }
@@ -292,8 +314,8 @@ export async function award(user, chatId, messageId, kind, timestamp) {
   if (granted.rowsAffected !== 1) return null;
   await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${user.id}`);
   const oldRank = rankFor(total, { manualRank })[0];
-  const newRank = rankFor(total + pts, { manualRank })[0];
-  return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
+  const [newRank, next] = rankFor(total + pts, { manualRank });
+  return { points: pts, total: total + pts, oldRank, newRank, next, promoted: oldRank !== newRank };
 }
 
 // Bonus XP, once per (kind, key). `user` is a Telegram user or a user ID of an
@@ -319,8 +341,8 @@ export async function grant(user, kind, key, pts, timestamp = nowInt()) {
   if (pts) await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${userId}`);
   const manualRank = row.manual_rank ?? null;
   const oldRank = rankFor(total, { manualRank })[0];
-  const newRank = rankFor(total + pts, { manualRank })[0];
-  return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
+  const [newRank, next] = rankFor(total + pts, { manualRank });
+  return { points: pts, total: total + pts, oldRank, newRank, next, promoted: oldRank !== newRank };
 }
 
 // «фарм» in the chat: random XP once per FARM_COOLDOWN, outside the daily limit.
@@ -353,8 +375,8 @@ export async function farm(user, pts, ts = nowInt()) {
   if (pts) await db.run(sql`UPDATE profiles SET xp = xp + ${pts} WHERE user_id = ${user.id}`);
   const manualRank = row.manual_rank ?? null;
   const oldRank = rankFor(total, { manualRank })[0];
-  const newRank = rankFor(total + pts, { manualRank })[0];
-  return { points: pts, total: total + pts, oldRank, newRank, promoted: oldRank !== newRank };
+  const [newRank, next] = rankFor(total + pts, { manualRank });
+  return { points: pts, total: total + pts, oldRank, newRank, next, promoted: oldRank !== newRank };
 }
 
 export async function comment(message, channelId) {

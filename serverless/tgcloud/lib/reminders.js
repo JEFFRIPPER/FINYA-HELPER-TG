@@ -1,4 +1,4 @@
-// «Финя, напомни через 2ч позвонить», «… в 18:30 …», «… завтра в 10:00 …».
+// «Финя, напомни через 2ч позвонить», «… в 18:30 …», «… завтра в 7 вечера …», «… в пятницу …».
 // Sent from pump(): there is no timer in the runtime, so a reminder goes out with
 // the first update after its time (in a lively chat that is seconds).
 import { api, db } from 'sdk';
@@ -23,6 +23,15 @@ const UNITS = [
   [/^(?:нед|неделю|недели|недель)$/u, 7 * DAY],
 ];
 
+const RELATIVE = { сегодня: 0, завтра: 1, послезавтра: 2 };
+// ISO weekdays, Monday 1.
+const WEEKDAYS = { понедельник: 1, вторник: 2, среду: 3, четверг: 4, пятницу: 5, субботу: 6, воскресенье: 7 };
+// [день] [время] [утра/вечера] [текст]: «завтра в 18 позвонить», «в пятницу в 7 вечера …»,
+// «послезавтра …» (в 10:00), «18:30 …», «в 9:15 …». Without a time a day means 10:00.
+const WHEN = new RegExp('^(?:(сегодня|завтра|послезавтра)|(?:во?\\s+)?(понедельник|вторник|среду|четверг|пятницу|субботу|воскресенье))?' +
+  '\\s*(?:(?:в\\s+)?(\\d{1,2})[:.](\\d{2})|в\\s+(\\d{1,2})(?:\\s*(?:ч|час|часа|часов))?(?![\\d:.]))?' +
+  '(?:\\s+(утра|дня|вечера|ночи))?(?:\\s+([\\s\\S]*))?$', 'iu');
+
 // Moscow midnight of the day `ts` falls on, as a unix time.
 const mskMidnight = (ts) => Math.floor((ts + MSK_OFFSET) / DAY) * DAY - MSK_OFFSET;
 
@@ -41,18 +50,34 @@ export function parse(words, ts = nowInt()) {
     }
     return { due: ts + seconds, text: m[4] || '' };
   }
-  m = /^(завтра\s+)?в\s+(\d{1,2})[:.](\d{2})(?:\s+([\s\S]*))?$/iu.exec(t);
-  if (m) {
-    const h = Number(m[2]);
-    const min = Number(m[3]);
+  m = WHEN.exec(t);
+  if (m && (m[1] || m[2] || m[3] || m[5])) {
+    const [, rel, weekday, hh, mm, bareHour, part, rest] = m;
+    const timed = hh != null || bareHour != null;
+    let h = Number(hh ?? bareHour ?? 10);
+    const min = Number(mm ?? 0);
+    if (part && /^(?:дня|вечера)$/iu.test(part) && h < 12) h += 12;
+    if (part && /^(?:утра|ночи)$/iu.test(part) && h === 12) h = 0;
     if (h > 23 || min > 59) return null;
-    let due = mskMidnight(ts) + h * HOUR + min * MIN;
-    if (m[1]) due += DAY;
-    else if (due <= ts) due += DAY;
-    return { due, text: m[4] || '' };
+    const today = mskMidnight(ts);
+    const at = (days) => today + days * DAY + h * HOUR + min * MIN;
+    let due;
+    if (rel) {
+      const days = RELATIVE[rel.toLowerCase()];
+      // «сегодня» needs a time: «напомни сегодня» says nothing about when.
+      if (days === 0 && !timed) return null;
+      due = at(days);
+    } else if (weekday) {
+      const now = new Date((ts + MSK_OFFSET) * 1000).getUTCDay() || 7;
+      let days = (WEEKDAYS[weekday.toLowerCase().replace(/ё/g, 'е')] - now + 7) % 7;
+      if (days === 0 && (!timed || at(0) <= ts)) days = 7;
+      due = at(days);
+    } else {
+      due = at(0);
+      if (due <= ts) due += DAY;
+    }
+    return { due, text: rest || '' };
   }
-  m = /^завтра(?:\s+([\s\S]*))?$/iu.exec(t);
-  if (m) return { due: mskMidnight(ts) + DAY + 10 * HOUR, text: m[1] || '' };
   return null;
 }
 
